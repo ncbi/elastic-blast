@@ -1,0 +1,90 @@
+{
+    "apiVersion": "batch/v1",
+    "kind": "Job",
+    "metadata": {
+        "annotations": {
+            "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"batch/v1\",\"kind\":\"Job\",\"metadata\":{\"annotations\":{},\"labels\":{\"app\":\"setup\"},\"name\":\"copy-queries-to-pd\",\"namespace\":\"default\"},\"spec\":{\"backoffLimit\":3,\"template\":{\"metadata\":{\"labels\":{\"app\":\"setup\"}},\"spec\":{\"containers\":[{\"command\":[\"gsutil\",\"-mq\",\"cp\",\"gs://camacho-test/eb239-old/query_batches/batch_*.fa\",\"/blast/queries/\"],\"image\":\"google/cloud-sdk:slim\",\"name\":\"gcp-sdk\",\"volumeMounts\":[{\"mountPath\":\"/blast/queries\",\"name\":\"queries\",\"readOnly\":false}],\"workingDir\":\"/blast/queries\"}],\"restartPolicy\":\"Never\",\"volumes\":[{\"name\":\"queries\",\"persistentVolumeClaim\":{\"claimName\":\"blast-dbs-pvc\"}}]}},\"ttlSecondsAfterFinished\":300}}\n"
+        },
+        "creationTimestamp": "2020-05-07T16:20:32Z",
+        "labels": {
+            "app": "setup"
+        },
+        "name": "copy-queries-to-pd",
+        "namespace": "default",
+        "resourceVersion": "4563",
+        "selfLink": "/apis/batch/v1/namespaces/default/jobs/copy-queries-to-pd",
+        "uid": "ac7d7219-907e-11ea-b5f1-42010a9600d2"
+    },
+    "spec": {
+        "backoffLimit": 3,
+        "completions": 1,
+        "parallelism": 1,
+        "selector": {
+            "matchLabels": {
+                "controller-uid": "ac7d7219-907e-11ea-b5f1-42010a9600d2"
+            }
+        },
+        "template": {
+            "metadata": {
+                "creationTimestamp": null,
+                "labels": {
+                    "app": "setup",
+                    "controller-uid": "ac7d7219-907e-11ea-b5f1-42010a9600d2",
+                    "job-name": "copy-queries-to-pd"
+                }
+            },
+            "spec": {
+                "containers": [
+                    {
+                        "command": [
+                            "gsutil",
+                            "-mq",
+                            "cp",
+                            "gs://camacho-test/eb239-old/query_batches/batch_*.fa",
+                            "/blast/queries/"
+                        ],
+                        "image": "google/cloud-sdk:slim",
+                        "imagePullPolicy": "IfNotPresent",
+                        "name": "gcp-sdk",
+                        "resources": {},
+                        "terminationMessagePath": "/dev/termination-log",
+                        "terminationMessagePolicy": "File",
+                        "volumeMounts": [
+                            {
+                                "mountPath": "/blast/queries",
+                                "name": "queries"
+                            }
+                        ],
+                        "workingDir": "/blast/queries"
+                    }
+                ],
+                "dnsPolicy": "ClusterFirst",
+                "restartPolicy": "Never",
+                "schedulerName": "default-scheduler",
+                "securityContext": {},
+                "terminationGracePeriodSeconds": 30,
+                "volumes": [
+                    {
+                        "name": "queries",
+                        "persistentVolumeClaim": {
+                            "claimName": "blast-dbs-pvc"
+                        }
+                    }
+                ]
+            }
+        }
+    },
+    "status": {
+        "completionTime": "2020-05-07T16:27:12Z",
+        "conditions": [
+            {
+                "lastProbeTime": "2020-05-07T16:27:12Z",
+                "lastTransitionTime": "2020-05-07T16:27:12Z",
+                "status": "True",
+                "type": "Complete"
+            }
+        ],
+        "startTime": "2020-05-07T16:20:32Z",
+        "succeeded": 1
+    }
+}

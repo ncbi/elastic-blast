@@ -1,0 +1,53 @@
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: init-ssd-${NODE_ORDINAL}
+  labels:
+    app: setup
+spec:
+  template:
+    metadata:
+      labels:
+        app: setup
+    spec:
+      volumes:
+      - name: blastdb
+        hostPath:
+          path: "/mnt/disks/ssd0"
+      containers:
+      - name: ${K8S_JOB_GET_BLASTDB}
+        image: gcr.io/ncbi-sandbox-blast/joukovv/cloud-sdk-dl-blastdb:latest
+        workingDir: /blast/blastdb
+        volumeMounts:
+        - name: blastdb
+          mountPath: /blast/blastdb
+          subPath: blast
+        readinessProbe:
+          httpGet:
+            host: storage.googleapis.com
+            port: 443
+            scheme: HTTPS
+            path: /blast-db/latest-dir
+        env:
+        - name: BLAST_USAGE_REPORT
+          value: "false"
+        command: ["/bin/bash", "-c"]
+        args:
+        - start=`date +%s`;
+          sleep 30;
+          log() { printf 'RUNTIME %s %f seconds for node ${NODE_ORDINAL}\n' "$1" "$2"; };
+          download-blastdb.py -d ${ELB_DB} -s ${ELB_BLASTDB_SRC} -m gsutil-m;
+          exit_code=$?;
+          end=`date +%s`;
+          log "download-blastdbs" $(($end-$start));
+          [ $exit_code -eq 0 ] || exit $exit_code;
+          if [ -n "${ELB_TAXIDLIST}" ] ; then
+              gsutil -mq cp ${ELB_TAXIDLIST} /blast/blastdb;
+              exit_code=$?;
+          fi;
+          exit $exit_code;
+      restartPolicy: Never
+      nodeSelector:
+        ordinal: "${NODE_ORDINAL}"
+  backoffLimit: 0

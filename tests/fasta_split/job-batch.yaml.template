@@ -1,0 +1,13 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: job-${QUERY_NUM}
+spec:
+  template:
+    spec:
+      containers:
+      - name: blast
+        image: us.gcr.io/ncbi-sandbox-blast/elastic-blast
+        command: ["blastn", "-db", "nt", "-query", "${QUERY_FQN}", "-out", "${RESULTS}", "-outfmt", "11"]
+      restartPolicy: OnFailure
+  backoffLimit: 1

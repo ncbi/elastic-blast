@@ -1,0 +1,674 @@
+---
+Description: Cloudformation template that sets up AWS Batch to run ElasticBLAST
+
+Parameters:
+  Image:
+    Description: Docker image for Elastic-BLAST
+    Type: String
+
+  Owner:
+    Description: User who creates/runs this application
+    Type: String
+
+  MaxCpus:
+    Description: Maximum number of vCPUs in the cluster
+    Type: Number
+    Default: 128
+
+  MachineType:
+    Description: EC2 instance type to use in the cluster
+    Type: String
+
+  DiskType:
+    Description: EBS volume disk type attached to instance
+    Type: String
+    Default: gp2
+
+  ProvisionedIops:
+    Description: Provisioned IOPS for EBS volume
+    Type: Number
+    Default: 2000
+
+  DiskSize:
+    Description: EC2 instance disk size
+    Type: Number
+    Default: 1000
+
+  Subnets:
+    Description: Subnet id where compute environment will be placed
+    # Type: AWS::EC2::Subnet::Id
+    Type: String
+    Default: none
+
+  SecurityGrp:
+    Description: Security group for compute environment
+    # Type: AWS::EC2::SecurityGroup::Id
+    Type: String
+    Default: none
+
+  # 65k IP addresses
+  VpcCIDR:
+    Description: Please enter the IP range (CIDR notation) for this VPC
+    Type: String
+    Default: 10.192.0.0/16
+
+  VPC:
+    # Type: AWS::EC2::VPC
+    Type: String
+    Default: none
+
+  EC2KeyPair:
+    Description: EC2 key pair for worker nodes
+    Type: String
+    Default: ''
+
+  BatchServiceRole:
+    Description: Service role for batch compute environment
+    Type: String
+    Default: ''
+
+  InstanceRole:
+    Description: Instance role for batch compute environment
+    Type: String
+    Default: ''
+
+  JobRole:
+    Description: Role for the batch job
+    Type: String
+    Default: ''
+
+  SpotFleetRole:
+    Description: Role for spot fleet
+    Type: String
+    Default: ''
+
+  UseSpotInstances:
+    Description: Use spot instances for BLAST searches
+    Type: String
+    Default: 'false'
+
+  SpotBidPercentage:
+    Description: Bid percentage for SPOT instances
+    Type: Number
+    Default: 100
+
+  RandomToken:
+    Description: Random token added to resource names so they can be identified while avoiding name collisions.
+    Type: String
+    Default: 'xxxx'
+    MinLength: 4
+    MaxLength: 10
+    AllowedPattern: '[a-zA-Z0-9]*'
+
+  NumberOfAZs:
+    Description: Number of availability zones in the given region
+    Type: Number
+    Default: 2
+    AllowedValues:
+      - 2
+      - 3
+      - 4
+      - 5
+      - 6
+
+Conditions:
+  CreateSecurityGroup: !Equals
+    - !Ref SecurityGrp
+    - 'none'
+  CreateVPC: !Equals
+    - !Ref VPC
+    - 'none'
+  ProvisionedIopsRequested: !Equals [!Ref DiskType, io2]
+  CreateEcsInstanceRole: !Equals [!Ref InstanceRole, '']
+  CreateBatchServiceRole: !Equals [!Ref BatchServiceRole, '']
+  CreateJobRole: !Equals [!Ref JobRole, '']
+  CreateSpotFleetRole: !Equals [!Ref SpotFleetRole, '']
+  KeyPairProvided: !Not [!Equals [!Ref EC2KeyPair, '']]
+  SpotInstances: !Equals [!Ref UseSpotInstances, 'True']
+  CreateSubnet2: !And
+    - !Condition CreateVPC
+    - !Or [!Equals [!Ref NumberOfAZs, 2], !Equals [!Ref NumberOfAZs, 3], !Equals [!Ref NumberOfAZs, 4], !Equals [!Ref NumberOfAZs, 5], !Equals [!Ref NumberOfAZs, 6]]
+  CreateSubnet3: !And
+    - !Condition CreateVPC
+    - !Or [!Equals [!Ref NumberOfAZs, 3], !Equals [!Ref NumberOfAZs, 4], !Equals [!Ref NumberOfAZs, 5], !Equals [!Ref NumberOfAZs, 6]]
+  CreateSubnet4: !And
+    - !Condition CreateVPC
+    - !Or [!Equals [!Ref NumberOfAZs, 4], !Equals [!Ref NumberOfAZs, 5], !Equals [!Ref NumberOfAZs, 6]]
+  CreateSubnet5: !And
+    - !Condition CreateVPC
+    - !Or [!Equals [!Ref NumberOfAZs, 5], !Equals [!Ref NumberOfAZs, 6]]
+  CreateSubnet6: !And
+    - !Condition CreateVPC
+    - !Equals [!Ref NumberOfAZs, 6]
+  # These are needed for specifying the ComputeEnvironment's subnets
+  TwoAZs: !Equals [!Ref NumberOfAZs, 2]
+  ThreeAZs: !Equals [!Ref NumberOfAZs, 3]
+  FourAZs: !Equals [!Ref NumberOfAZs, 4]
+  FiveAZs: !Equals [!Ref NumberOfAZs, 5]
+
+Mappings:
+  # Arguments to Cidr CloudFormation function to split the CIDR range
+  CidrArgs:
+    Count:
+      '2': 2
+      '3': 4
+      '4': 4
+      '5': 8
+      '6': 8
+    CidrBits:
+      '2': 15
+      '3': 14
+      '4': 14
+      '5': 13
+      '6': 13
+
+Resources:
+  NewVPC:
+    Type: AWS::EC2::VPC
+    Condition: CreateVPC
+    Properties:
+      CidrBlock: !Ref VpcCIDR
+      EnableDnsSupport: true
+      EnableDnsHostnames: true
+      Tags:
+        - Key: Name
+          Value: !Join [-, [elasticblast, !Ref Owner, !Ref RandomToken]]
+        - Key: Project
+          Value: BLAST
+        - Key: Owner
+          Value: !Ref Owner
+        - Key: billingcode
+          Value: elastic-blast
+
+  InternetGateway:
+    Type: AWS::EC2::InternetGateway
+    Condition: CreateVPC
+    Properties:
+      Tags:
+        - Key: Name
+          Value: !Join [-, [elasticblast, !Ref Owner, !Ref RandomToken]]
+        - Key: Project
+          Value: BLAST
+        - Key: Owner
+          Value: !Ref Owner
+        - Key: billingcode
+          Value: elastic-blast
+
+  InternetGatewayAttachment:
+    Type: AWS::EC2::VPCGatewayAttachment
+    Condition: CreateVPC
+    Properties:
+      InternetGatewayId: !Ref InternetGateway
+      VpcId: !Ref NewVPC
+
+  PublicSubnet1:
+    Type: AWS::EC2::Subnet
+    Condition: CreateVPC
+    Properties:
+      VpcId: !Ref NewVPC
+      MapPublicIpOnLaunch: true
+      AvailabilityZone: !Select [0, !GetAZs '']
+      CidrBlock: !Select
+        - 0
+        - !Cidr
+          - !GetAtt NewVPC.CidrBlock
+          - !FindInMap [CidrArgs, Count, !Ref NumberOfAZs]
+          - !FindInMap [CidrArgs, CidrBits, !Ref NumberOfAZs]
+      Tags:
+        - Key: Name
+          Value: !Join [-, [elasticblast, !Ref Owner, !Ref RandomToken, PublicSubnet1]]
+        - Key: Project
+          Value: BLAST
+        - Key: Owner
+          Value: !Ref Owner
+        - Key: billingcode
+          Value: elastic-blast
+
+  PublicSubnet2:
+    Type: AWS::EC2::Subnet
+    Condition: CreateSubnet2
+    Properties:
+      VpcId: !Ref NewVPC
+      MapPublicIpOnLaunch: true
+      AvailabilityZone: !Select [1, !GetAZs  '']
+      CidrBlock: !Select
+        - 1
+        - !Cidr
+          - !GetAtt NewVPC.CidrBlock
+          - !FindInMap [CidrArgs, Count, !Ref NumberOfAZs]
+          - !FindInMap [CidrArgs, CidrBits, !Ref NumberOfAZs]
+      Tags:
+        - Key: Name
+          Value: !Join [-, [elasticblast, !Ref Owner, !Ref RandomToken, PublicSubnet2]]
+        - Key: Project
+          Value: BLAST
+        - Key: Owner
+          Value: !Ref Owner
+        - Key: billingcode
+          Value: elastic-blast
+
+  PublicSubnet3:
+    Type: AWS::EC2::Subnet
+    Condition: CreateSubnet3
+    Properties:
+      VpcId: !Ref NewVPC
+      MapPublicIpOnLaunch: true
+      CidrBlock: !Select
+        - 2
+        - !Cidr
+          - !GetAtt NewVPC.CidrBlock
+          - !FindInMap [CidrArgs, Count, !Ref NumberOfAZs]
+          - !FindInMap [CidrArgs, CidrBits, !Ref NumberOfAZs]
+      AvailabilityZone: !Select [2, !GetAZs '']
+      Tags:
+        - Key: Name
+          Value: !Join [-, [elasticblast, !Ref Owner, !Ref RandomToken, PublicSubnet3]]
+        - Key: Project
+          Value: BLAST
+        - Key: Owner
+          Value: !Ref Owner
+        - Key: billingcode
+          Value: elastic-blast
+
+  PublicSubnet4:
+    Type: AWS::EC2::Subnet
+    Condition: CreateSubnet4
+    Properties:
+      VpcId: !Ref NewVPC
+      MapPublicIpOnLaunch: true
+      CidrBlock: !Select
+        - 3
+        - !Cidr
+          - !GetAtt NewVPC.CidrBlock
+          - !FindInMap [CidrArgs, Count, !Ref NumberOfAZs]
+          - !FindInMap [CidrArgs, CidrBits, !Ref NumberOfAZs]
+      AvailabilityZone: !Select [3, !GetAZs '']
+      Tags:
+        - Key: Name
+          Value: !Join [-, [elasticblast, !Ref Owner, !Ref RandomToken, PublicSubnet4]]
+        - Key: Project
+          Value: BLAST
+        - Key: Owner
+          Value: !Ref Owner
+        - Key: billingcode
+          Value: elastic-blast
+
+  PublicSubnet5:
+    Type: AWS::EC2::Subnet
+    Condition: CreateSubnet5
+    Properties:
+      VpcId: !Ref NewVPC
+      MapPublicIpOnLaunch: true
+      CidrBlock: !Select
+        - 4
+        - !Cidr
+          - !GetAtt NewVPC.CidrBlock
+          - !FindInMap [CidrArgs, Count, !Ref NumberOfAZs]
+          - !FindInMap [CidrArgs, CidrBits, !Ref NumberOfAZs]
+      AvailabilityZone: !Select [4, !GetAZs '']
+      Tags:
+        - Key: Name
+          Value: !Join [-, [elasticblast, !Ref Owner, !Ref RandomToken, PublicSubnet5]]
+        - Key: Project
+          Value: BLAST
+        - Key: Owner
+          Value: !Ref Owner
+        - Key: billingcode
+          Value: elastic-blast
+
+  PublicSubnet6:
+    Type: AWS::EC2::Subnet
+    Condition: CreateSubnet6
+    Properties:
+      VpcId: !Ref NewVPC
+      MapPublicIpOnLaunch: true
+      CidrBlock: !Select
+        - 5
+        - !Cidr
+          - !GetAtt NewVPC.CidrBlock
+          - !FindInMap [CidrArgs, Count, !Ref NumberOfAZs]
+          - !FindInMap [CidrArgs, CidrBits, !Ref NumberOfAZs]
+      AvailabilityZone: !Select [5, !GetAZs '']
+      Tags:
+        - Key: Name
+          Value: !Join [-, [elasticblast, !Ref Owner, !Ref RandomToken, PublicSubnet6]]
+        - Key: Project
+          Value: BLAST
+        - Key: Owner
+          Value: !Ref Owner
+        - Key: billingcode
+          Value: elastic-blast
+
+  # "Amazon ECS container instances need external network access to communicate with the Amazon ECS service endpoint"
+  # https://docs.aws.amazon.com/batch/latest/userguide/compute_environments.html
+  PublicRouteTable:
+    Type: AWS::EC2::RouteTable
+    Condition: CreateVPC
+    Properties:
+      VpcId: !Ref NewVPC
+      Tags:
+        - Key: Name
+          Value: !Join [-, [elasticblast, !Ref Owner, !Ref RandomToken, PublicRoutes]]
+        - Key: Project
+          Value: BLAST
+        - Key: Owner
+          Value: !Ref Owner
+        - Key: billingcode
+          Value: elastic-blast
+
+  DefaultPublicRoute:
+    Type: AWS::EC2::Route
+    Condition: CreateVPC
+    DependsOn: InternetGatewayAttachment
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      DestinationCidrBlock: 0.0.0.0/0
+      GatewayId: !Ref InternetGateway
+
+  PublicSubnet1RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Condition: CreateVPC
+    Properties:
+      RouteTableId: !Ref PublicRouteTable
+      SubnetId: !Ref PublicSubnet1
+  PublicSubnet2RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Condition: CreateSubnet2
+    Properties:
+      SubnetId: !Ref PublicSubnet2
+      RouteTableId: !Ref PublicRouteTable
+
+  PublicSubnet3RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Condition: CreateSubnet3
+    Properties:
+      SubnetId: !Ref PublicSubnet3
+      RouteTableId: !Ref PublicRouteTable
+
+  PublicSubnet4RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Condition: CreateSubnet4
+    Properties:
+      SubnetId: !Ref PublicSubnet4
+      RouteTableId: !Ref PublicRouteTable
+
+  PublicSubnet5RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Condition: CreateSubnet5
+    Properties:
+      SubnetId: !Ref PublicSubnet5
+      RouteTableId: !Ref PublicRouteTable
+
+  PublicSubnet6RouteTableAssociation:
+    Type: AWS::EC2::SubnetRouteTableAssociation
+    Condition: CreateSubnet6
+    Properties:
+      SubnetId: !Ref PublicSubnet6
+      RouteTableId: !Ref PublicRouteTable
+
+  SshIngressSecurityGroup:
+    Condition: CreateSecurityGroup
+    Type: AWS::EC2::SecurityGroup
+    Properties:
+      GroupName: !Join [-, [elasticblast, !Ref Owner, !Ref RandomToken, SG]]
+      GroupDescription: "Security group with only SSH access"
+      VpcId: !If
+        - CreateVPC
+        - !Ref NewVPC
+        - !Ref VPC
+      SecurityGroupIngress:
+        - CidrIp: "0.0.0.0/0"
+          Description: "Allow SSH access"
+          IpProtocol: "tcp"
+          FromPort: 22
+          ToPort: 22
+      Tags:
+        - Key: Name
+          Value: !Join [-, [elasticblast, !Ref Owner, !Ref RandomToken, SG]]
+        - Key: Project
+          Value: BLAST
+        - Key: Owner
+          Value: !Ref Owner
+        - Key: billingcode
+          Value: elastic-blast
+
+  ComputeEnvironment:
+    Type: AWS::Batch::ComputeEnvironment
+    Properties:
+      ComputeEnvironmentName: !Join [-, [elasticblast, !Ref Owner, !Ref RandomToken]]
+      Type: MANAGED
+      State: ENABLED
+      ServiceRole: !If
+        - CreateBatchServiceRole
+        - !GetAtt CreatedBatchServiceRole.Arn
+        - !Ref BatchServiceRole
+      ComputeResources:
+        Type: !If
+          - SpotInstances
+          - SPOT
+          - EC2
+        AllocationStrategy: !If
+          - SpotInstances
+          - SPOT_CAPACITY_OPTIMIZED
+          - BEST_FIT_PROGRESSIVE
+        BidPercentage: !If [SpotInstances, !Ref SpotBidPercentage, !Ref AWS::NoValue]
+        SpotIamFleetRole: !If
+          - SpotInstances
+          - !If
+            - CreateSpotFleetRole
+            - !GetAtt CreatedSpotFleetRole.Arn
+            - !Ref SpotFleetRole
+          - !Ref AWS::NoValue
+        MinvCpus: 0
+        MaxvCpus: !Ref MaxCpus
+        DesiredvCpus: 0
+        InstanceTypes:
+        - !Ref MachineType
+        Subnets:
+          !If
+            - CreateVPC
+            - !If
+                - TwoAZs
+                - [!Ref PublicSubnet1, !Ref PublicSubnet2]
+                - !If
+                  - ThreeAZs
+                  - [!Ref PublicSubnet1, !Ref PublicSubnet2, !Ref PublicSubnet3]
+                  - !If
+                    - FourAZs
+                    - [!Ref PublicSubnet1, !Ref PublicSubnet2, !Ref PublicSubnet3, !Ref PublicSubnet4]
+                    - !If
+                      - FiveAZs
+                      - [!Ref PublicSubnet1, !Ref PublicSubnet2, !Ref PublicSubnet3, !Ref PublicSubnet4, !Ref PublicSubnet5]
+                      - [!Ref PublicSubnet1, !Ref PublicSubnet2, !Ref PublicSubnet3, !Ref PublicSubnet4, !Ref PublicSubnet5, !Ref PublicSubnet6]
+            - !Split [",", !Ref Subnets]
+        SecurityGroupIds:
+          - !If
+            - CreateSecurityGroup
+            - !Ref SshIngressSecurityGroup
+            - !Ref SecurityGrp
+        Ec2KeyPair: !If
+          - KeyPairProvided
+          - !Ref EC2KeyPair
+          - !Ref AWS::NoValue
+        InstanceRole: !If
+          - CreateEcsInstanceRole
+          - !Ref EcsInstanceProfile
+          - !Ref InstanceRole
+        LaunchTemplate:
+          LaunchTemplateId: !Ref Ec2LaunchTemplate
+        Tags:
+           Project: BLAST
+           billingcode: elastic-blast
+           Owner: !Ref Owner
+           Name: !Join [-, [elasticblast, !Ref Owner, !Ref RandomToken]]
+
+  JobQueue:
+    Type: AWS::Batch::JobQueue
+    Properties:
+      JobQueueName: !Join [-, [elasticblast, !Ref Owner, !Ref RandomToken]]
+      State: ENABLED
+      Priority: 100
+      ComputeEnvironmentOrder:
+      - ComputeEnvironment: !Ref ComputeEnvironment
+        Order: 1
+
+  Ec2LaunchTemplate:
+    Type: AWS::EC2::LaunchTemplate
+    Properties:
+      LaunchTemplateName: !Join [-, [elasticblast, !Ref Owner, !Ref RandomToken]]
+      LaunchTemplateData:
+        EbsOptimized: true
+        BlockDeviceMappings:
+        - DeviceName: /dev/xvda
+          Ebs:
+            Encrypted: false
+            DeleteOnTermination: true
+            VolumeSize: !Ref DiskSize
+            VolumeType: !Ref DiskType
+            Iops: !If
+              - ProvisionedIopsRequested
+              - !Ref ProvisionedIops
+              - !Ref AWS::NoValue
+
+  BlastSearchJobDefinition:
+    Type: AWS::Batch::JobDefinition
+    Properties:
+      Type: container
+      JobDefinitionName: !Join [-, [elasticblast-init-and-search, !Ref Owner, !Ref RandomToken]]
+      Parameters:
+        blast-program: blastn
+        db: pdbnt
+        db-source: AWS
+        num-vcpus: 1
+        bucket: !Join [-, [s3://elasticblast, !Ref Owner]]
+        taxidlist: ' '
+      ContainerProperties:
+        Image: !Ref Image
+        Vcpus: 1
+        Memory: 80000
+        Command: ["download_db_and_search",
+                   "--db", "Ref::db",
+                   "--db-path", "Ref::db-path",
+                   "--source", "Ref::db-source",
+                   "--db-mol-type", "Ref::db-mol-type",
+                   "--query", "Ref::query-batch",
+                   "--num-threads", "Ref::num-vcpus",
+                   "--program", "Ref::blast-program",
+                   "--params", "Ref::blast-options",
+                   "--bucket", "Ref::bucket",
+                   "--taxidlist", "Ref::taxidlist"
+        ]
+        Environment:
+        - Name: BLASTDB
+          Value: /blast/blastdb
+        Volumes:
+        - Host:
+            SourcePath: /blast
+          Name: data
+        MountPoints:
+        - ContainerPath: /blast/blastdb
+          ReadOnly: false
+          SourceVolume: data
+        ReadonlyRootFilesystem: false
+        Privileged: true
+        User: root
+        JobRoleArn: !If
+          - CreateJobRole
+          - !GetAtt CreatedBatchJobRole.Arn
+          - !Ref JobRole
+      RetryStrategy:
+        Attempts: 5
+        EvaluateOnExit:
+        # retry on infrastructure problems (including terminated spot instance)
+        - OnStatusReason: Host EC2*
+          Action: RETRY
+        # no retries for other reasons (like a non-zero exit code)
+        - OnReason: "*"
+          Action: EXIT
+
+
+  # AWS advises to use region-specific IAM resource names. Otherwise using the
+  # same template in mulitple regions may lead to "unrecoverable error".
+  # See red box in
+  # docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-resource-iam-role.html
+
+  EcsInstanceProfile:
+    Type: AWS::IAM::InstanceProfile
+    Condition: CreateEcsInstanceRole
+    Properties:
+      Roles:
+      - !Ref CreatedEcsInstanceRole
+
+  CreatedEcsInstanceRole:
+    Type: AWS::IAM::Role
+    Condition: CreateEcsInstanceRole
+    Properties:
+      RoleName: !Join [-, ['elasticblast-ecs-instance-role', !Ref Owner, !Ref RandomToken]]
+      Description: Role for ECS instances, created by elastic-blast
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service: ec2.amazonaws.com
+          Action: sts:AssumeRole
+      ManagedPolicyArns:
+      - arn:aws:iam::aws:policy/service-role/AmazonEC2ContainerServiceforEC2Role
+
+  CreatedBatchServiceRole:
+    Type: AWS::IAM::Role
+    Condition: CreateBatchServiceRole
+    Properties:
+      RoleName: !Join [-, ['elasticblast-batch-service-role', !Ref Owner, !Ref RandomToken]]
+      Description: Role for AWS Batch service, created by elastic-blast
+      Path: /service-role/
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service: batch.amazonaws.com
+          Action: sts:AssumeRole
+      ManagedPolicyArns:
+      - arn:aws:iam::aws:policy/service-role/AWSBatchServiceRole
+
+  CreatedBatchJobRole:
+    Type: AWS::IAM::Role
+    Condition: CreateJobRole
+    Properties:
+      RoleName: !Join [-, ['elasticblast-job-role', !Ref Owner, !Ref RandomToken]]
+      Description: Role allowing elastic-blast jobs S3 access
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service: ecs-tasks.amazonaws.com
+          Action: sts:AssumeRole
+      ManagedPolicyArns:
+      - arn:aws:iam::aws:policy/AmazonS3FullAccess
+
+  CreatedSpotFleetRole:
+    Type: AWS::IAM::Role
+    Condition: CreateSpotFleetRole
+    Properties:
+      RoleName: !Join [-, ['elasticblast-spot-fleet-role', !Ref Owner, !Ref RandomToken]]
+      Description: Role for AWS Batch Spot Fleet, created by elastic-blast
+      Path: /service-role/
+      AssumeRolePolicyDocument:
+        Version: 2012-10-17
+        Statement:
+        - Effect: Allow
+          Principal:
+            Service: spotfleet.amazonaws.com
+          Action: sts:AssumeRole
+      ManagedPolicyArns:
+      - arn:aws:iam::aws:policy/service-role/AmazonEC2SpotFleetTaggingRole
+
+Outputs:
+  JobQueueName:
+    Description: Elastic-BLAST job queue
+    Value: !Ref JobQueue
+  JobDefinitionName:
+    Description: Elastic-BLAST job definition
+    Value: !Ref BlastSearchJobDefinition

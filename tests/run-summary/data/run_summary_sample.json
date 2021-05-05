@@ -1,0 +1,32 @@
+{
+  "version": "1.0",
+  "clusterInfo": {
+    "provider": "AWS",
+    "numMachines": 16,
+    "numVCPUsPerMachine": 32,
+    "RamPerMachine": 131072,
+    "machineType": "m5.8xlarge"
+  },
+  "runtime": {
+    "wallClock": 799.16,
+    "blastdbSetup": {
+      "totalTime": 0.0,
+      "minTime": 0.0,
+      "maxTime": 0.0
+    },
+    "blast": {
+      "totalTime": 1754.364,
+      "minTime": 133.567,
+      "maxTime": 341.966
+    }
+  },
+  "blastData": {
+    "queryLength": 80502331,
+    "databaseNumSeq": 68873103,
+    "databaseLength": 415101534957
+  },
+  "lettersPerSecondPerCpu": 197,
+  "numJobs": 8,
+  "numJobsFailed": 0,
+  "exitCode": 0
+}

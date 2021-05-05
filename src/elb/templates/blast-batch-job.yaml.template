@@ -1,0 +1,102 @@
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: ${ELB_BLAST_PROGRAM}-batch-${ELB_DB_LABEL}-job-${JOB_NUM}
+  labels:
+    app: blast
+    db: ${ELB_DB}
+spec:
+  template:
+    metadata:
+      labels:
+        app: blast
+        db: ${ELB_DB}
+    spec:
+      volumes:
+      - name: blast-dbs
+        persistentVolumeClaim:
+            claimName: blast-dbs-pvc
+            readOnly: true
+      - name: shared-data
+        emptyDir: {}
+      #shareProcessNamespace: true
+      activeDeadlineSeconds: ${ELB_BLAST_TIMEOUT}
+      initContainers:
+      - name: ${K8S_JOB_LOAD_BLASTDB_INTO_RAM}
+        image: ${ELB_DOCKER_IMAGE}
+        workingDir: /blast/blastdb
+        volumeMounts:
+        - name: blast-dbs
+          mountPath: /blast/blastdb
+          readOnly: true
+        command: ["/bin/bash", "-co", "pipefail"]
+        args:
+        - echo "BASH version ${BASH_VERSION}";
+          start=`date +%s`;
+          log() { ts=`date +'%F %T'`; printf '%s RUNTIME %s %f seconds\n' "$ts" "$1" "$2"; };
+          blastdb_path -dbtype ${ELB_DB_MOL_TYPE} -db ${ELB_DB} -getvolumespath | tr ' ' '\n' | parallel -t vmtouch -tm 5G;
+          exit_code=$?;
+          end=`date +%s`;
+          log "cache-blastdbs-to-ram" $(($end-$start));
+          exit $exit_code;
+      containers:
+      - name: ${K8S_JOB_BLAST}
+        image: ${ELB_DOCKER_IMAGE}
+        workingDir: /blast/blastdb
+        resources:
+          requests:
+            memory: "${ELB_MEM_REQUEST}"
+            cpu: ${ELB_NUM_CPUS}
+          limits:
+            memory: "${ELB_MEM_LIMIT}"
+            cpu: ${ELB_NUM_CPUS}
+        volumeMounts:
+        - name: blast-dbs
+          mountPath: /blast/blastdb
+          readOnly: true
+        - name: shared-data
+          mountPath: /blast/results
+        env:
+        - name: BLAST_USAGE_REPORT
+          value: "${BLAST_USAGE_REPORT}"
+        - name: BLAST_ELB_JOB_ID
+          value: "${BLAST_ELB_JOB_ID}"
+        - name: BLAST_ELB_BATCH_NUM
+          value: "${BLAST_ELB_BATCH_NUM}"
+        command: ["/bin/bash", "-c"]
+        args:
+        - echo "BASH version ${BASH_VERSION}";
+          BLAST_RUNTIME=`mktemp`;
+          DATE_NOW=`date -u +${ELB_TIMEFMT}`;
+          blastdbcmd -info -db ${ELB_DB} | awk '/total/ {print $3}' | tr -d , > /blast/results/BLASTDB_LENGTH.out;
+          start=`date +%s`;
+          echo run start ${JOB_NUM} ${ELB_BLAST_PROGRAM} ${ELB_DB};
+          echo ${ELB_BLAST_PROGRAM} -db ${ELB_DB} -query /blast/blastdb/batch_${JOB_NUM}.fa -out /blast/results/batch_${JOB_NUM}-${ELB_BLAST_PROGRAM}-${ELB_DB}.out -num_threads ${ELB_NUM_CPUS} ${ELB_BLAST_OPTIONS};
+          TIME="${DATE_NOW} run start ${JOB_NUM} ${ELB_BLAST_PROGRAM} ${ELB_DB} %e %U %S %P" \time -o ${BLAST_RUNTIME} ${ELB_BLAST_PROGRAM} -db ${ELB_DB} -query /blast/blastdb/batch_${JOB_NUM}.fa -out /blast/results/batch_${JOB_NUM}-${ELB_BLAST_PROGRAM}-${ELB_DB}.out -num_threads ${ELB_NUM_CPUS} ${ELB_BLAST_OPTIONS};
+          BLAST_EXIT_CODE=$?;
+          end=`date +%s`;
+          printf 'RUNTIME %s %f seconds\n' "blast-job-${JOB_NUM}" $(($end-$start));
+          echo run end ${JOB_NUM} ${BLAST_EXIT_CODE};
+          echo `date -u +${ELB_TIMEFMT}` run exitCode ${JOB_NUM} ${BLAST_EXIT_CODE}>> ${BLAST_RUNTIME};
+          echo `date -u +${ELB_TIMEFMT}` run end ${JOB_NUM}>> ${BLAST_RUNTIME};
+          gzip /blast/results/batch_${JOB_NUM}-${ELB_BLAST_PROGRAM}-${ELB_DB}.out;
+          cp $BLAST_RUNTIME /blast/results/BLAST_RUNTIME-${JOB_NUM}.out;
+          echo $BLAST_EXIT_CODE > /blast/results/BLAST_EXIT_CODE.out;
+      - name: ${K8S_JOB_RESULTS_EXPORT}
+        image: google/cloud-sdk:slim
+        command: ["/bin/bash", "-c"]
+        args:
+        - until [ -s /result/BLAST_EXIT_CODE.out ] ; do
+            sleep 1;
+          done;
+          set -ex;
+          ls -1f /result/BLASTDB_LENGTH.out | gsutil -qm cp -I ${BUCKET}/metadata/;
+          gsutil -q cp /result/BLAST_RUNTIME-${JOB_NUM}.out ${BUCKET}/logs/;
+          gsutil -mq cp /result/batch_${JOB_NUM}-${ELB_BLAST_PROGRAM}-${ELB_DB}.out.gz ${BUCKET}/;
+          exit `cat /result/BLAST_EXIT_CODE.out`;
+        volumeMounts:
+          - name: shared-data
+            mountPath: /result
+      restartPolicy: OnFailure
+  backoffLimit: 3

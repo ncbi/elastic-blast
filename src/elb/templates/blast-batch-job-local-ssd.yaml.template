@@ -1,0 +1,93 @@
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: ${ELB_BLAST_PROGRAM}-batch-${ELB_DB_LABEL}-job-${JOB_NUM}
+  labels:
+    app: blast
+    db: ${ELB_DB}
+spec:
+  template:
+    metadata:
+      labels:
+        app: blast
+        db: ${ELB_DB}
+    spec:
+      volumes:
+      - name: blast-dbs
+        hostPath:
+          path: "/mnt/disks/ssd0"
+      - name: shared-data
+        emptyDir: {}
+      #shareProcessNamespace: true
+      activeDeadlineSeconds: ${ELB_BLAST_TIMEOUT}
+      initContainers:
+      - name: ${K8S_JOB_IMPORT_QUERY_BATCHES}
+        image: google/cloud-sdk:slim
+        volumeMounts:
+          - name: shared-data
+            mountPath: /shared
+        command: ["/bin/bash", "-ce"]
+        args:
+        - mkdir -p /shared/requests;
+          mkdir -p /shared/results;
+          gsutil -mq cp ${QUERY_FQN} /shared/requests;
+      containers:
+      - name: ${K8S_JOB_BLAST}
+        image: gcr.io/ncbi-sandbox-blast/ncbi/blast:latest
+        workingDir: /blast/blastdb
+        resources:
+          requests:
+            memory: "${ELB_MEM_REQUEST}"
+            cpu: ${ELB_NUM_CPUS}
+          limits:
+            memory: "${ELB_MEM_LIMIT}"
+            cpu: ${ELB_NUM_CPUS}
+        volumeMounts:
+        - name: blast-dbs
+          mountPath: /blast/blastdb
+          subPath: blast
+        - name: shared-data
+          mountPath: /shared
+        env:
+        - name: BLAST_USAGE_REPORT
+          value: "${BLAST_USAGE_REPORT}"
+        - name: BLAST_ELB_JOB_ID
+          value: "${BLAST_ELB_JOB_ID}"
+        - name: BLAST_ELB_BATCH_NUM
+          value: "${BLAST_ELB_BATCH_NUM}"
+        command: ["/bin/bash", "-c"]
+        args:
+        - echo "BASH version ${BASH_VERSION}";
+          BLAST_RUNTIME=`mktemp`;
+          DATE_NOW=`date -u +${ELB_TIMEFMT}`;
+          blastdbcmd -info -db ${ELB_DB} | awk '/total/ {print $3}' | tr -d , > /shared/results/BLASTDB_LENGTH.out;
+          start=`date +%s`;
+          echo run start ${JOB_NUM} ${ELB_BLAST_PROGRAM} ${ELB_DB};
+          TIME="${DATE_NOW} run start ${JOB_NUM} ${ELB_BLAST_PROGRAM} ${ELB_DB} %e %U %S %P" \time -o ${BLAST_RUNTIME} ${ELB_BLAST_PROGRAM} -db ${ELB_DB} -query /shared/requests/batch_${JOB_NUM}.fa -out /shared/results/batch_${JOB_NUM}-${ELB_BLAST_PROGRAM}-${ELB_DB}.out -num_threads ${ELB_NUM_CPUS} ${ELB_BLAST_OPTIONS};
+          BLAST_EXIT_CODE=$?;
+          end=`date +%s`;
+          printf 'RUNTIME %s %f seconds\n' "blast-job-${JOB_NUM}" $(($end-$start));
+          echo run end ${JOB_NUM} ${BLAST_EXIT_CODE};
+          echo `date -u +${ELB_TIMEFMT}` run exitCode ${JOB_NUM} ${BLAST_EXIT_CODE} >>${BLAST_RUNTIME};
+          echo `date -u +${ELB_TIMEFMT}` run end ${JOB_NUM} >>${BLAST_RUNTIME};
+          gzip /shared/results/batch_${JOB_NUM}-${ELB_BLAST_PROGRAM}-${ELB_DB}.out;
+          cp $BLAST_RUNTIME /shared/results/BLAST_RUNTIME-${JOB_NUM}.out;
+          echo $BLAST_EXIT_CODE > /shared/results/BLAST_EXIT_CODE.out;
+      - name: ${K8S_JOB_RESULTS_EXPORT}
+        image: google/cloud-sdk:slim
+        volumeMounts:
+          - name: shared-data
+            mountPath: /shared
+        command: ["/bin/bash", "-c"]
+        args:
+        - until [ -s /shared/results/BLAST_EXIT_CODE.out ] ; do
+            sleep 1;
+          done;
+          set -ex;
+          ls -1f /shared/results/BLASTDB_LENGTH.out | gsutil -qm cp -I ${BUCKET}/metadata/;
+          gsutil -q cp /shared/results/BLAST_RUNTIME-${JOB_NUM}.out ${BUCKET}/logs/;
+          gsutil -mq cp /shared/results/batch_${JOB_NUM}-${ELB_BLAST_PROGRAM}-${ELB_DB}.out.gz ${BUCKET}/;
+          exit `cat /shared/results/BLAST_EXIT_CODE.out`;
+      restartPolicy: OnFailure
+  backoffLimit: 3

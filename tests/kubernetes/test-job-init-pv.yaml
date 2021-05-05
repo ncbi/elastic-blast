@@ -1,0 +1,28 @@
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: init-pv
+  labels:
+    app: setup-unit-test
+spec:
+  template:
+    metadata:
+      labels:
+        app: setup-unit-test
+    spec:
+      volumes: 
+      - name: blastdb
+        persistentVolumeClaim:
+            claimName: blast-dbs-pvc
+            readOnly: false
+      containers:
+        - name: access-volume
+          image: alpine:latest
+          workingDir: /blast/blastdb
+          volumeMounts:
+          - name: blastdb
+            mountPath: /blast/blastdb
+            readOnly: false
+          command: [ "ls", "/blast/blastdb" ]
+      restartPolicy: Never
+  backoffLimit: 3

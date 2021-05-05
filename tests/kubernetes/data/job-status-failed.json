@@ -1,0 +1,113 @@
+{
+    "apiVersion": "batch/v1",
+    "kind": "Job",
+    "metadata": {
+        "annotations": {
+            "kubectl.kubernetes.io/last-applied-configuration": "{\"apiVersion\":\"batch/v1\",\"kind\":\"Job\",\"metadata\":{\"annotations\":{},\"labels\":{\"app\":\"setup\"},\"name\":\"init-pv\",\"namespace\":\"default\"},\"spec\":{\"backoffLimit\":3,\"template\":{\"metadata\":{\"labels\":{\"app\":\"setup\"}},\"spec\":{\"containers\":[{\"args\":[\"start=`date +%s`; log() { ts=`date +'%F %T'`; printf '%s RUNTIME %s %f seconds\\\\n' \\\"$ts\\\" \\\"$1\\\" \\\"$2\\\" }; update_blastdb.pl pdbnt -decompress --verbose --verbose --verbose --verbose --verbose --verbose; end=`date +%s`; log \\\"download-blastdbs\\\" $(($end-$start));\"],\"command\":[\"/bin/sh\",\"-ce\"],\"image\":\"gcr.io/ncbi-sandbox-blast/ncbi/blast:latest\",\"name\":\"get-blastdb\",\"volumeMounts\":[{\"mountPath\":\"/blast/blastdb\",\"name\":\"blastdb\",\"readOnly\":false}],\"workingDir\":\"/blast/blastdb\"},{\"command\":[\"gsutil\",\"-mq\",\"cp\",\"gs://camacho-test/query_batches/batch_*.fa\",\"/blast/queries/\"],\"image\":\"google/cloud-sdk:slim\",\"name\":\"copy-queries-to-pv\",\"volumeMounts\":[{\"mountPath\":\"/blast/queries\",\"name\":\"blastdb\",\"readOnly\":false}],\"workingDir\":\"/blast/queries\"}],\"restartPolicy\":\"Never\",\"volumes\":[{\"name\":\"blastdb\",\"persistentVolumeClaim\":{\"claimName\":\"blast-dbs-pvc\",\"readOnly\":false}}]}}}}\n"
+        },
+        "creationTimestamp": "2020-05-20T10:34:35Z",
+        "labels": {
+            "app": "setup"
+        },
+        "name": "init-pv",
+        "namespace": "default",
+        "resourceVersion": "1346",
+        "selfLink": "/apis/batch/v1/namespaces/default/jobs/init-pv",
+        "uid": "80246b7b-9a85-11ea-bbdf-42010a9600b5"
+    },
+    "spec": {
+        "backoffLimit": 3,
+        "completions": 1,
+        "parallelism": 1,
+        "selector": {
+            "matchLabels": {
+                "controller-uid": "80246b7b-9a85-11ea-bbdf-42010a9600b5"
+            }
+        },
+        "template": {
+            "metadata": {
+                "creationTimestamp": null,
+                "labels": {
+                    "app": "setup",
+                    "controller-uid": "80246b7b-9a85-11ea-bbdf-42010a9600b5",
+                    "job-name": "init-pv"
+                }
+            },
+            "spec": {
+                "containers": [
+                    {
+                        "args": [
+                            "start=`date +%s`; log() { ts=`date +'%F %T'`; printf '%s RUNTIME %s %f seconds\\n' \"$ts\" \"$1\" \"$2\" }; update_blastdb.pl pdbnt -decompress --verbose --verbose --verbose --verbose --verbose --verbose; end=`date +%s`; log \"download-blastdbs\" $(($end-$start));"
+                        ],
+                        "command": [
+                            "/bin/sh",
+                            "-ce"
+                        ],
+                        "image": "gcr.io/ncbi-sandbox-blast/ncbi/blast:latest",
+                        "imagePullPolicy": "Always",
+                        "name": "get-blastdb",
+                        "resources": {},
+                        "terminationMessagePath": "/dev/termination-log",
+                        "terminationMessagePolicy": "File",
+                        "volumeMounts": [
+                            {
+                                "mountPath": "/blast/blastdb",
+                                "name": "blastdb"
+                            }
+                        ],
+                        "workingDir": "/blast/blastdb"
+                    },
+                    {
+                        "command": [
+                            "gsutil",
+                            "-mq",
+                            "cp",
+                            "gs://camacho-test/query_batches/batch_*.fa",
+                            "/blast/queries/"
+                        ],
+                        "image": "google/cloud-sdk:slim",
+                        "imagePullPolicy": "IfNotPresent",
+                        "name": "copy-queries-to-pv",
+                        "resources": {},
+                        "terminationMessagePath": "/dev/termination-log",
+                        "terminationMessagePolicy": "File",
+                        "volumeMounts": [
+                            {
+                                "mountPath": "/blast/queries",
+                                "name": "blastdb"
+                            }
+                        ],
+                        "workingDir": "/blast/queries"
+                    }
+                ],
+                "dnsPolicy": "ClusterFirst",
+                "restartPolicy": "Never",
+                "schedulerName": "default-scheduler",
+                "securityContext": {},
+                "terminationGracePeriodSeconds": 30,
+                "volumes": [
+                    {
+                        "name": "blastdb",
+                        "persistentVolumeClaim": {
+                            "claimName": "blast-dbs-pvc"
+                        }
+                    }
+                ]
+            }
+        }
+    },
+    "status": {
+        "conditions": [
+            {
+                "lastProbeTime": "2020-05-20T10:36:58Z",
+                "lastTransitionTime": "2020-05-20T10:36:58Z",
+                "message": "Job has reached the specified backoff limit",
+                "reason": "BackoffLimitExceeded",
+                "status": "True",
+                "type": "Failed"
+            }
+        ],
+        "failed": 4,
+        "startTime": "2020-05-20T10:34:35Z"
+    }
+}

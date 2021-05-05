@@ -1,0 +1,61 @@
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: init-pv
+  labels:
+    app: setup
+spec:
+  template:
+    metadata:
+      labels:
+        app: setup
+    spec:
+      volumes:
+      - name: blastdb
+        hostPath:
+          path: "/mnt/disks/ssd0"
+      containers:
+      - name: ${K8S_JOB_GET_BLASTDB}
+        image: ${ELB_DOCKER_IMAGE}
+        workingDir: /blast/blastdb
+        volumeMounts:
+        - name: blastdb
+          mountPath: /blast/blastdb
+          subPath: blast
+        env:
+        - name: BLAST_USAGE_REPORT
+          value: "false"
+        command: ["/bin/bash", "-c"]
+        args:
+        - echo "BASH version ${BASH_VERSION}";
+          start=`date +%s`;
+          log() { ts=`date +'%F %T'`; printf '%s RUNTIME %s %f seconds\n' "$ts" "$1" "$2"; };
+          echo gsutil -mq cp ${ELB_DB_PATH} .;
+          gsutil -mq cp ${ELB_DB_PATH} .;
+          exit_code=$?;
+          [ $exit_code -eq 0 ] || exit $exit_code;
+          [ -f ${ELB_DB}.tar.gz ] && tar xzf ${ELB_DB}.tar.gz;
+          echo gsutil -mq cp ${ELB_TAX_DB_PATH} .;
+          gsutil -mq cp ${ELB_TAX_DB_PATH} .;
+          exit_code=$?;
+          [ $exit_code -eq 0 ] || exit $exit_code;
+          end=`date +%s`;
+          [ -f ${ELB_DB}.tar.gz ] && rm ${ELB_DB}.tar.gz;
+          log "download-blastdbs" $(($end-$start));
+          ls -l;
+          echo blastdbcmd -info -db ${ELB_DB} -dbtype ${ELB_DB_MOL_TYPE};
+          blastdbcmd -info -db ${ELB_DB} -dbtype ${ELB_DB_MOL_TYPE};
+          exit_code=$?;
+          [ $exit_code -eq 0 ] || exit $exit_code;
+          echo blastdbcheck -db ${ELB_DB} -dbtype ${ELB_DB_MOL_TYPE} -no_isam -ends 5 -verbosity 4;
+          blastdbcheck -db ${ELB_DB} -dbtype ${ELB_DB_MOL_TYPE} -no_isam -ends 5 -verbosity 4;
+          exit_code=$?;
+          [ $exit_code -eq 0 ] || exit $exit_code;
+          if [ -n "${ELB_TAXIDLIST}" ] ; then
+              gsutil -mq cp ${ELB_TAXIDLIST} /blast/blastdb;
+              exit_code=$?;
+          fi;
+          exit $exit_code;
+      restartPolicy: Never
+  backoffLimit: 3
