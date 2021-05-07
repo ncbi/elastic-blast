@@ -1,11 +1,17 @@
 # ElasticBLAST
 
-The National Center for Biotechnology (NCBI), part of the National Library of
-Medicine, is making the source code for ElasticBLAST available on GitHub as an
+ElasticBLAST is a cloud-based tool to perform your BLAST searches faster and make you more effective.
+
+ElasticBLAST is ideal for users who have 100,000 or more queries to BLAST and don't want to wait
+ for results.  It distributes your queries to machines in the cloud and runs them more quickly than you could with stand-alone BLAST.
+
+The National Center for Biotechnology ([NCBI](https://www.ncbi.nlm.nih.gov)), part of the National Library of
+Medicine at the NIH, developed and maintains ElasticBLAST.
+
+The NCBI is making the source code for ElasticBLAST available on GitHub as an
 Open Distribution to allow the user community to easily obtain and examine
 that code.  GitHub also provides a means for users to report issues and
 suggest modifications through pull requests. 
-
 
 The NCBI will use internal source code control as the repository of record and
 push regular releases of the ElasticBLAST
