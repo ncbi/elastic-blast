@@ -20,6 +20,9 @@ timeout_minutes=${2:-5}
 logfile=elb.log
 rm -f $logfile
 
+# if set to "false", the script will not download search results
+TEST_RESULTS=${3:-true}
+
 get_num_cores() {
     retval=1
     if which parallel >&/dev/null; then
@@ -60,6 +63,10 @@ while [ $attempts -lt $timeout_minutes ]; do
     sleep 60
     #set -e
 done
+
+if [ $TEST_RESULTS = false ] ; then
+    exit 0
+fi
 
 if ! grep -qi aws $CFG; then
     make logs 2>&1 | tee -a $logfile

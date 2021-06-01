@@ -511,6 +511,11 @@ Resources:
       ComputeEnvironmentOrder:
       - ComputeEnvironment: !Ref ComputeEnvironment
         Order: 1
+      Tags:
+         Project: BLAST
+         billingcode: elastic-blast
+         Owner: !Ref Owner
+         Name: !Join [-, [elasticblast, !Ref Owner, !Ref RandomToken]]
 
   Ec2LaunchTemplate:
     Type: AWS::EC2::LaunchTemplate
@@ -518,6 +523,32 @@ Resources:
       LaunchTemplateName: !Join [-, [elasticblast, !Ref Owner, !Ref RandomToken]]
       LaunchTemplateData:
         EbsOptimized: true
+        UserData:
+          Fn::Base64: !Sub |
+            MIME-Version: 1.0
+            Content-Type: multipart/mixed; boundary="==MYBOUNDARY=="
+
+            --==MYBOUNDARY==
+            Content-Type: text/x-shellscript; charset="us-ascii"
+
+            #!/bin/bash -xe
+
+            yum install -y unzip
+            curl -s "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+            unzip awscliv2.zip
+            ./aws/install
+            rm -f awscliv2.zip
+
+            # Set tags on attached volume
+            AWS_INSTANCE_ID=$(curl -s http://169.254.169.254/latest/meta-data/instance-id)
+            ROOT_VOLUME_IDS=$(aws ec2 describe-instances --region ${AWS::Region} --instance-id $AWS_INSTANCE_ID --output text --query Reservations[0].Instances[0].BlockDeviceMappings[0].Ebs.VolumeId)
+            aws ec2 create-tags --resources $ROOT_VOLUME_IDS --region ${AWS::Region} --tags Key=Name,Value=${AWS::StackName}
+            aws ec2 create-tags --resources $ROOT_VOLUME_IDS --region ${AWS::Region} --tags Key=Owner,Value=${Owner}
+            aws ec2 create-tags --resources $ROOT_VOLUME_IDS --region ${AWS::Region} --tags Key=billingcode,Value=elastic-blast
+            aws ec2 create-tags --resources $ROOT_VOLUME_IDS --region ${AWS::Region} --tags Key=Project,Value=BLAST
+            aws ec2 create-tags --resources $ROOT_VOLUME_IDS --region ${AWS::Region} --tags Key=Created-For-Instance-ID,Value=$AWS_INSTANCE_ID
+
+            --==MYBOUNDARY==
         BlockDeviceMappings:
         - DeviceName: /dev/xvda
           Ebs:
@@ -529,6 +560,15 @@ Resources:
               - ProvisionedIopsRequested
               - !Ref ProvisionedIops
               - !Ref AWS::NoValue
+      TagSpecifications:
+        - ResourceType: launch-template
+          Tags:
+            - Key: Project
+              Value: BLAST
+            - Key: Owner
+              Value: !Ref Owner
+            - Key: billingcode
+              Value: elastic-blast
 
   BlastSearchJobDefinition:
     Type: AWS::Batch::JobDefinition
@@ -582,9 +622,21 @@ Resources:
         # retry on infrastructure problems (including terminated spot instance)
         - OnStatusReason: Host EC2*
           Action: RETRY
-        # no retries for other reasons (like a non-zero exit code)
+        # retry on database-related errors
+        - OnExitCode: 2
+          Action: RETRY
+        # These may occur if burst credits on EBS are exhausted
+        - OnReason: DockerTimeoutError*
+          Action: RETRY
+        - OnReason: CannotInspectContainer*
+          Action: RETRY
         - OnReason: "*"
           Action: EXIT
+      Tags:
+         Project: BLAST
+         billingcode: elastic-blast
+         Owner: !Ref Owner
+         Name: !Join [-, [elasticblast, !Ref Owner, !Ref RandomToken]]
 
 
   # AWS advises to use region-specific IAM resource names. Otherwise using the
@@ -614,6 +666,15 @@ Resources:
           Action: sts:AssumeRole
       ManagedPolicyArns:
       - arn:aws:iam::aws:policy/service-role/AmazonEC2ContainerServiceforEC2Role
+      Tags:
+        - Key: Name
+          Value: !Join [-, [elasticblast, !Ref Owner, !Ref RandomToken]]
+        - Key: Project
+          Value: BLAST
+        - Key: Owner
+          Value: !Ref Owner
+        - Key: billingcode
+          Value: elastic-blast
 
   CreatedBatchServiceRole:
     Type: AWS::IAM::Role
@@ -631,6 +692,15 @@ Resources:
           Action: sts:AssumeRole
       ManagedPolicyArns:
       - arn:aws:iam::aws:policy/service-role/AWSBatchServiceRole
+      Tags:
+        - Key: Name
+          Value: !Join [-, [elasticblast, !Ref Owner, !Ref RandomToken]]
+        - Key: Project
+          Value: BLAST
+        - Key: Owner
+          Value: !Ref Owner
+        - Key: billingcode
+          Value: elastic-blast
 
   CreatedBatchJobRole:
     Type: AWS::IAM::Role
@@ -647,6 +717,15 @@ Resources:
           Action: sts:AssumeRole
       ManagedPolicyArns:
       - arn:aws:iam::aws:policy/AmazonS3FullAccess
+      Tags:
+        - Key: Name
+          Value: !Join [-, [elasticblast, !Ref Owner, !Ref RandomToken]]
+        - Key: Project
+          Value: BLAST
+        - Key: Owner
+          Value: !Ref Owner
+        - Key: billingcode
+          Value: elastic-blast
 
   CreatedSpotFleetRole:
     Type: AWS::IAM::Role
@@ -664,6 +743,15 @@ Resources:
           Action: sts:AssumeRole
       ManagedPolicyArns:
       - arn:aws:iam::aws:policy/service-role/AmazonEC2SpotFleetTaggingRole
+      Tags:
+        - Key: Name
+          Value: !Join [-, [elasticblast, !Ref Owner, !Ref RandomToken]]
+        - Key: Project
+          Value: BLAST
+        - Key: Owner
+          Value: !Ref Owner
+        - Key: billingcode
+          Value: elastic-blast
 
 Outputs:
   JobQueueName:

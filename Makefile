@@ -33,7 +33,7 @@ VENV?=.env
 BLAST_USAGE_REPORT=false
 
 # Cluster/GCP configuration
-ELB_CLUSTER_NAME?=elasticblast-${USER}
+ELB_CLUSTER_NAME?=`make -s results2clustername`
 ELB_NUM_NODES?=1
 # FIXME: should this be made the default? Allow enabling via env. var.? Something else? EB-297
 ELB_USE_PREEMPTIBLE?=
@@ -194,6 +194,8 @@ ELB_TEST_TIMEOUT_BLASTP_NOPAL?=960 # Based on EB-718: 20% more than 13h:20m (i.e
 
 ELB_TEST_TIMEOUT_BLASTN_16S_CHICKEN_GUT_METAGENOME?=10300 # Based on EB-736: 20% more than 143h (i.e.: 8,580 mins)
 
+ELB_TEST_TIMEOUT_BLASTP_NR_SMALL_DARK_MATTER?=45
+
 #############################################################################
 # Real world, performance tests
 
@@ -328,7 +330,7 @@ aws_regression_blastn_non_default_params: elastic-blast
 	-ELB_CLUSTER_NAME=${ELB_CLUSTER_NAME} \
 	ELB_RESULTS=${ELB_RESULTS} \
 		tests/tc-bash-runner.sh tests/integration-test.sh share/etc/elb-aws-blastn-non-default-params.ini ${ELB_TEST_TIMEOUT_MANE_VS_PDBNT}
-	test $$(zcat batch_000.out.gz | wc -l) -eq 5 
+	test $$(zcat batch_000-blastn-pdbnt.out.gz | wc -l) -eq 5 
 
 .PHONY: aws_regression_pdbnt_vs_mane_single_node_sync
 aws_regression_pdbnt_vs_mane_single_node_sync: elastic-blast
@@ -343,12 +345,17 @@ aws_regression_pdbnt_vs_mane_optimal_instance_type: elastic-blast
 	-ELB_RESULTS_BUCKET=${ELB_RESULTS_BUCKET} \
 		tests/tc-bash-runner.sh tests/integration-test.sh share/etc/elb-aws-spot-optimal-instance-type-blastn-pdbnt.ini ${ELB_TEST_TIMEOUT_MANE_VS_PDBNT_OPTIMAL_INSTANCE_TYPE}
 
-.PHONY: aws_regression_nt_vs_hepatitis_multi_node_sync
-aws_regression_nt_vs_hepatitis_multi_node_sync: elastic-blast
-	#-ELB_CLUSTER_NAME=${ELB_CLUSTER_NAME} \
-	#ELB_RESULTS=${ELB_RESULTS} \
-	#	tests/tc-bash-runner.sh tests/integration-test-synchronous.sh share/etc/elb-aws-blastn-nt-8-nodes.ini ${ELB_TEST_TIMEOUT_HEPATITIS_VS_NT}
-	true
+.PHONY: aws_regression_nt_vs_hepatitis_multi_node
+aws_regression_nt_vs_hepatitis_multi_node: elastic-blast
+	-ELB_CLUSTER_NAME=${ELB_CLUSTER_NAME} \
+	ELB_RESULTS=${ELB_RESULTS} \
+		tests/tc-bash-runner.sh tests/integration-test.sh share/etc/elb-aws-blastn-nt-8-nodes.ini ${ELB_TEST_TIMEOUT_HEPATITIS_VS_NT}
+
+.PHONY: aws_regression_blastp_nr_vs_small_dark_matter
+aws_regression_blastp_nr_vs_small_dark_matter: elastic-blast
+	-ELB_CLUSTER_NAME=${ELB_CLUSTER_NAME} \
+	ELB_RESULTS=${ELB_RESULTS} \
+		tests/tc-bash-runner.sh tests/integration-test.sh share/etc/elb-aws-blastp-nr-small-dark-matter.ini ${ELB_TEST_TIMEOUT_BLASTP_NR_SMALL_DARK_MATTER}
 
 .PHONY: aws_regression_blastp_pataa_vs_dark_matter_multi_node_sync
 aws_regression_blastp_pataa_vs_dark_matter_multi_node_sync: elastic-blast
@@ -362,9 +369,9 @@ aws_regression_blastn_taxid_filtering: elastic-blast
 	ELB_CLUSTER_NAME=${ELB_CLUSTER_NAME} \
 	ELB_RESULTS=${ELB_RESULTS} \
 		tests/tc-bash-runner.sh tests/integration-test.sh share/etc/elb-aws-blastn-taxidfiltering.ini ${ELB_TEST_TIMEOUT_MANE_VS_PDBNT}
-	test $$(zcat batch_000.out.gz | grep 246196 | wc -l) -gt 0
-	test $$(zcat batch_000.out.gz | grep 3562 | wc -l) -gt 0
-	test $$(zcat batch_000.out.gz | cut -f 13 | sort | uniq | wc -l) -eq 2 
+	test $$(zcat batch_000-blastn-pdbnt.out.gz | grep 246196 | wc -l) -gt 0
+	test $$(zcat batch_000-blastn-pdbnt.out.gz | grep 3562 | wc -l) -gt 0
+	test $$(zcat batch_000-blastn-pdbnt.out.gz | cut -f 13 | sort | uniq | wc -l) -eq 2 
 
 .PHONY: aws_regression_blastn_multi_file
 aws_regression_blastn_multi_file: elastic-blast
@@ -374,6 +381,14 @@ aws_regression_blastn_multi_file: elastic-blast
 	test $$(cat batch_003.fa | awk '/>/ {print substr($$L, 1, 11);}' | grep SRR5665118 | wc -l) -gt 0
 	test $$(cat batch_003.fa | awk '/>/ {print substr($$L, 1, 11);}' | grep SRR5665119 | wc -l) -gt 0
 	test $$(cat batch_004.fa | awk '/>/ {print substr($$L, 1, 11);}' | grep RFQT0100 | wc -l) -gt 0
+
+.PHONY: aws_regression_failed_db_download
+aws_regression_failed_db_download: elastic-blast
+	ELB_CLUSTER_NAME=${ELB_CLUSTER_NAME} \
+	ELB_RESULTS=${ELB_RESULTS} \
+		tests/tc-bash-runner.sh tests/integration-test.sh share/etc/elb-aws-blastn-corrupted-db.ini ${ELB_TEST_TIMEOUT_MANE_VS_PDBNT} false
+	./elastic-blast run-summary --cfg share/etc/elb-aws-blastn-corrupted-db.ini -l batch-logs >/dev/null
+	test $$(aws batch describe-jobs --jobs $$(cat batch-logs | grep ^job | cut -f 2) | jq .jobs[0].attempts[].container.taskArn | wc -l) -gt 1
 
 .PHONY: regression_blastn_multi_file
 regression_blastn_multi_file: elastic-blast
@@ -806,6 +821,19 @@ monitor:
 	-kubectl top pods --containers
 	kubectl top nodes
 
+# AWS Batch job management
+job_queue?=$(shell aws cloudformation describe-stacks --stack-name ${ELB_CLUSTER_NAME} --region ${ELB_AWS_REGION} --query "Stacks[0].Outputs[?OutputKey=='JobQueueName'].OutputValue" --output text)
+comp_env_name=$(shell aws cloudformation describe-stacks --stack-name ${ELB_CLUSTER_NAME} --region ${ELB_AWS_REGION} --query "Stacks[0].Outputs[?OutputKey=='ComputeEnvironmentName'].OutputValue" --output text)
+job_def=$(shell aws cloudformation describe-stacks --stack-name ${ELB_CLUSTER_NAME} --region ${ELB_AWS_REGION} --query "Stacks[0].Outputs[?OutputKey=='JobDefinitionName'].OutputValue" --output text)
+
+.PHONY: aws-monitor
+aws-monitor: AWS_PAGER=''
+aws-monitor:
+	for s in SUBMITTED PENDING RUNNABLE STARTING RUNNING SUCCEEDED FAILED; do \
+		echo "Checking $$s jobs"; \
+		aws batch list-jobs --region ${ELB_AWS_REGION} --job-queue ${job_queue} --job-status $$s; \
+	done
+
 progress:
 	for status in Pending Running Succeeded Failed; do \
 		echo -n "$$status "; \
@@ -835,6 +863,13 @@ list_resources: init
 	-gcloud compute disks list
 	-gcloud compute instances list
 
+# https://docs.aws.amazon.com/AWSEC2/latest/UserGuide/spot-interruptions.html#finding-an-interrupted-Spot-Instance
+aws_list_interrupted_spot_instances: creds.sh
+	aws ec2 describe-instances \
+		--filters Name=instance-lifecycle,Values=spot Name=instance-state-name,Values=terminated,stopped Name=tag:billingcode,Values=elastic-blast Name=tag:Owner,Values=${USER} \
+			    --query "Reservations[*].Instances[*].InstanceId"
+
+
 aws_list_resources: export AWS_PAGER=
 aws_list_resources: creds.sh
 	-aws cloudformation describe-stacks --stack-name ${ELB_CLUSTER_NAME}
@@ -843,8 +878,9 @@ aws_list_resources: creds.sh
 	-aws batch describe-job-definitions --status ACTIVE --output json
 	-aws batch describe-compute-environments --output json
 
-aws_monitor: creds.sh
-	-source creds.sh && aws batch describe-jobs --jobs `aws s3 cp ${ELB_RESULTS}/metadata/job-ids - | jq -r .[] | tr '\n' ' ' `
+# 100 is the limit on number of arguments to --jobs
+aws_get_100_job_ids: creds.sh
+	-source creds.sh && aws batch describe-jobs --jobs `aws s3 cp ${ELB_RESULTS}/metadata/job-ids.json - | jq -r .[] | head -100 | tr '\n' ' '`
 
 ###############################################################################
 # AWS ElasticBLAST suport
@@ -903,4 +939,4 @@ scrub-code: clouseau_venv
 
 .PHONY: results2clustername
 results2clustername:
-	./share/tools/results2clustername.sh ${ELB_RESULTS}
+	@./share/tools/results2clustername.sh ${ELB_RESULTS}

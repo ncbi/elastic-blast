@@ -33,7 +33,7 @@ from elb import util
 from elb.constants import ELB_DFLT_GCP_MACHINE_TYPE
 from elb.constants import GCP_MAX_LABEL_LENGTH, AWS_MAX_TAG_LENGTH
 from elb.constants import ElbCommand
-from elb.util import get_blastdb_mem_requirements, get_query_batch_size
+from elb.util import get_query_batch_size
 from elb.util import convert_memory_to_mb, get_blastdb_size, sanitize_aws_batch_job_name
 from elb.util import safe_exec, SafeExecError, convert_disk_size_to_gb
 from elb.util import sanitize_gcp_labels, sanitize_for_k8s, sanitize_aws_tag
@@ -76,65 +76,6 @@ class ElbLibTester(unittest.TestCase):
             del os.environ['ELB_BATCH_LEN']
             if original is not None:
                 os.environ['ELB_BATCH_LEN'] = original
-
-    def test_blastdb_mem_reqs_nr(self):
-        expected_request = '92G'
-        expected_limit = '138.0G'
-
-        cfg = create_config_for_db('nr')
-        rv = get_blastdb_mem_requirements(cfg.blast.db, cfg.cluster.machine_type)
-        self.assertIsNotNone(rv)
-        self.assertEqual(rv.mem_request, expected_request)
-        self.assertEqual(rv.mem_limit, expected_limit)
-
-        self.assertGreater(float(rv.mem_limit[:-1]), 0)
-        self.assertGreater(float(rv.mem_request[:-1]), 0)
-
-    def test_blastdb_mem_reqs_unsupported_machine_type(self):
-        cfg = create_config_for_db('this-do-does-not-exist')
-        cfg.cluster.machine_type = 'dummy-machine'
-        with self.assertRaises(NotImplementedError):
-            get_blastdb_mem_requirements(cfg.blast.db, cfg.cluster.machine_type)
-
-    def test_blastdb_mem_reqs_invalid_db(self):
-        cfg = create_config_for_db('this-do-does-not-exist')
-        rv = get_blastdb_mem_requirements(cfg.blast.db, cfg.cluster.machine_type)
-        self.assertEqual(rv.mem_request, '0.5G')
-        self.assertEqual(int(rv.mem_limit[:-1]), int(float(get_machine_properties(cfg.cluster.machine_type).memory) * 0.95))
-
-        self.assertGreater(float(rv.mem_limit[:-1]), 0)
-        self.assertGreater(float(rv.mem_request[:-1]), 0)
-
-    def test_blastdb_mem_reqs_env_var(self):
-        expected_custom_req = '10G'
-        expected_custom_lim = '17G'
-        expected_lim = '96.0G'
-
-        original_req = os.getenv('ELB_MEM_REQUEST')
-        original_lim = os.getenv('ELB_MEM_LIMIT')
-        cfg = create_config_for_db('nt')
-        try:
-            os.environ['ELB_MEM_REQUEST'] = str(expected_custom_req)
-            rv = get_blastdb_mem_requirements(cfg.blast.db,
-                                              cfg.cluster.machine_type)
-            self.assertEqual(rv.mem_request, expected_custom_req)
-            self.assertEqual(rv.mem_limit, expected_lim)
-
-            os.environ['ELB_MEM_LIMIT'] = str(expected_custom_lim)
-            rv = get_blastdb_mem_requirements(cfg.blast.db, cfg.cluster.machine_type)
-            self.assertEqual(rv.mem_request, expected_custom_req)
-            self.assertEqual(rv.mem_limit, expected_custom_lim)
-
-            self.assertGreater(float(rv.mem_limit[:-1]), 0)
-            self.assertGreater(float(rv.mem_request[:-1]), 0)
-        finally:
-            del os.environ['ELB_MEM_REQUEST']
-            if 'ELB_MEM_LIMIT' in os.environ:
-                del os.environ['ELB_MEM_LIMIT']
-            if original_req is not None:
-                os.environ['ELB_MEM_REQUEST'] = original_req
-            if original_lim is not None:
-                os.environ['ELB_MEM_LIMIT'] = original_lim
 
     def test_safe_exec(self):
         text = 'some cool text'

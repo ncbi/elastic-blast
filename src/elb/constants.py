@@ -119,7 +119,7 @@ MOL_TYPE_PROT = 'prot'
 MOL_TYPE_NUCL = 'nucl'
 
 ELB_DFLT_AWS_REGION = 'us-east-1'
-ELB_DOCKER_IMAGE = 'ncbi/elb:0.0.20'
+ELB_DOCKER_IMAGE = 'ncbi/elb:0.0.24'
 ELB_DFLT_AWS_DISK_TYPE = 'gp2'
 # minimal size of gp2 disk which triggers fastest speed
 ELB_DFLT_AWS_PD_SIZE = '334G'

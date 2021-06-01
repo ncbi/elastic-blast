@@ -1,0 +1,16 @@
+{
+    "version": "1.1",
+    "dbname": "swissprot",
+    "dbtype": "Protein",
+    "description": "Non-redundant UniProtKB/SwissProt sequences",
+    "number-of-letters": "180536657",
+    "number-of-sequences": "476618",
+    "files": [
+      "ftp://ftp.ncbi.nlm.nih.gov/blast/db/swissprot.tar.gz"
+    ],
+    "last-updated": "2021-05-03T10:02:19.264333-04:00",
+    "bytes-total": "353180979",
+    "bytes-to-cache": "184826348",
+    "bytes-total-compressed": "186046116",
+    "number-of-volumes": "1"
+}

@@ -31,15 +31,22 @@ import pytest
 TEST_DIR = os.path.join(os.path.dirname(__file__), 'data')
 TEST_LOGS = 'aws-output-sample-aggregate.log'
 TEST_SUMMARY = 'run_summary_sample.json'
+TEST_FAILED_LOGS = 'aws-output-sample-failed-aggregate.log'
+TEST_FAILED_SUMMARY = 'run_summary_sample_failed.json'
+TEST_CASES = [
+    (TEST_LOGS, TEST_SUMMARY),
+    (TEST_FAILED_LOGS, TEST_FAILED_SUMMARY)
+]
 
 @pytest.mark.skipif(os.getenv('TEAMCITY_VERSION') is not None, reason='AWS credentials not set in TC')
 def test_from_logs():
-    proc = subprocess.run([
-        'elastic-blast.py', 'run-summary', '--read-logs', os.path.join(TEST_DIR, TEST_LOGS)
-    ], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-    assert proc.stderr.decode() == ''
-    output = proc.stdout.decode()
-    with open(os.path.join(TEST_DIR, TEST_SUMMARY)) as f:
-        sample = f.read()
-    assert output == sample
-    assert proc.returncode == 0
+    for logs, summary in TEST_CASES:
+        proc = subprocess.run([
+            'elastic-blast.py', 'run-summary', '--read-logs', os.path.join(TEST_DIR, logs)
+        ], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        assert proc.stderr.decode() == ''
+        output = proc.stdout.decode()
+        with open(os.path.join(TEST_DIR, summary)) as f:
+            sample = f.read()
+        assert output == sample
+        assert proc.returncode == 0

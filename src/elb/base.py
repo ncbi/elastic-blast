@@ -98,7 +98,7 @@ class MemoryStr(str):
         str_value = str(value)
         number_re = re.compile(r'^\d+[kKmMgGtT]$|^\d+.\d+[kKmMgGtT]$')
         if not number_re.match(str_value):
-            raise ValueError('Memory request or limit must be specifed by a number followed by a unit, for example 100m')
+            raise ValueError('Memory request or limit must be specified by a number followed by a unit, for example 100m')
         if float(str_value[:-1]) <= 0:
             raise ValueError('Memory request or limit must be larger than zero')
         return super(cls, cls).__new__(cls, str_value)

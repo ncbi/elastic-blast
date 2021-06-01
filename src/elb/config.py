@@ -35,7 +35,7 @@ import configparser
 import getpass
 from hashlib import md5
 from .util import check_positive_int, get_query_batch_size
-from .util import get_blastdb_mem_requirements, ElbSupportedPrograms
+from .util import ElbSupportedPrograms
 from .util import validate_gcp_string, validate_gke_cluster_name
 from .util import validate_aws_region
 from .constants import APP_STATE, CFG_BLAST, CFG_BLAST_BATCH_LEN, CFG_BLAST_DB, CFG_BLAST_DB_MEM_MARGIN, CFG_BLAST_DB_SRC, CFG_BLAST_MEM_LIMIT, CFG_BLAST_MEM_REQUEST, CFG_BLAST_OPTIONS, CFG_BLAST_PROGRAM, CFG_BLAST_QUERY, CFG_BLAST_RESULTS, CFG_CLOUD_PROVIDER, CFG_CLUSTER, CFG_CLUSTER_BID_PERCENTAGE, CFG_CLUSTER_DISK_TYPE, CFG_CLUSTER_DRY_RUN, CFG_CLUSTER_EXP_USE_LOCAL_SSD, CFG_CLUSTER_MACHINE_TYPE, CFG_CLUSTER_MAX_NODES, CFG_CLUSTER_MIN_NODES, CFG_CLUSTER_NAME, CFG_CLUSTER_NUM_CPUS, CFG_CLUSTER_NUM_NODES, CFG_CLUSTER_PD_SIZE, CFG_CLUSTER_PROVISIONED_IOPS, CFG_CLUSTER_RUN_LABEL, CFG_CLUSTER_USE_PREEMPTIBLE, CFG_CP_AWS_REGION, CFG_CP_GCP_NETWORK, CFG_CP_GCP_PROJECT, CFG_CP_GCP_REGION, CFG_CP_GCP_SUBNETWORK, CFG_CP_GCP_ZONE, CFG_CP_NAME, CFG_TIMEOUTS, CFG_TIMEOUT_BLAST_K8S_JOB, CFG_TIMEOUT_INIT_PV
@@ -49,9 +49,6 @@ from .constants import APP_STATE_RESULTS_MD5, SYSTEM_MEMORY_RESERVE
 from .util import UserReportError
 from .filehelper import parse_bucket_name_key
 from typing import List
-from .gcp_traits import get_machine_properties as gcp_get_machine_properties
-from .aws_traits import get_machine_properties as aws_get_machine_properties
-from .aws_traits import create_aws_config
 
 
 def _set_sections(cfg: configparser.ConfigParser) -> None:

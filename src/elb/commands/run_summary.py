@@ -42,8 +42,11 @@ from elb.filehelper import parse_bucket_name_key
 from elb.constants import CLUSTER_ERROR, ELB_AWS_JOB_IDS, ELB_AWS_QUERY_LENGTH, ELB_METADATA_DIR, PERMISSIONS_ERROR
 from elb.constants import ELB_LOG_DIR, CSP, ElbCommand
 
+# Artificial exit codes to differentiate failure modes
+# of AWS job.
 JOB_EXIT_CODE_UNINITIALIZED = -1
 JOB_EXIT_CODE_FAILED_WITH_NO_ATTEMPT = 100000
+JOB_EXIT_CODE_FAILED_WITH_NO_EXIT_CODE = 100001
 
 
 @dataclass
@@ -458,11 +461,14 @@ def _read_job_logs_aws(cfg, write_logs):
                 if len(attempts) > 0:
                     attempt = attempts[-1]
                     container = attempt['container']
-                    job_exit_code = container['exitCode']
-                    created = job['createdAt'] / 1000
-                    started = job['startedAt'] / 1000
-                    stopped = job['stoppedAt'] / 1000
-                    parameters = job['parameters']
+                    if 'exitCode' in container:
+                        job_exit_code = container['exitCode']
+                        created = job['createdAt'] / 1000
+                        started = job['startedAt'] / 1000
+                        stopped = job['stoppedAt'] / 1000
+                        parameters = job['parameters']
+                    else:
+                        job_exit_code = JOB_EXIT_CODE_FAILED_WITH_NO_EXIT_CODE
                 else:
                     # Signal that job failed without attempts
                     job_exit_code = JOB_EXIT_CODE_FAILED_WITH_NO_ATTEMPT

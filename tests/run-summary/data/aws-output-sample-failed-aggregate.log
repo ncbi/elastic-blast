@@ -1,0 +1,483 @@
+AWS job log dump
+query_length	49085274
+instance_type	m5.8xlarge
+instance_vcpus	32
+instance_ram	131072
+min_vcpus	0
+max_vcpus	128
+num_nodes	4
+job	d962594b-e868-4b9e-9d27-2ca926519a83	0	SUCCEEDED
+1620250614504	Start execution
+1620250614504	DB: nr
+1620250614504	DB_PATH: None
+1620250614504	DB_SOURCE: AWS
+1620250614504	QUERY_BATCH: s3://elasticblast-test/queries/viralmeta.fsa
+1620250614504	ELB_NUM_CPUS: 4
+1620250614504	PROGRAM: blastp
+1620250614504	BUCKET: s3://elasticblast-joukovv/cloud_split/viralmeta-split-only
+1620250614504	DB_MOL_TYPE: prot
+1620250614504	BLAST_PARAMS: -outfmt 11
+1620250614504	Start database download
+1620250614504	time update_blastdb.pl nr --source AWS
+1620251759276	Connected to AWS
+1620251759276	1513.71user 16493.93system 19:04.77elapsed 1573%CPU (0avgtext+0avgdata 398556maxresident)k
+1620251759276	424inputs+601037120outputs (0major+17891007minor)pagefaults 0swaps
+1620251759276	End database download
+1620251759276	Start database check
+1620251759276	blastdbcmd -info -db nr -dbtype prot
+1620251759374	Database: All non-redundant GenBank CDS translations+PDB+SwissProt+PIR+PRF excluding environmental samples from WGS projects
+1620251759374	\t391,669,761 sequences; 142,106,433,671 total residues
+1620251759374	Date: Apr 30, 2021  3:09 AM\tLongest sequence: 74,488 residues
+1620251759374	BLASTDB Version: 5
+1620251759374	Volumes:
+1620251759374	\t/blast/blastdb/nr.00
+1620251759374	\t/blast/blastdb/nr.01
+1620251759374	\t/blast/blastdb/nr.02
+1620251759374	\t/blast/blastdb/nr.03
+1620251759374	\t/blast/blastdb/nr.04
+1620251759374	\t/blast/blastdb/nr.05
+1620251759374	\t/blast/blastdb/nr.06
+1620251759374	\t/blast/blastdb/nr.07
+1620251759374	\t/blast/blastdb/nr.08
+1620251759374	\t/blast/blastdb/nr.09
+1620251759374	\t/blast/blastdb/nr.10
+1620251759374	\t/blast/blastdb/nr.11
+1620251759374	\t/blast/blastdb/nr.12
+1620251759374	\t/blast/blastdb/nr.13
+1620251759374	\t/blast/blastdb/nr.14
+1620251759374	\t/blast/blastdb/nr.15
+1620251759374	blastdbcheck -db nr -dbtype prot -no_isam -ends 5
+1620251759374	\t/blast/blastdb/nr.16
+1620251759374	\t/blast/blastdb/nr.17
+1620251759374	\t/blast/blastdb/nr.18
+1620251759374	\t/blast/blastdb/nr.19
+1620251759374	\t/blast/blastdb/nr.20
+1620251759374	\t/blast/blastdb/nr.21
+1620251759374	\t/blast/blastdb/nr.22
+1620251759374	\t/blast/blastdb/nr.23
+1620251759374	\t/blast/blastdb/nr.24
+1620251759374	\t/blast/blastdb/nr.25
+1620251759374	\t/blast/blastdb/nr.26
+1620251759374	\t/blast/blastdb/nr.27
+1620251759374	\t/blast/blastdb/nr.28
+1620251759374	\t/blast/blastdb/nr.29
+1620251759374	\t/blast/blastdb/nr.30
+1620251759374	\t/blast/blastdb/nr.31
+1620251759374	\t/blast/blastdb/nr.32
+1620251759374	\t/blast/blastdb/nr.33
+1620251759374	\t/blast/blastdb/nr.34
+1620251759374	\t/blast/blastdb/nr.35
+1620251759374	\t/blast/blastdb/nr.36
+1620251759374	\t/blast/blastdb/nr.37
+1620251759374	\t/blast/blastdb/nr.38
+1620251759374	\t/blast/blastdb/nr.39
+1620251759374	\t/blast/blastdb/nr.40
+1620251759374	\t/blast/blastdb/nr.41
+1620251759374	\t/blast/blastdb/nr.42
+1620251759374	\t/blast/blastdb/nr.43
+1620251759374	\t/blast/blastdb/nr.44
+1620251760942	Writing messages to <stdout> at verbosity (Summary)
+1620251760942	ISAM testing is DISABLED.
+1620251760942	Legacy testing is DISABLED.
+1620251760942	TaxID testing is DISABLED.
+1620251760942	Testing first 5 and last 5 OIDs.
+1620251760942	Testing 45 volume(s).
+1620251760942	 Result=SUCCESS. No errors reported for 45 volume(s).
+1620251760942	Testing 1 alias(es).
+1620251760942	 Result=SUCCESS. No errors reported for 1 alias(es).
+1620251760942	End database check
+1620251760943	Start database vmtouch
+1620251760943	blastdb_path -dbtype prot -db nr -getvolumespath
+1620251760947	vmtouch -v /blast/blastdb/nr.00.pin /blast/blastdb/nr.00.psq /blast/blastdb/nr.01.pin /blast/blastdb/nr.01.psq /blast/blastdb/nr.02.pin /blast/blastdb/nr.02.psq /blast/blastdb/nr.03.pin /blast/blastdb/nr.03.psq /blast/blastdb/nr.04.pin /blast/blastdb/nr.04.psq /blast/blastdb/nr.05.pin /blast/blastdb/nr.05.psq /blast/blastdb/nr.06.pin /blast/blastdb/nr.06.psq /blast/blastdb/nr.07.pin /blast/blastdb/nr.07.psq /blast/blastdb/nr.08.pin /blast/blastdb/nr.08.psq /blast/blastdb/nr.09.pin /blast/blastdb/nr.09.psq /blast/blastdb/nr.10.pin /blast/blastdb/nr.10.psq /blast/blastdb/nr.11.pin /blast/blastdb/nr.11.psq /blast/blastdb/nr.12.pin /blast/blastdb/nr.12.psq /blast/blastdb/nr.13.pin /blast/blastdb/nr.13.psq /blast/blastdb/nr.14.pin /blast/blastdb/nr.14.psq /blast/blastdb/nr.15.pin /blast/blastdb/nr.15.psq /blast/blastdb/nr.16.pin /blast/blastdb/nr.16.psq /blast/blastdb/nr.17.pin /blast/blastdb/nr.17.psq /blast/blastdb/nr.18.pin /blast/blastdb/nr.18.psq /blast/blastdb/nr.19.pin /blast/blastdb/nr.19.psq /blast/blastdb/nr.20.pin /blast/blastdb/nr.20.psq /blast/blastdb/nr.21.pin /blast/blastdb/nr.21.psq /blast/blastdb/nr.22.pin /blast/blastdb/nr.22.psq /blast/blastdb/nr.23.pin /blast/blastdb/nr.23.psq /blast/blastdb/nr.24.pin /blast/blastdb/nr.24.psq /blast/blastdb/nr.25.pin /blast/blastdb/nr.25.psq /blast/blastdb/nr.26.pin /blast/blastdb/nr.26.psq /blast/blastdb/nr.27.pin /blast/blastdb/nr.27.psq /blast/blastdb/nr.28.pin /blast/blastdb/nr.28.psq /blast/blastdb/nr.29.pin /blast/blastdb/nr.29.psq /blast/blastdb/nr.30.pin /blast/blastdb/nr.30.psq /blast/blastdb/nr.31.pin /blast/blastdb/nr.31.psq /blast/blastdb/nr.32.pin /blast/blastdb/nr.32.psq /blast/blastdb/nr.33.pin /blast/blastdb/nr.33.psq /blast/blastdb/nr.34.pin /blast/blastdb/nr.34.psq /blast/blastdb/nr.35.pin /blast/blastdb/nr.35.psq /blast/blastdb/nr.36.pin /blast/blastdb/nr.36.psq /blast/blastdb/nr.37.pin /blast/blastdb/nr.37.psq /blast/blastdb/nr.38.pin /blast/blastdb/nr.38.psq /blast/blastdb/nr.39.pin /blast/blastdb/nr.39.psq /blast/blastdb/nr.40.pin /blast/blastdb/nr.40.psq /blast/blastdb/nr.41.pin /blast/blastdb/nr.41.psq /blast/blastdb/nr.42.pin /blast/blastdb/nr.42.psq /blast/blastdb/nr.43.pin /blast/blastdb/nr.43.psq /blast/blastdb/nr.44.pin /blast/blastdb/nr.44.psq
+1620251761743	/blast/blastdb/nr.00.pin
+1620251761743	\r[o                            oo                            o] 81/17205\r[o                            oo                            o] 81/17205
+1620251761743	/blast/blastdb/nr.00.psq
+1620251761743	\r[o                                                          o] 49/781982\r[o                                                          o] 49/781982
+1620251761743	/blast/blastdb/nr.01.pin
+1620251761743	\r[o                            o                             o] 81/15551\r[o                            o                             o] 81/15551
+1620251761743	/blast/blastdb/nr.01.psq
+1620251761743	\r[                                                           o] 18/707450\r[                                                           o] 18/707450
+1620251761743	/blast/blastdb/nr.02.pin
+1620251761743	\r[o                            o                             o] 81/13872\r[o                            o                             o] 81/13872
+1620251761743	/blast/blastdb/nr.02.psq
+1620251761743	\r[                                                           o] 17/631036\r[                                                           o] 17/631036
+1620251761743	/blast/blastdb/nr.03.pin
+1620251761743	\r[o                            oo                            o] 81/16677\r[o                            oo                            o] 81/16677
+1620251761743	/blast/blastdb/nr.03.psq
+1620251761743	\r[                                                           o] 18/758531\r[                                                           o] 18/758531
+1620251761743	/blast/blastdb/nr.04.pin
+1620251761743	\r[o                            oo                            o] 81/19978\r[o                            oo                            o] 81/19978
+1620251761743	/blast/blastdb/nr.04.psq
+1620251761743	\r[                                                           o] 17/908474\r[                                                           o] 17/908474
+1620251761743	/blast/blastdb/nr.05.pin
+1620251761743	\r[o                            oo                            o] 81/16233\r[o                            oo                            o] 81/16233
+1620251761743	/blast/blastdb/nr.05.psq
+1620251761743	\r[                                                           o] 17/738068\r[                                                           o] 17/738068
+1620251761743	/blast/blastdb/nr.06.pin
+1620251761743	\r[o                            o                             o] 81/16637\r[o                            o                             o] 81/16637
+1620251761743	/blast/blastdb/nr.06.psq
+1620251761743	\r[                                                           o] 18/756086\r[                                                           o] 18/756086
+1620251761743	/blast/blastdb/nr.07.pin
+1620251761743	\r[o                            o                             o] 81/18075\r[o                            o                             o] 81/18075
+1620251761743	/blast/blastdb/nr.07.psq
+1620251761743	\r[                                                           o] 18/821456\r[                                                           o] 18/821456
+1620251761743	/blast/blastdb/nr.08.pin
+1620251761743	\r[o                            o                             o] 81/17949\r[o                            o                             o] 81/17949
+1620251761743	/blast/blastdb/nr.08.psq
+1620251761743	\r[                                                           o] 18/816300\r[                                                           o] 18/816300
+1620251761743	/blast/blastdb/nr.09.pin
+1620251761743	\r[o                            o                             o] 81/16519\r[o                            o                             o] 81/16519
+1620251761743	/blast/blastdb/nr.09.psq
+1620251761743	\r[                                                           o] 18/751603\r[                                                           o] 18/751603
+1620251761743	/blast/blastdb/nr.10.pin
+1620251761743	\r[o                            oo                            o] 81/21473\r[o                            oo                            o] 81/21473
+1620251761743	/blast/blastdb/nr.10.psq
+1620251761743	\r[                                                           o] 18/976563\r[                                                           o] 18/976563
+1620251761743	/blast/blastdb/nr.11.pin
+1620251761743	\r[o                           oo                            o] 81/2231\r[o                           oo                            o] 81/2231
+1620251761743	/blast/blastdb/nr.11.psq
+1620251761743	\r[                                                           o] 18/101337\r[                                                           o] 18/101337
+1620251761743	/blast/blastdb/nr.12.pin
+1620251761743	\r[o                            o                             o] 81/17120\r[o                            o                             o] 81/17120
+1620251761743	/blast/blastdb/nr.12.psq
+1620251761743	\r[                                                           o] 17/778260\r[                                                           o] 17/778260
+1620251761743	/blast/blastdb/nr.13.pin
+1620251761743	\r[o                            oo                            o] 81/17393\r[o                            oo                            o] 81/17393
+1620251761743	/blast/blastdb/nr.13.psq
+1620251761743	\r[                                                           o] 17/790958\r[                                                           o] 17/790958
+1620251761743	/blast/blastdb/nr.14.pin
+1620251761743	\r[o                            oo                            o] 81/21476\r[o                            oo                            o] 81/21476
+1620251761743	/blast/blastdb/nr.14.psq
+1620251761743	\r[                                                           o] 17/976563\r[                                                           o] 17/976563
+1620251761743	/blast/blastdb/nr.15.pin
+1620251761743	\r[Oo                         oOo                          oO] 81/973\r[Oo                         oOo                          oO] 81/973
+1620251761743	/blast/blastdb/nr.15.psq
+1620251761743	\r[                                                           o] 17/44179\r[                                                           o] 17/44179
+1620251761743	/blast/blastdb/nr.16.pin
+1620251761743	\r[o                            oo                            o] 81/16012\r[o                            oo                            o] 81/16012
+1620251761743	/blast/blastdb/nr.16.psq
+1620251761743	\r[                                                           o] 17/728489\r[                                                           o] 17/728489
+1620251761743	/blast/blastdb/nr.17.pin
+1620251761743	\r[o                            oo                            o] 81/17325\r[o                            oo                            o] 81/17325
+1620251761743	/blast/blastdb/nr.17.psq
+1620251761743	\r[                                                           o] 17/787436\r[                                                           o] 17/787436
+1620251761743	/blast/blastdb/nr.18.pin
+1620251761743	\r[o                            o                             o] 81/18135\r[o                            o                             o] 81/18135
+1620251761743	/blast/blastdb/nr.18.psq
+1620251761743	\r[                                                           o] 17/824862\r[                                                           o] 17/824862
+1620251761743	/blast/blastdb/nr.19.pin
+1620251761743	\r[o                            oo                            o] 81/18877\r[o                            oo                            o] 81/18877
+1620251761743	/blast/blastdb/nr.19.psq
+1620251761743	\r[                                                           o] 18/858565\r[                                                           o] 18/858565
+1620251761743	/blast/blastdb/nr.20.pin
+1620251761743	\r[o                            o                             o] 81/18373\r[o                            o                             o] 81/18373
+1620251761743	/blast/blastdb/nr.20.psq
+1620251761743	\r[                                                           o] 17/835238\r[                                                           o] 17/835238
+1620251761743	/blast/blastdb/nr.21.pin
+1620251761743	\r[o                            oo                            o] 81/19532\r[o                            oo                            o] 81/19532
+1620251761743	/blast/blastdb/nr.21.psq
+1620251761743	\r[                                                           o] 17/888342\r[                                                           o] 17/888342
+1620251761743	/blast/blastdb/nr.22.pin
+1620251761743	\r[o                            oo                            o] 81/16908\r[o                            oo                            o] 81/16908
+1620251761743	/blast/blastdb/nr.22.psq
+1620251761743	\r[                                                           o] 17/768659\r[                                                           o] 17/768659
+1620251761743	/blast/blastdb/nr.23.pin
+1620251761743	\r[o                            o                             o] 81/20820\r[o                            o                             o] 81/20820
+1620251761743	/blast/blastdb/nr.23.psq
+1620251761743	\r[                                                           o] 17/946683\r[                                                           o] 17/946683
+1620251761743	/blast/blastdb/nr.24.pin
+1620251761743	\r[o                            oo                            o] 81/18574\r[o                            oo                            o] 81/18574
+1620251761743	/blast/blastdb/nr.24.psq
+1620251761743	\r[                                                           o] 17/844595\r[                                                           o] 17/844595
+1620251761743	/blast/blastdb/nr.25.pin
+1620251761743	\r[o                            o                             o] 81/19883\r[o                            o                             o] 81/19883
+1620251761743	/blast/blastdb/nr.25.psq
+1620251761743	\r[                                                           o] 17/904346\r[                                                           o] 17/904346
+1620251761743	/blast/blastdb/nr.26.pin
+1620251761743	\r[o                            oo                            o] 81/21456\r[o                            oo                            o] 81/21456
+1620251761743	/blast/blastdb/nr.26.psq
+1620251761743	\r[                                                           o] 18/975503\r[                                                           o] 18/975503
+1620251761743	/blast/blastdb/nr.27.pin
+1620251761743	\r[o                            o                             o] 81/16993\r[o                            o                             o] 81/16993
+1620251761743	/blast/blastdb/nr.27.psq
+1620251761743	\r[                                                           o] 17/772608\r[                                                           o] 17/772608
+1620251761743	/blast/blastdb/nr.28.pin
+1620251761743	\r[o                            oo                            o] 81/21349\r[o                            oo                            o] 81/21349
+1620251761743	/blast/blastdb/nr.28.psq
+1620251761743	\r[                                                           o] 18/970824\r[                                                           o] 18/970824
+1620251761743	/blast/blastdb/nr.29.pin
+1620251761743	\r[o                            o                             o] 81/18496\r[o                            o                             o] 81/18496
+1620251761743	/blast/blastdb/nr.29.psq
+1620251761743	\r[                                                           o] 17/841268\r[                                                           o] 17/841268
+1620251761743	/blast/blastdb/nr.30.pin
+1620251761743	\r[o                            o                             o] 81/20883\r[o                            o                             o] 81/20883
+1620251761743	/blast/blastdb/nr.30.psq
+1620251761743	\r[                                                           o] 17/949986\r[                                                           o] 17/949986
+1620251761743	/blast/blastdb/nr.31.pin
+1620251761743	\r[o                            oo                            o] 81/17087\r[o                            oo                            o] 81/17087
+1620251761743	/blast/blastdb/nr.31.psq
+1620251761743	\r[                                                           o] 17/777165\r[                                                           o] 17/777165
+1620251761743	/blast/blastdb/nr.32.pin
+1620251761743	\r[o                            o                             o] 81/15916\r[o                            o                             o] 81/15916
+1620251761743	/blast/blastdb/nr.32.psq
+1620251761743	\r[                                                           o] 17/724394\r[                                                           o] 17/724394
+1620251761743	/blast/blastdb/nr.33.pin
+1620251761743	\r[o                            o                             o] 81/19561\r[o                            o                             o] 81/19561
+1620251761743	/blast/blastdb/nr.33.psq
+1620251761743	\r[                                                           o] 18/889462\r[                                                           o] 18/889462
+1620251761743	/blast/blastdb/nr.34.pin
+1620251761743	\r[o                            oo                            o] 81/21467\r[o                            oo                            o] 81/21467
+1620251761743	/blast/blastdb/nr.34.psq
+1620251761743	\r[                                                           o] 17/976563\r[                                                           o] 17/976563
+1620251761743	/blast/blastdb/nr.35.pin
+1620251761743	\r[Oo                          oOo                          oO] 81/996\r[Oo                          oOo                          oO] 81/996
+1620251761743	/blast/blastdb/nr.35.psq
+1620251761743	\r[                                                           o] 18/45215\r[                                                           o] 18/45215
+1620251761743	/blast/blastdb/nr.36.pin
+1620251761743	\r[o                            o                             o] 81/19693\r[o                            o                             o] 81/19693
+1620251761743	/blast/blastdb/nr.36.psq
+1620251761743	\r[                                                           o] 17/896018\r[                                                           o] 17/896018
+1620251761743	/blast/blastdb/nr.37.pin
+1620251761743	\r[o                            o                             o] 81/20046\r[o                            o                             o] 81/20046
+1620251761743	/blast/blastdb/nr.37.psq
+1620251761743	\r[                                                           o] 17/911605\r[                                                           o] 17/911605
+1620251761743	/blast/blastdb/nr.38.pin
+1620251761743	\r[o                            oo                            o] 81/15524\r[o                            oo                            o] 81/15524
+1620251761743	/blast/blastdb/nr.38.psq
+1620251761743	\r[                                                           o] 17/706383\r[                                                           o] 17/706383
+1620251761743	/blast/blastdb/nr.39.pin
+1620251761743	\r[o                            oo                            o] 81/14566\r[o                            oo                            o] 81/14566
+1620251761743	/blast/blastdb/nr.39.psq
+1620251761743	\r[                                                           o] 17/662593\r[                                                           o] 17/662593
+1620251761743	/blast/blastdb/nr.40.pin
+1620251761743	\r[o                            oo                            o] 81/19723\r[o                            oo                            o] 81/19723
+1620251761743	/blast/blastdb/nr.40.psq
+1620251761743	\r[                                                           o] 17/896764\r[                                                           o] 17/896764
+1620251761743	/blast/blastdb/nr.41.pin
+1620251761743	\r[o                            oo                            o] 81/16614\r[o                            oo                            o] 81/16614
+1620251761743	/blast/blastdb/nr.41.psq
+1620251761743	\r[                                                           o] 18/755431\r[                                                           o] 18/755431
+1620251761743	/blast/blastdb/nr.42.pin
+1620251761743	\r[o                            oo                            o] 81/17039\r[o                            oo                            o] 81/17039
+1620251761743	/blast/blastdb/nr.42.psq
+1620251761743	\r[                                                           o] 17/774898\r[                                                           o] 17/774898
+1620251761743	/blast/blastdb/nr.43.pin
+1620251761743	\r[o                            o                             o] 81/20954\r[o                            o                             o] 81/20954
+1620251761743	/blast/blastdb/nr.43.psq
+1620251761743	\r[                                                           o] 17/952897\r[                                                           o] 17/952897
+1620251761743	/blast/blastdb/nr.44.pin
+1620251761743	\r[o                            o                             o] 81/12842\r[o                            o                             o] 81/12842
+1620251761743	/blast/blastdb/nr.44.psq
+1620251761743	\r[                                                           o] 17/583958\r[                                                           o] 17/583958
+1620251761743	           Files: 90
+1620251761743	     Directories: 0
+1620251761743	  Resident Pages: 4456/35554602  17M/135G  0.0125%
+1620251761743	         Elapsed: 0.79503 seconds
+1620251761743	End database vmtouch
+1620251764698	End execution
+job	2ac747b8-876d-4e41-944e-22896c4a8cb1	100001	FAILED
+1620250614533	Start execution
+1620250614533	DB: nr
+1620250614533	DB_PATH: None
+1620250614533	DB_SOURCE: AWS
+1620250614533	QUERY_BATCH: s3://elasticblast-test/queries/viralmeta.fsa
+1620250614533	ELB_NUM_CPUS: 4
+1620250614533	PROGRAM: blastp
+1620250614533	BUCKET: s3://elasticblast-joukovv/cloud_split/viralmeta-split-only
+1620250614533	DB_MOL_TYPE: prot
+1620250614533	BLAST_PARAMS: -outfmt 11
+1620251760956	Start database vmtouch
+1620251760956	blastdb_path -dbtype prot -db nr -getvolumespath
+1620251760960	vmtouch -v /blast/blastdb/nr.00.pin /blast/blastdb/nr.00.psq /blast/blastdb/nr.01.pin /blast/blastdb/nr.01.psq /blast/blastdb/nr.02.pin /blast/blastdb/nr.02.psq /blast/blastdb/nr.03.pin /blast/blastdb/nr.03.psq /blast/blastdb/nr.04.pin /blast/blastdb/nr.04.psq /blast/blastdb/nr.05.pin /blast/blastdb/nr.05.psq /blast/blastdb/nr.06.pin /blast/blastdb/nr.06.psq /blast/blastdb/nr.07.pin /blast/blastdb/nr.07.psq /blast/blastdb/nr.08.pin /blast/blastdb/nr.08.psq /blast/blastdb/nr.09.pin /blast/blastdb/nr.09.psq /blast/blastdb/nr.10.pin /blast/blastdb/nr.10.psq /blast/blastdb/nr.11.pin /blast/blastdb/nr.11.psq /blast/blastdb/nr.12.pin /blast/blastdb/nr.12.psq /blast/blastdb/nr.13.pin /blast/blastdb/nr.13.psq /blast/blastdb/nr.14.pin /blast/blastdb/nr.14.psq /blast/blastdb/nr.15.pin /blast/blastdb/nr.15.psq /blast/blastdb/nr.16.pin /blast/blastdb/nr.16.psq /blast/blastdb/nr.17.pin /blast/blastdb/nr.17.psq /blast/blastdb/nr.18.pin /blast/blastdb/nr.18.psq /blast/blastdb/nr.19.pin /blast/blastdb/nr.19.psq /blast/blastdb/nr.20.pin /blast/blastdb/nr.20.psq /blast/blastdb/nr.21.pin /blast/blastdb/nr.21.psq /blast/blastdb/nr.22.pin /blast/blastdb/nr.22.psq /blast/blastdb/nr.23.pin /blast/blastdb/nr.23.psq /blast/blastdb/nr.24.pin /blast/blastdb/nr.24.psq /blast/blastdb/nr.25.pin /blast/blastdb/nr.25.psq /blast/blastdb/nr.26.pin /blast/blastdb/nr.26.psq /blast/blastdb/nr.27.pin /blast/blastdb/nr.27.psq /blast/blastdb/nr.28.pin /blast/blastdb/nr.28.psq /blast/blastdb/nr.29.pin /blast/blastdb/nr.29.psq /blast/blastdb/nr.30.pin /blast/blastdb/nr.30.psq /blast/blastdb/nr.31.pin /blast/blastdb/nr.31.psq /blast/blastdb/nr.32.pin /blast/blastdb/nr.32.psq /blast/blastdb/nr.33.pin /blast/blastdb/nr.33.psq /blast/blastdb/nr.34.pin /blast/blastdb/nr.34.psq /blast/blastdb/nr.35.pin /blast/blastdb/nr.35.psq /blast/blastdb/nr.36.pin /blast/blastdb/nr.36.psq /blast/blastdb/nr.37.pin /blast/blastdb/nr.37.psq /blast/blastdb/nr.38.pin /blast/blastdb/nr.38.psq /blast/blastdb/nr.39.pin /blast/blastdb/nr.39.psq /blast/blastdb/nr.40.pin /blast/blastdb/nr.40.psq /blast/blastdb/nr.41.pin /blast/blastdb/nr.41.psq /blast/blastdb/nr.42.pin /blast/blastdb/nr.42.psq /blast/blastdb/nr.43.pin /blast/blastdb/nr.43.psq /blast/blastdb/nr.44.pin /blast/blastdb/nr.44.psq
+1620251761743	/blast/blastdb/nr.00.pin
+1620251761743	\r[o                            oo                            o] 81/17205\r[o                            oo                            o] 81/17205
+1620251761743	/blast/blastdb/nr.00.psq
+1620251761743	\r[o                                                          o] 49/781982\r[o                                                          o] 49/781982
+1620251761743	/blast/blastdb/nr.01.pin
+1620251761743	\r[o                            o                             o] 81/15551\r[o                            o                             o] 81/15551
+1620251761743	/blast/blastdb/nr.01.psq
+1620251761743	\r[                                                           o] 18/707450\r[                                                           o] 18/707450
+1620251761743	/blast/blastdb/nr.02.pin
+1620251761743	\r[o                            o                             o] 81/13872\r[o                            o                             o] 81/13872
+1620251761743	/blast/blastdb/nr.02.psq
+1620251761743	\r[                                                           o] 17/631036\r[                                                           o] 17/631036
+1620251761743	/blast/blastdb/nr.03.pin
+1620251761743	\r[o                            oo                            o] 81/16677\r[o                            oo                            o] 81/16677
+1620251761743	/blast/blastdb/nr.03.psq
+1620251761743	\r[                                                           o] 18/758531\r[                                                           o] 18/758531
+1620251761743	/blast/blastdb/nr.04.pin
+1620251761743	\r[o                            oo                            o] 81/19978\r[o                            oo                            o] 81/19978
+1620251761743	/blast/blastdb/nr.04.psq
+1620251761743	\r[                                                           o] 17/908474\r[                                                           o] 17/908474
+1620251761743	/blast/blastdb/nr.05.pin
+1620251761743	\r[o                            oo                            o] 81/16233\r[o                            oo                            o] 81/16233
+1620251761743	/blast/blastdb/nr.05.psq
+1620251761743	\r[                                                           o] 17/738068\r[                                                           o] 17/738068
+1620251761743	/blast/blastdb/nr.06.pin
+1620251761743	\r[o                            o                             o] 81/16637\r[o                            o                             o] 81/16637
+1620251761743	/blast/blastdb/nr.06.psq
+1620251761743	\r[                                                           o] 18/756086\r[                                                           o] 18/756086
+1620251761743	/blast/blastdb/nr.07.pin
+1620251761743	\r[o                            o                             o] 81/18075\r[o                            o                             o] 81/18075
+1620251761743	/blast/blastdb/nr.07.psq
+1620251761743	\r[                                                           o] 18/821456\r[                                                           o] 18/821456
+1620251761743	/blast/blastdb/nr.08.pin
+1620251761743	\r[o                            o                             o] 81/17949\r[o                            o                             o] 81/17949
+1620251761743	/blast/blastdb/nr.08.psq
+1620251761743	\r[                                                           o] 18/816300\r[                                                           o] 18/816300
+1620251761743	/blast/blastdb/nr.09.pin
+1620251761743	\r[o                            o                             o] 81/16519\r[o                            o                             o] 81/16519
+1620251761743	/blast/blastdb/nr.09.psq
+1620251761743	\r[                                                           o] 18/751603\r[                                                           o] 18/751603
+1620251761743	/blast/blastdb/nr.10.pin
+1620251761743	\r[o                            oo                            o] 81/21473\r[o                            oo                            o] 81/21473
+1620251761743	/blast/blastdb/nr.10.psq
+1620251761743	\r[                                                           o] 18/976563\r[                                                           o] 18/976563
+1620251761743	/blast/blastdb/nr.11.pin
+1620251761743	\r[o                           oo                            o] 81/2231\r[o                           oo                            o] 81/2231
+1620251761743	/blast/blastdb/nr.11.psq
+1620251761743	\r[                                                           o] 18/101337\r[                                                           o] 18/101337
+1620251761743	/blast/blastdb/nr.12.pin
+1620251761743	\r[o                            o                             o] 81/17120\r[o                            o                             o] 81/17120
+1620251761743	/blast/blastdb/nr.12.psq
+1620251761743	\r[                                                           o] 17/778260\r[                                                           o] 17/778260
+1620251761743	/blast/blastdb/nr.13.pin
+1620251761743	\r[o                            oo                            o] 81/17393\r[o                            oo                            o] 81/17393
+1620251761743	/blast/blastdb/nr.13.psq
+1620251761743	\r[                                                           o] 17/790958\r[                                                           o] 17/790958
+1620251761743	/blast/blastdb/nr.14.pin
+1620251761743	\r[o                            oo                            o] 81/21476\r[o                            oo                            o] 81/21476
+1620251761743	/blast/blastdb/nr.14.psq
+1620251761743	\r[                                                           o] 17/976563\r[                                                           o] 17/976563
+1620251761743	/blast/blastdb/nr.15.pin
+1620251761743	\r[Oo                         oOo                          oO] 81/973\r[Oo                         oOo                          oO] 81/973
+1620251761743	/blast/blastdb/nr.15.psq
+1620251761743	\r[                                                           o] 17/44179\r[                                                           o] 17/44179
+1620251761743	/blast/blastdb/nr.16.pin
+1620251761743	\r[o                            oo                            o] 81/16012\r[o                            oo                            o] 81/16012
+1620251761743	/blast/blastdb/nr.16.psq
+1620251761743	\r[                                                           o] 17/728489\r[                                                           o] 17/728489
+1620251761743	/blast/blastdb/nr.17.pin
+1620251761743	\r[o                            oo                            o] 81/17325\r[o                            oo                            o] 81/17325
+1620251761743	/blast/blastdb/nr.17.psq
+1620251761743	\r[                                                           o] 17/787436\r[                                                           o] 17/787436
+1620251761743	/blast/blastdb/nr.18.pin
+1620251761743	\r[o                            o                             o] 81/18135\r[o                            o                             o] 81/18135
+1620251761743	/blast/blastdb/nr.18.psq
+1620251761743	\r[                                                           o] 17/824862\r[                                                           o] 17/824862
+1620251761743	/blast/blastdb/nr.19.pin
+1620251761743	\r[o                            oo                            o] 81/18877\r[o                            oo                            o] 81/18877
+1620251761743	/blast/blastdb/nr.19.psq
+1620251761743	\r[                                                           o] 18/858565\r[                                                           o] 18/858565
+1620251761743	/blast/blastdb/nr.20.pin
+1620251761743	\r[o                            o                             o] 81/18373\r[o                            o                             o] 81/18373
+1620251761743	/blast/blastdb/nr.20.psq
+1620251761743	\r[                                                           o] 17/835238\r[                                                           o] 17/835238
+1620251761743	/blast/blastdb/nr.21.pin
+1620251761743	\r[o                            oo                            o] 81/19532\r[o                            oo                            o] 81/19532
+1620251761743	/blast/blastdb/nr.21.psq
+1620251761743	\r[                                                           o] 17/888342\r[                                                           o] 17/888342
+1620251761743	/blast/blastdb/nr.22.pin
+1620251761743	\r[o                            oo                            o] 81/16908\r[o                            oo                            o] 81/16908
+1620251761743	/blast/blastdb/nr.22.psq
+1620251761743	\r[                                                           o] 17/768659\r[                                                           o] 17/768659
+1620251761743	/blast/blastdb/nr.23.pin
+1620251761743	\r[o                            o                             o] 81/20820\r[o                            o                             o] 81/20820
+1620251761743	/blast/blastdb/nr.23.psq
+1620251761743	\r[                                                           o] 17/946683\r[                                                           o] 17/946683
+1620251761743	/blast/blastdb/nr.24.pin
+1620251761743	\r[o                            oo                            o] 81/18574\r[o                            oo                            o] 81/18574
+1620251761743	/blast/blastdb/nr.24.psq
+1620251761743	\r[                                                           o] 17/844595\r[                                                           o] 17/844595
+1620251761743	/blast/blastdb/nr.25.pin
+1620251761743	\r[o                            o                             o] 81/19883\r[o                            o                             o] 81/19883
+1620251761743	/blast/blastdb/nr.25.psq
+1620251761743	\r[                                                           o] 17/904346\r[                                                           o] 17/904346
+1620251761743	/blast/blastdb/nr.26.pin
+1620251761743	\r[o                            oo                            o] 81/21456\r[o                            oo                            o] 81/21456
+1620251761743	/blast/blastdb/nr.26.psq
+1620251761743	\r[                                                           o] 18/975503\r[                                                           o] 18/975503
+1620251761743	/blast/blastdb/nr.27.pin
+1620251761743	\r[o                            o                             o] 81/16993\r[o                            o                             o] 81/16993
+1620251761743	/blast/blastdb/nr.27.psq
+1620251761743	\r[                                                           o] 17/772608\r[                                                           o] 17/772608
+1620251761743	/blast/blastdb/nr.28.pin
+1620251761743	\r[o                            oo                            o] 81/21349\r[o                            oo                            o] 81/21349
+1620251761743	/blast/blastdb/nr.28.psq
+1620251761743	\r[                                                           o] 18/970824\r[                                                           o] 18/970824
+1620251761743	/blast/blastdb/nr.29.pin
+1620251761743	\r[o                            o                             o] 81/18496\r[o                            o                             o] 81/18496
+1620251761743	/blast/blastdb/nr.29.psq
+1620251761743	\r[                                                           o] 17/841268\r[                                                           o] 17/841268
+1620251761743	/blast/blastdb/nr.30.pin
+1620251761743	\r[o                            o                             o] 81/20883\r[o                            o                             o] 81/20883
+1620251761743	/blast/blastdb/nr.30.psq
+1620251761743	\r[                                                           o] 17/949986\r[                                                           o] 17/949986
+1620251761743	/blast/blastdb/nr.31.pin
+1620251761743	\r[o                            oo                            o] 81/17087\r[o                            oo                            o] 81/17087
+1620251761743	/blast/blastdb/nr.31.psq
+1620251761743	\r[                                                           o] 17/777165\r[                                                           o] 17/777165
+1620251761743	/blast/blastdb/nr.32.pin
+1620251761743	\r[o                            o                             o] 81/15916\r[o                            o                             o] 81/15916
+1620251761743	/blast/blastdb/nr.32.psq
+1620251761743	\r[                                                           o] 17/724394\r[                                                           o] 17/724394
+1620251761743	/blast/blastdb/nr.33.pin
+1620251761743	\r[o                            o                             o] 81/19561\r[o                            o                             o] 81/19561
+1620251761743	/blast/blastdb/nr.33.psq
+1620251761743	\r[                                                           o] 18/889462\r[                                                           o] 18/889462
+1620251761743	/blast/blastdb/nr.34.pin
+1620251761743	\r[o                            oo                            o] 81/21467\r[o                            oo                            o] 81/21467
+1620251761743	/blast/blastdb/nr.34.psq
+1620251761743	\r[                                                           o] 17/976563\r[                                                           o] 17/976563
+1620251761743	/blast/blastdb/nr.35.pin
+1620251761743	\r[Oo                          oOo                          oO] 81/996\r[Oo                          oOo                          oO] 81/996
+1620251761743	/blast/blastdb/nr.35.psq
+1620251761743	\r[                                                           o] 18/45215\r[                                                           o] 18/45215
+1620251761743	/blast/blastdb/nr.36.pin
+1620251761743	\r[o                            o                             o] 81/19693\r[o                            o                             o] 81/19693
+1620251761743	/blast/blastdb/nr.36.psq
+1620251761743	\r[                                                           o] 17/896018\r[                                                           o] 17/896018
+1620251761743	/blast/blastdb/nr.37.pin
+1620251761743	\r[o                            o                             o] 81/20046\r[o                            o                             o] 81/20046
+1620251761743	/blast/blastdb/nr.37.psq
+1620251761743	\r[                                                           o] 17/911605\r[                                                           o] 17/911605
+1620251761743	/blast/blastdb/nr.38.pin
+1620251761743	\r[o                            oo                            o] 81/15524\r[o                            oo                            o] 81/15524
+1620251761743	/blast/blastdb/nr.38.psq
+1620251761743	\r[                                                           o] 17/706383\r[                                                           o] 17/706383
+1620251761743	/blast/blastdb/nr.39.pin
+1620251761743	\r[o                            oo                            o] 81/14566\r[o                            oo                            o] 81/14566
+1620251761743	/blast/blastdb/nr.39.psq
+1620251761743	\r[                                                           o] 17/662593\r[                                                           o] 17/662593
+1620251761743	/blast/blastdb/nr.40.pin
+1620251761743	\r[o                            oo                            o] 81/19723\r[o                            oo                            o] 81/19723
+1620251761743	/blast/blastdb/nr.40.psq
+1620251761743	\r[                                                           o] 17/896764\r[                                                           o] 17/896764
+1620251761743	/blast/blastdb/nr.41.pin
+1620251761743	\r[o                            oo                            o] 81/16614\r[o                            oo                            o] 81/16614
+1620251761743	/blast/blastdb/nr.41.psq
+1620251761743	\r[                                                           o] 18/755431\r[                                                           o] 18/755431
+1620251761743	/blast/blastdb/nr.42.pin
+1620251761743	\r[o                            oo                            o] 81/17039\r[o                            oo                            o] 81/17039
+1620251761743	/blast/blastdb/nr.42.psq
+1620251761743	\r[                                                           o] 17/774898\r[                                                           o] 17/774898
+1620251761743	/blast/blastdb/nr.43.pin
+1620251761743	\r[o                            o                             o] 81/20954\r[o                            o                             o] 81/20954
+1620251761743	/blast/blastdb/nr.43.psq
+1620251761743	\r[                                                           o] 17/952897\r[                                                           o] 17/952897
+1620251761743	/blast/blastdb/nr.44.pin
+1620251761743	\r[o                            o                             o] 81/12842\r[o                            o                             o] 81/12842
+1620251761743	/blast/blastdb/nr.44.psq
+1620251761743	\r[                                                           o] 17/583958\r[                                                           o] 17/583958
+1620251761743	           Files: 90
+1620251761743	     Directories: 0
+1620251761743	  Resident Pages: 4456/35554602  17M/135G  0.0125%
+1620251761743	         Elapsed: 0.7809 seconds
+1620251761743	End database vmtouch
+1620251761743	Start queries download
+1620251761743	aws s3 cp s3://elasticblast-test/queries/viralmeta.fsa .
+1620251762705	End queries download
+1620251762706	Start query splitting, part 4 of 4909
+1620251762706	/blast/bin/fasta-splitter.pl --measure seq --zero --fixpad 3 --out-dir parts --base batch --part-num-prefix _ --n-parts 4909 viralmeta.fsa
+1620251764677	End query splitting
+1620251764677	End execution
