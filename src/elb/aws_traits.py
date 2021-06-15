@@ -62,6 +62,8 @@ def get_machine_properties(instance_type: str, boto_cfg: Config = None) -> Insta
 
     Raises botocore.exceptions.ClientError if the instance type is invalid
     """
+    if instance_type.lower() == 'optimal':
+        raise ValueError('optimal instance type is not supported in get_machine_properties')
     ec2 = boto3.client('ec2') if boto_cfg == None else boto3.client('ec2', config=boto_cfg)
     try:
         rv = ec2.describe_instance_types(InstanceTypes=[instance_type])

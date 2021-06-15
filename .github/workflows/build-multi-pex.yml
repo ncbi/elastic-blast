@@ -1,0 +1,91 @@
+name: Build elastic-blast PEX files
+
+on: [push, pull_request]
+
+jobs:
+  build-single:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: [3.7]
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v2
+        with:
+          fetch-depth: 0
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v2
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Build PEX file
+        run: |
+            pip3 install -r requirements/test.txt
+            pex --python-shebang='/usr/bin/env python3' --disable-cache . -r requirements/base.txt --python=python${{ matrix.python-version }} -c elastic-blast.py -o elastic-blast
+            ./elastic-blast --version
+            ls -l elastic-blast
+            md5sum elastic-blast > elastic-blast.md5
+      - name: Create tarball
+        run: tar -czvf elastic-blast-no-suffix.tar.gz elastic-blast elastic-blast.md5
+      - name: Produce downloadable artifact
+        uses: actions/upload-artifact@v2
+        with:
+          name: elastic-blast-no-suffix
+          path: elastic-blast-no-suffix.tar.gz
+          retention-days: 1
+
+  build-multiple:
+    runs-on: ubuntu-latest
+    strategy:
+      matrix:
+        python-version: [3.7, 3.8, 3.9]
+
+    steps:
+
+      - name: Checkout
+        uses: actions/checkout@v2
+        with:
+          fetch-depth: 0
+      - name: Set up Python ${{ matrix.python-version }}
+        uses: actions/setup-python@v2
+        with:
+          python-version: ${{ matrix.python-version }}
+      - name: Build PEX file
+        run: |
+            pip3 install -r requirements/test.txt
+            pex --python-shebang='/usr/bin/env python3' --disable-cache . -r requirements/base.txt --python=python${{ matrix.python-version }} -c elastic-blast.py -o elastic-blast${{ matrix.python-version }}
+            ./elastic-blast${{ matrix.python-version }} --version
+            ls -l ./elastic-blast${{ matrix.python-version }}
+            md5sum elastic-blast${{ matrix.python-version }} > elastic-blast${{ matrix.python-version }}.md5
+      - name: Create tarball
+        run: tar -czvf elastic-blast${{ matrix.python-version }}.tar.gz elastic-blast${{ matrix.python-version }} elastic-blast${{ matrix.python-version }}.md5
+      - name: Produce downloadable artifact
+        uses: actions/upload-artifact@v2
+        with:
+          name: elastic-blast-${{ matrix.python-version }}
+          path: elastic-blast${{ matrix.python-version }}.tar.gz
+          retention-days: 1
+
+  produce-archive:
+    needs: [build-single, build-multiple]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v2
+      - name: Download artifacts
+        uses: actions/download-artifact@v2
+      - name: Display structure of downloaded files
+        run: ls -lR
+      - name: Create tarball
+        run: |
+          tar axvf elastic-blast-no-suffix/elastic-blast-no-suffix.tar.gz
+          tar axvf elastic-blast-3.7/elastic-blast3.7.tar.gz
+          tar axvf elastic-blast-3.8/elastic-blast3.8.tar.gz
+          tar axvf elastic-blast-3.9/elastic-blast3.9.tar.gz
+          rm -fvr elastic-blast-*.tar.gz
+          tar -czvf ~/elastic-blast.tar.gz elastic-blast elastic-blast*md5 elastic-blast3.[789]
+      - name: 'Upload Artifact'
+        uses: actions/upload-artifact@v2
+        with:
+          name: elastic-blast
+          path: ~/elastic-blast.tar.gz
+

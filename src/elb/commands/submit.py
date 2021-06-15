@@ -1,13 +1,13 @@
 #                           PUBLIC DOMAIN NOTICE
 #              National Center for Biotechnology Information
-#  
+#
 # This software is a "United States Government Work" under the
 # terms of the United States Copyright Act.  It was written as part of
 # the authors' official duties as United States Government employees and
 # thus cannot be copyrighted.  This software is freely available
 # to the public for use.  The National Library of Medicine and the U.S.
 # Government have not placed any restriction on its use or reproduction.
-#   
+#
 # Although all reasonable efforts have been taken to ensure the accuracy
 # and reliability of the software and data, the NLM and the U.S.
 # Government do not and cannot warrant the performance or results that
@@ -15,7 +15,7 @@
 # Government disclaim all warranties, express or implied, including
 # warranties of performance, merchantability or fitness for any particular
 # purpose.
-#   
+#
 # Please cite NCBI in any work or product based on this material.
 
 """
@@ -26,22 +26,22 @@ Created: Wed 22 Apr 2020 06:31:30 AM EDT
 """
 import os
 import logging
-import time
 from tempfile import TemporaryDirectory
 from pathlib import Path
 from timeit import default_timer as timer
 import uuid
-import configparser
 from typing import List, Tuple
 
 from elb.resources.quotas.quota_check import check_resource_quotas
 from elb.aws import ElasticBlastAws
+from elb.aws import check_cluster as aws_check_cluster
 from elb.filehelper import open_for_read, open_for_read_iter, copy_to_bucket
-from elb.filehelper import check_for_read, check_dir_for_write
+from elb.filehelper import check_for_read, check_dir_for_write, cleanup_temp_bucket_dirs
 from elb.split import FASTAReader
 from elb.jobs import read_job_template, write_job_files
 from elb.gcp import get_gke_credentials, delete_cluster_with_cleanup
-from elb.gcp import enable_gcp_api, start_cluster, check_cluster
+from elb.gcp import enable_gcp_api, start_cluster
+from elb.gcp import check_cluster as gcp_check_cluster
 from elb.gcp import remove_split_query
 from elb.gcp_traits import get_machine_properties
 from elb.kubernetes import initialize_storage, submit_jobs
@@ -50,11 +50,11 @@ from elb.status import get_status
 from elb.util import get_blastdb_size, UserReportError, ElbSupportedPrograms
 from elb.util import get_blastdb_info
 from elb.util import get_usage_reporting
-from elb.constants import K8S_JOB_BLAST, K8S_JOB_GET_BLASTDB, K8S_JOB_RESULTS_EXPORT
+from elb.constants import ELB_AWS_JOB_IDS, ELB_METADATA_DIR, ELB_STATE_DISK_ID_FILE, K8S_JOB_BLAST, K8S_JOB_GET_BLASTDB, K8S_JOB_RESULTS_EXPORT
 from elb.constants import K8S_JOB_IMPORT_QUERY_BATCHES, K8S_JOB_LOAD_BLASTDB_INTO_RAM
 from elb.constants import ELB_QUERY_BATCH_DIR, BLASTDB_ERROR, INPUT_ERROR
 from elb.constants import PERMISSIONS_ERROR, CLUSTER_ERROR, CSP
-from elb.constants import ELB_DOCKER_IMAGE, ELB_TAXIDLIST_FILE, QUERY_LIST_EXT
+from elb.constants import ELB_DOCKER_IMAGE, QUERY_LIST_EXT
 from elb.constants import ElbCommand
 from elb.taxonomy import setup_taxid_filtering
 from elb.config import validate_cloud_storage_object_uri
@@ -72,6 +72,15 @@ def submit(args, cfg, clean_up_stack):
         check_resource_quotas(cfg)
     else:
         enable_gcp_api(cfg)
+    
+    if check_running_cluster(cfg):
+        raise UserReportError(CLUSTER_ERROR,
+            'An ElasticBLAST search that will write results to '
+            f'{cfg.cluster.results} has already been submitted.\n'
+            'Please resubmit your search with a different value '
+            'for "results" configuration parameter or delete '
+            'the previous ElasticBLAST search by running elastic-blast delete.')
+
 
     query_files = assemble_query_file_list(cfg)
     check_submit_data(query_files, cfg)
@@ -79,9 +88,8 @@ def submit(args, cfg, clean_up_stack):
     #mode_str = "synchronous" if args.sync else "asynchronous"
     #logging.info(f'Running ElasticBLAST on {cfg.cloud_provider.cloud.name} in {mode_str} mode')
 
-    cluster_name = cfg.cluster.name
-
     # split FASTA query into batches
+    clean_up_stack.append(cleanup_temp_bucket_dirs)
     queries, query_length = split_query(query_files, cfg)
 
     # setup taxonomy filtering, if requested
@@ -95,10 +103,6 @@ def submit(args, cfg, clean_up_stack):
         elastic_blast.submit(queries)
         return 0
 
-    status = check_cluster(cfg)
-    if status:
-        logging.error(f'Previous instance of cluster {cluster_name} is still {status}')
-        return CLUSTER_ERROR
 
     k8s_job_limit = get_maximum_number_of_allowed_k8s_jobs(dry_run)
 
@@ -196,6 +200,35 @@ def submit(args, cfg, clean_up_stack):
     clean_up_stack.clear()
     clean_up_stack.append(lambda: collect_k8s_logs(cfg))
     return 0
+
+
+def check_running_cluster(cfg: ElasticBlastConfig) -> bool:
+    """ Check that the cluster with same name as configured is
+        not already running and that results bucket doesn't have
+        metadata directory
+
+        Returns: true if cluster is running or results are used
+                 false if neither cluster is running nor results
+                 are present
+    """
+    metadata_dir = os.path.join(cfg.cluster.results, ELB_METADATA_DIR)
+    if cfg.cloud_provider.cloud == CSP.AWS:
+        metadata_file = os.path.join(metadata_dir, ELB_AWS_JOB_IDS)
+    else:
+        metadata_file = os.path.join(metadata_dir, ELB_STATE_DISK_ID_FILE)
+    try:
+        check_for_read(metadata_file)
+        return True
+    except FileNotFoundError:
+        pass
+    if cfg.cloud_provider.cloud == CSP.AWS:
+        return aws_check_cluster(cfg)
+    else:
+        status = gcp_check_cluster(cfg)
+        if status:
+            logging.error(f'Previous instance of cluster {cfg.cluster.name} is still {status}')
+            return True
+        return False
 
 
 def initialize_cluster(cfg: ElasticBlastConfig, db: str, db_path: str, clean_up_stack):
@@ -323,4 +356,3 @@ def assemble_query_file_list(cfg: ElasticBlastConfig) -> List[str]:
         raise UserReportError(returncode=INPUT_ERROR, message=('\n'.join(msg)))
 
     return query_files
-                             

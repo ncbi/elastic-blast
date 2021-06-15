@@ -1,13 +1,13 @@
 #                           PUBLIC DOMAIN NOTICE
 #              National Center for Biotechnology Information
-#  
+#
 # This software is a "United States Government Work" under the
 # terms of the United States Copyright Act.  It was written as part of
 # the authors' official duties as United States Government employees and
 # thus cannot be copyrighted.  This software is freely available
 # to the public for use.  The National Library of Medicine and the U.S.
 # Government have not placed any restriction on its use or reproduction.
-#   
+#
 # Although all reasonable efforts have been taken to ensure the accuracy
 # and reliability of the software and data, the NLM and the U.S.
 # Government do not and cannot warrant the performance or results that
@@ -15,7 +15,7 @@
 # Government disclaim all warranties, express or implied, including
 # warranties of performance, merchantability or fitness for any particular
 # purpose.
-#   
+#
 # Please cite NCBI in any work or product based on this material.
 
 """
@@ -38,8 +38,10 @@ import urllib.request
 from string import digits
 from random import sample
 from typing import Dict, IO, Tuple, Iterable, Generator, TextIO
+
+import boto3  # type: ignore
+from botocore.exceptions import ClientError  # type: ignore
 from .util import safe_exec, SafeExecError
-import boto3 # type: ignore
 
 
 def upload_file_to_gcs(filename: str, gcs_location: str, dry_run: bool = False) -> None:
@@ -56,25 +58,29 @@ bucket_temp_dirs: Dict[str, str] = {}
 
 def copy_to_bucket(dry_run: bool = False):
     """ Copy files open in temp local dirs to corresponding places in gs.
-    Works in concert with open_for_write.
+        Works in concert with open_for_write.
+        Parameters:
+            dry_run - simulate action, don't do anything, default False
     """
     global bucket_temp_dirs # FIXME: remove global variables from library code
     s3 = boto3.resource('s3')
-    for bucket_dir, tempdir in bucket_temp_dirs.items():
-        # gsutil -mq cp tempdir/* bucket_dir/
-        if bucket_dir.startswith('gs:'):
-            if bucket_dir[-1] != '/': bucket_dir += '/'
+    # NB: Here we need to provide stable list of keys in
+    # dictionary while deleting processed keys, hence list(keys())
+    for bucket_key in list(bucket_temp_dirs.keys()):
+        tempdir = bucket_temp_dirs[bucket_key]
+        # gsutil -mq cp tempdir/* bucket_key/
+        if bucket_key.startswith('gs:'):
+            bucket_dir = bucket_key + ('/' if bucket_key[-1] != '/' else '')
             cmd = ['gsutil', '-mq', 'cp', '-r', "%s/*" % tempdir, bucket_dir]
             if dry_run:
                 logging.info(cmd)
             else:
                 safe_exec(cmd)
-                shutil.rmtree(tempdir)
-        elif bucket_dir.startswith('s3:'):
+        elif bucket_key.startswith('s3:'):
             if dry_run:
-                logging.info(f'Copy to bucket prefix {bucket_dir}')
+                logging.info(f'Copy to bucket prefix {bucket_key}')
             else:
-                bucket_name, prefix = parse_bucket_name_key(bucket_dir)
+                bucket_name, prefix = parse_bucket_name_key(bucket_key)
                 bucket = s3.Bucket(bucket_name)
                 num_files = len(os.listdir(path=tempdir))
                 for i, fn in enumerate(os.listdir(path=tempdir)):
@@ -86,7 +92,29 @@ def copy_to_bucket(dry_run: bool = False):
                     logging.debug(f'Uploading {os.path.join(tempdir, fn)} to s3://{bucket_name}/{full_name} file # {i} of {num_files} {perc_done:.2f}% done')
                     bucket.upload_file(os.path.join(tempdir, fn), full_name)
         else:
-            raise ValueError(f'Incorrect bucket prefix {bucket_dir}')
+            raise ValueError(f'Incorrect bucket prefix {bucket_key}')
+        logging.debug(f'Removing temp directory {tempdir}')
+        shutil.rmtree(tempdir)
+        bucket_temp_dirs.pop(bucket_key)
+
+
+def cleanup_temp_bucket_dirs(dry_run: bool = False):
+    """ Cleanup temp dirs created for bucket open_for_write.
+        Safety function in case we didn't call copy_to_bucket
+        Parameters:
+            dry_run - simulate action, don't do anything, default False
+    """
+    global bucket_temp_dirs # FIXME: remove global variables from library code
+    if dry_run:
+        return
+    # NB: Here we need to provide stable list of keys in
+    # dictionary while deleting processed keys, hence list(keys())
+    for bucket_dir in list(bucket_temp_dirs.keys()):
+        tempdir = bucket_temp_dirs[bucket_dir]
+        logging.debug(f'Cleaning up tempdir {tempdir}')
+        shutil.rmtree(tempdir, ignore_errors=True)
+        bucket_temp_dirs.pop(bucket_dir)
+
 
 def random_filename():
     return f'.random-probe-{"".join(sample(digits, 10))}'
@@ -108,7 +136,7 @@ def check_dir_for_write(dirname: str, dry_run=False) -> None:
             if proc.returncode:
                 raise PermissionError(proc.returncode, err.decode())
             safe_exec(f'gsutil -q rm {test_file_name}')
-        except SafeExecError as e:        
+        except SafeExecError as e:
             raise PermissionError(e.returncode, e.message)
         return
     # AWS
@@ -127,8 +155,9 @@ def check_dir_for_write(dirname: str, dry_run=False) -> None:
 
 
 def open_for_write(fname):
-    """ Open file on either local (no prefix) or GS (gs:// prefix) filesystem
-    for write in text mode.
+    """ Open file on either local (no prefix), GS (gs:// prefix), or AWS S3 (s3://)
+        filesystem for write in text mode. Postpones actual copy to buckets until
+        copy_to_bucket is called.
     """
     global bucket_temp_dirs
     if fname.startswith('gs:') or fname.startswith('s3:'):
@@ -143,14 +172,9 @@ def open_for_write(fname):
             tempdir = bucket_temp_dirs[bucket_dir]
         else:
             tempdir = tempfile.mkdtemp()
+            logging.debug(f'Create tempdir {tempdir} for bucket {bucket_dir}')
             bucket_temp_dirs[bucket_dir] = tempdir
         return open(os.path.join(tempdir, filename), 'wt')
-        # Old way - one by one pipe to gsutil. Slow on large number
-        # of files.
-        # proc = subprocess.Popen(['gsutil', 'cp', '-', fname],
-        #     stdin=subprocess.PIPE, stderr=subprocess.DEVNULL,
-        #     universal_newlines=True)
-        # return proc.stdin
     # file on a regular filesystem
     last_sep = fname.rfind('/')
     if last_sep > 0:
@@ -183,23 +207,23 @@ class TarMerge(io.TextIOWrapper):
     def __init__(self, tar):
         self.tar = tar
         self.reader = tar_reader(tar)
-    
+
     def __iter__(self):
         return self
-    
+
     def __next__(self):
         return next(self.reader)
 
     def __enter__(self):
         return self
-    
+
     def __exit__(self, *args):
         self.tar.close()
         return False
-    
+
     def read(self):
         return ''.join(list(self))
-    
+
     def readline(self):
         return next(self.reader)
 
@@ -240,8 +264,11 @@ def check_for_read(fname: str, dry_run=False) -> None:
             return
         s3 = boto3.resource('s3')
         bucket, key = parse_bucket_name_key(fname)
-        obj = s3.Object(bucket, key)
-        obj.load()
+        try:
+            obj = s3.Object(bucket, key)
+            obj.load()
+        except ClientError as exn:
+            raise FileNotFoundError(1, str(exn))
         return
     if fname.startswith('http') or fname.startswith('ftp:'):
         if dry_run:
@@ -310,7 +337,7 @@ def open_for_read_iter(fnames: Iterable[str]) -> Generator[TextIO, None, None]:
     for fname in fnames:
         with open_for_read(fname) as f:
             yield f
-        
+
 
 def get_error(fileobj):
     global error_report_funcs

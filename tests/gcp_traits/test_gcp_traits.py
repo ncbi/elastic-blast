@@ -25,14 +25,15 @@ Author: Victor Joukov joukovv@ncbi.nlm.nih.gov
 """
 from elb.gcp_traits import get_machine_properties
 from elb.base import InstanceProperties
+import pytest
 
 def test_ram():
     assert get_machine_properties('n1-standard-32') == InstanceProperties(32, 120)
 
+def test_unsupported_instance_type_optimal():
+    with pytest.raises(NotImplementedError):
+        get_machine_properties('optimal')
+
 def test_not_found():
-    try:
+    with pytest.raises(KeyError):
         get_machine_properties('n1-nonstandard-32')
-    except KeyError:
-        assert True
-    else:
-        assert False

@@ -75,6 +75,10 @@ ELB_TAXIDLIST_FILE = 'taxidlist.txt'
 ELB_AWS_JOB_IDS = 'job-ids.json'
 ELB_AWS_QUERY_LENGTH = 'query_length.txt'
 
+# These values indicate that a field has not been configured by the end user
+ELB_NOT_INITIALIZED_NUM = 2**32
+ELB_NOT_INITIALIZED_MEM = '4294967296T'
+
 # Timeouts in minutes
 ELB_DFLT_BLAST_K8S_TIMEOUT = 10080  # 1 week
 ELB_DFLT_INIT_PV_TIMEOUT = 45
@@ -119,7 +123,7 @@ MOL_TYPE_PROT = 'prot'
 MOL_TYPE_NUCL = 'nucl'
 
 ELB_DFLT_AWS_REGION = 'us-east-1'
-ELB_DOCKER_IMAGE = 'ncbi/elb:0.0.24'
+ELB_DOCKER_IMAGE = 'ncbi/elb:0.0.25'
 ELB_DFLT_AWS_DISK_TYPE = 'gp2'
 # minimal size of gp2 disk which triggers fastest speed
 ELB_DFLT_AWS_PD_SIZE = '334G'

@@ -25,11 +25,12 @@ Unit tests for tuner module
 
 import json
 import os
-from elb.tuner import get_blastdb_mem_requirements
+from elb.tuner import get_db_data, MolType, DbData, SeqData, get_mt_mode
+from elb.tuner import MTMode, get_num_cpus, get_batch_length
 from elb.filehelper import open_for_read
 from elb.base import DBSource
 from elb.constants import ELB_BLASTDB_MEMORY_MARGIN
-from elb.util import UserReportError
+from elb.util import UserReportError, get_query_batch_size
 import pytest
 
 
@@ -61,29 +62,76 @@ def mocked_db_metadata(mocker):
         yield TEST_METADATA_FILE
 
 
-def test_get_blastdb_mem_requirements(mocked_db_metadata):
+def test_get_db_data(mocked_db_metadata):
     """Test getting blast database memory requirements"""
-    mem_req = get_blastdb_mem_requirements('nr', DBSource.AWS)
+    db = get_db_data('nr', DBSource.AWS)
     with open(mocked_db_metadata) as f:
         db_metadata = json.load(f)
-    exp_mem_req = int(db_metadata['bytes-to-cache']) / (1024 ** 3) * ELB_BLASTDB_MEMORY_MARGIN
-    assert abs(mem_req - exp_mem_req) < 1
+    assert db.length == int(db_metadata['number-of-letters'])
+    assert db.moltype == MolType(db_metadata['dbtype'].lower()[:4])
 
 
-def test_get_blastdb_mem_requirements_user_db(mocked_db_metadata):
+def test_get_db_data_user_db(mocked_db_metadata):
     """Test getting blast database memory requirements"""
-    mem_req = get_blastdb_mem_requirements('s3://some-bucket/userdb', DBSource.AWS)
+    db = get_db_data('s3://some-bucket/userdb', DBSource.AWS)
     with open(mocked_db_metadata) as f:
         db_metadata = json.load(f)
-    exp_mem_req = int(db_metadata['bytes-to-cache']) / (1024 ** 3) * ELB_BLASTDB_MEMORY_MARGIN
-    assert abs(mem_req - exp_mem_req) < 1
+    assert db.length == int(db_metadata['number-of-letters'])
+    assert db.moltype == MolType(db_metadata['dbtype'].lower()[:4])
 
 
-def test_get_blastdb_mem_requirements_missing_db():
+def test_get_db_data_missing_db():
     """Test get_blastdb_mem_requirements with a non-exstient database"""
     with pytest.raises(UserReportError):
-        get_blastdb_mem_requirements('s3://some-bucket/non-existent-db', DBSource.AWS)
+        get_db_data('s3://some-bucket/non-existent-db', DBSource.AWS)
 
     with pytest.raises(UserReportError):
-        get_blastdb_mem_requirements('this-db-does-not-exist', DBSource.GCP)
+        get_db_data('this-db-does-not-exist', DBSource.GCP)
         
+def test_get_mt_mode():
+    """Test computing BLAST search MT mode"""
+    db = DbData(length = 10000000, moltype = MolType.PROTEIN, bytes_to_cache_gb = 1)
+    query = SeqData(length = 20000, moltype = MolType.PROTEIN)
+    assert get_mt_mode(program = 'blastp', options = '', db = db, query = query) == MTMode.ONE
+
+    db = DbData(length = 50000000000, moltype = MolType.PROTEIN, bytes_to_cache_gb = 1)
+    query = SeqData(length = 20000, moltype = MolType.PROTEIN)
+    assert get_mt_mode(program = 'blastp', options = '', db = db, query = query) == MTMode.ZERO
+
+    db = DbData(length = 50000000000, moltype = MolType.PROTEIN, bytes_to_cache_gb = 1)
+    query = SeqData(length = 20000, moltype = MolType.PROTEIN)
+    assert get_mt_mode(program = 'blastp', options = '-taxidlist list', db = db, query = query) == MTMode.ONE
+
+    db = DbData(length = 1000, moltype = MolType.NUCLEOTIDE, bytes_to_cache_gb = 1)
+    query = SeqData(length = 5000000, moltype = MolType.PROTEIN)
+    assert get_mt_mode(program = 'blastp', options = '', db = db, query = query) == MTMode.ONE
+
+    db = DbData(length = 20000000000, moltype = MolType.NUCLEOTIDE, bytes_to_cache_gb = 1)
+    query = SeqData(length = 5000000, moltype = MolType.PROTEIN)
+    assert get_mt_mode(program = 'blastp', options = '', db = db, query = query) == MTMode.ZERO
+
+
+def test_MTMode():
+    """Test MTMode conversions"""
+    assert MTMode(0) == MTMode.ZERO
+    assert MTMode(1) == MTMode.ONE
+    assert str(MTMode.ZERO) == ''
+    assert str(MTMode.ONE) == '-mt_mode 1'
+
+
+def test_get_num_cpus():
+    """Test computing number of cpus for a BLAST search"""
+    query = SeqData(length = 21000, moltype = MolType.PROTEIN)
+    assert get_num_cpus(mt_mode = MTMode.ZERO, query = query) == 16
+    assert get_num_cpus(mt_mode = MTMode.ONE, query = query) == 3
+
+
+def test_get_batch_length():
+    """Test computing batch length"""
+    PROGRAM = 'blastp'
+    NUM_CPUS = 16
+    assert get_batch_length(program = 'blastp', mt_mode = MTMode.ZERO,
+                            num_cpus = NUM_CPUS) == get_query_batch_size(PROGRAM)
+
+    assert get_batch_length(program = 'blastp', mt_mode = MTMode.ONE,
+                            num_cpus = NUM_CPUS) == get_query_batch_size(PROGRAM) * NUM_CPUS

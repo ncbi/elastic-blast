@@ -52,7 +52,7 @@ def test_blastdb_not_found(gke_mock, mocker):
     def mocked_check_cluster(cfg):
         """Mocked check cluster that simulates non-existent cluster status"""
         return ''
-    mocker.patch('elb.commands.submit.check_cluster', side_effect=mocked_check_cluster)
+    mocker.patch('elb.commands.submit.gcp_check_cluster', side_effect=mocked_check_cluster)
     def mock_safe_exec(cmd):
         if isinstance(cmd, list):
             cmd = ' '.join(cmd)

@@ -67,7 +67,7 @@ from .constants import CFG_CLUSTER_MIN_NODES, CFG_CLUSTER_MAX_NODES
 from .constants import CFG_CLUSTER_ENABLE_STACKDRIVER
 from .constants import CFG_TIMEOUTS, CFG_TIMEOUT_INIT_PV
 from .constants import CFG_TIMEOUT_BLAST_K8S_JOB
-from .constants import INPUT_ERROR
+from .constants import INPUT_ERROR, ELB_NOT_INITIALIZED_MEM, ELB_NOT_INITIALIZED_NUM
 from .constants import GCP_MAX_LABEL_LENGTH, AWS_MAX_TAG_LENGTH
 from .constants import SYSTEM_MEMORY_RESERVE
 from .util import validate_gcp_string, validate_aws_region
@@ -230,12 +230,13 @@ class BlastConfig(ConfigParserToDataclassMapper):
     program: BLASTProgram  # maybe enum?
     db: str
     queries_arg: str
+    # This field is required only when machine-type == optimal.
+    mem_limit: MemoryStr = MemoryStr(ELB_NOT_INITIALIZED_MEM)
     db_source: DBSource = field(init=False)
     batch_len: PositiveInteger = field(init=False)
     queries: List[str] = field(default_factory=list, init=False)
     options: str = f'-outfmt {ELB_DFLT_OUTFMT}'
     # FIXME: Consider moving mem_request and mem_limit to ClusterConfig
-    mem_limit: MemoryStr = field(init=False)
     mem_request: Optional[MemoryStr] = field(init=False)
     taxidlist: Optional[str] = field(init=False, default=None)
     db_mem_margin: float = ELB_BLASTDB_MEMORY_MARGIN
@@ -262,7 +263,10 @@ class BlastConfig(ConfigParserToDataclassMapper):
         if not self.mem_request:
             self.mem_request = MemoryStr('0.5G')
 
-        if not self.mem_limit:
+        if self.mem_limit == ELB_NOT_INITIALIZED_MEM:
+            if machine_type == 'optimal':
+                msg = 'You specified "optimal" cluster.machine-type, which requires configuring blast.mem-limit. Please provide that configuration parameter or change cluster.machine-type.'
+                raise UserReportError(returncode=INPUT_ERROR, message=msg)
             self.mem_limit = compute_default_memory_limit(cloud_provider,
                                                           machine_type)
 
@@ -296,7 +300,7 @@ class ClusterConfig(ConfigParserToDataclassMapper):
     name: str = field(init=False)
     machine_type: str = ''
     pd_size: str = field(init=False)
-    num_cpus: PositiveInteger = field(init=False)
+    num_cpus: PositiveInteger = PositiveInteger(ELB_NOT_INITIALIZED_NUM)
     num_nodes: PositiveInteger = PositiveInteger(ELB_DFLT_NUM_NODES)
     min_nodes: Optional[PositiveInteger] = None
     max_nodes: Optional[PositiveInteger] = None
@@ -341,7 +345,7 @@ class ClusterConfig(ConfigParserToDataclassMapper):
                 self.pd_size = ELB_DFLT_AWS_PD_SIZE
 
         # default number of CPUs
-        if self.machine_type != 'optimal':
+        if self.machine_type != 'optimal' and self.num_cpus == ELB_NOT_INITIALIZED_NUM:
             instance_props = get_instance_props(cloud_provider,
                                                 self.machine_type)
 
@@ -353,6 +357,10 @@ class ClusterConfig(ConfigParserToDataclassMapper):
                 self.num_cpus = PositiveInteger(instance_props.ncpus)
             else:
                 self.num_cpus = PositiveInteger(instance_props.ncpus - 1)
+        else:
+            if self.num_cpus == ELB_NOT_INITIALIZED_NUM:
+                msg = 'You specified "optimal" cluster.machine-type, which requires configuring cluster.num-cpus. Please provide that configuration parameter or change cluster.machine-type.'
+                raise UserReportError(returncode=INPUT_ERROR, message=msg)
             
         # default cluster name
         username = getpass.getuser().lower()

@@ -10,3 +10,5 @@ tox
 yamllint
 moto == 1.3.16
 cfn-lint
+# required by moto
+Jinja2 == 2.11.3

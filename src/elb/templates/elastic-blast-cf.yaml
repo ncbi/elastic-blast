@@ -111,6 +111,11 @@ Parameters:
       - 5
       - 6
 
+  UseSSD:
+    Description: Mount and use local SSD for data
+    Type: String
+    Default: 'false'
+    AllowedValues: ['true', 'false']
 Conditions:
   CreateSecurityGroup: !Equals
     - !Ref SecurityGrp
@@ -548,6 +553,15 @@ Resources:
             aws ec2 create-tags --resources $ROOT_VOLUME_IDS --region ${AWS::Region} --tags Key=Project,Value=BLAST
             aws ec2 create-tags --resources $ROOT_VOLUME_IDS --region ${AWS::Region} --tags Key=Created-For-Instance-ID,Value=$AWS_INSTANCE_ID
 
+            # See better way of handling AWS NVME disks
+            # https://serverfault.com/a/952864
+            if [ "${UseSSD}" = true -a -b /dev/nvme1n1 ]; then
+              # mount the ephemeral storage
+              mkfs.ext4 /dev/nvme1n1
+              mkdir -m0777 /blast
+              mount -t ext4 /dev/nvme1n1 /blast/
+            fi
+
             --==MYBOUNDARY==
         BlockDeviceMappings:
         - DeviceName: /dev/xvda
@@ -617,13 +631,13 @@ Resources:
           - !GetAtt CreatedBatchJobRole.Arn
           - !Ref JobRole
       RetryStrategy:
-        Attempts: 5
+        Attempts: 3
         EvaluateOnExit:
         # retry on infrastructure problems (including terminated spot instance)
         - OnStatusReason: Host EC2*
           Action: RETRY
         # retry on database-related errors
-        - OnExitCode: 2
+        - OnExitCode: "2"
           Action: RETRY
         # These may occur if burst credits on EBS are exhausted
         - OnReason: DockerTimeoutError*

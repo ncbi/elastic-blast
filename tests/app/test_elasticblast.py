@@ -45,6 +45,8 @@ SUBCOMMANDS = ['submit', 'status', 'delete']
 INI_NO_BLASTDB = os.path.join(TEST_DATA_DIR, 'blastdb-notfound.ini')
 INI_TOO_MANY_K8S_JOBS = os.path.join(TEST_DATA_DIR, 'too-many-k8s-jobs.ini')
 INI_INVALID_AUTOSCALING = os.path.join(TEST_DATA_DIR, 'invalid-autoscaling-conf.ini')
+INI_INCOMPLETE_MEM_LIMIT_OPTIMAL_MACHINE_TYPE_AWS = os.path.join(TEST_DATA_DIR, 'incomplete-mem-limit-optimal-aws-machine-type.ini')
+INI_INCOMPLETE_NUM_CPUS_OPTIMAL_MACHINE_TYPE_AWS = os.path.join(TEST_DATA_DIR, 'incomplete-num-cpus-optimal-aws-machine-type.ini')
 INI_INVALID_MACHINE_TYPE_AWS = os.path.join(TEST_DATA_DIR, 'invalid-machine-type-aws.ini')
 INI_INVALID_MACHINE_TYPE_GCP = os.path.join(TEST_DATA_DIR, 'invalid-machine-type-gcp.ini')
 INI_INVALID_MEM_LIMIT = os.path.join(TEST_DATA_DIR, 'invalid-mem-req.ini')
@@ -165,7 +167,31 @@ def test_invalid_machine_type_aws(gke_mock):
     msg = p.stderr.decode()
     assert 'Traceback' not in msg
     assert 'ERROR' in msg
-    assert 'Invalid machine type' in msg
+    assert 'Invalid AWS machine type' in msg
+
+
+@pytest.mark.skipif(os.getenv('TEAMCITY_VERSION') is not None, reason='No credentials in TC unit tests')
+def test_invalid_optimal_machine_type_aws_incomplete_mem_limit(gke_mock):
+    """Test that providing a machine type 'optiomal' with incomplete
+    configuration produces a correct error message and exit code"""
+    p = run_elastic_blast(f'submit --cfg {INI_INCOMPLETE_MEM_LIMIT_OPTIMAL_MACHINE_TYPE_AWS}'.split())
+    assert p.returncode == constants.INPUT_ERROR
+    msg = p.stderr.decode()
+    assert 'Traceback' not in msg
+    assert 'ERROR' in msg
+    assert 'requires configuring blast.mem-limit' in msg
+
+
+@pytest.mark.skipif(os.getenv('TEAMCITY_VERSION') is not None, reason='No credentials in TC unit tests')
+def test_invalid_optimal_machine_type_aws_incomplete_num_cpus(gke_mock):
+    """Test that providing a machine type 'optiomal' with incomplete
+    configuration produces a correct error message and exit code"""
+    p = run_elastic_blast(f'submit --cfg {INI_INCOMPLETE_NUM_CPUS_OPTIMAL_MACHINE_TYPE_AWS}'.split())
+    assert p.returncode == constants.INPUT_ERROR
+    msg = p.stderr.decode()
+    assert 'Traceback' not in msg
+    assert 'ERROR' in msg
+    assert 'requires configuring cluster.num-cpus' in msg
 
 
 def test_invalid_mem_limit(gke_mock):

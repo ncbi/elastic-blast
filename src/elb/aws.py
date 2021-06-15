@@ -25,9 +25,12 @@ Help functions to access AWS resources and manipulate parameters and environment
 
 import getpass
 import logging
+import re
 import time
 import os
+import base64
 from collections import defaultdict
+from functools import wraps
 import json
 from tempfile import NamedTemporaryFile
 import uuid
@@ -40,26 +43,61 @@ from .util import ElbSupportedPrograms
 from .util import get_usage_reporting
 from .util import UserReportError, sanitize_aws_batch_job_name
 from .constants import BLASTDB_ERROR, CLUSTER_ERROR, ELB_AWS_QUERY_LENGTH, PERMISSIONS_ERROR
-from .constants import ELB_DFLT_AWS_REGION, ELB_QUERY_BATCH_DIR, ELB_METADATA_DIR, ELB_LOG_DIR
-from .constants import UNKNOWN_ERROR, ELB_DOCKER_IMAGE, CSP, INPUT_ERROR
+from .constants import ELB_QUERY_BATCH_DIR, ELB_METADATA_DIR, ELB_LOG_DIR
+from .constants import ELB_DOCKER_IMAGE, INPUT_ERROR
 from .constants import DEPENDENCY_ERROR, TIMEOUT_ERROR
 from .constants import ELB_AWS_JOB_IDS
 from .filehelper import parse_bucket_name_key
 from .aws_traits import get_machine_properties, create_aws_config, get_availability_zones_for
-from .base import InstanceProperties, DBSource
+from .base import DBSource
 from .elb_config import ElasticBlastConfig
 
 import boto3  # type: ignore
-from botocore.config import Config  # type: ignore
-from botocore.exceptions import ClientError, ParamValidationError, WaiterError # type: ignore
+from botocore.exceptions import ClientError, NoCredentialsError, ParamValidationError, WaiterError # type: ignore
 
-from typing import Dict, List, Tuple, Optional
+from typing import Dict, List, Tuple
 
     
 CF_TEMPLATE = os.path.join(os.path.dirname(__file__), 'templates', 'elastic-blast-cf.yaml')
 # the order of job states reflects state transitions and is important for
 # ElasticBlastAws.get_job_ids method
 AWS_BATCH_JOB_STATES = ['SUBMITTED', 'PENDING', 'RUNNABLE', 'STARTING', 'RUNNING', 'SUCCEEDED', 'FAILED']
+
+def handle_aws_error(f):
+    @wraps(f)
+    def wrapper(*args, **kwargs):
+        try:
+            return f(*args, **kwargs)
+        except NoCredentialsError as e:
+            raise UserReportError(PERMISSIONS_ERROR, str(e))
+        except ClientError as e:
+            code_str = e.response.get('Error', {}).get('Code', 'Unknown')
+            if code_str == 'AccessDenied' or code_str == 'RequestExpired' or \
+            code_str == 'ExpiredToken' or code_str == 'ExpiredTokenException':
+                code = PERMISSIONS_ERROR
+            else:
+                code = CLUSTER_ERROR
+            raise UserReportError(code, str(e))
+    return wrapper
+
+
+def check_cluster(cfg: ElasticBlastConfig) -> bool:
+    """ Check that cluster descibed in configuration is running
+        Parameters:
+            cfg - configuration fo cluster
+        Returns:
+            true if cluster is running
+    """
+    if cfg.cluster.dry_run:
+        return False
+    boto_cfg = create_aws_config(cfg.aws.region)
+    cf = boto3.resource('cloudformation', config=boto_cfg)
+    try:
+        cf_stack = cf.Stack(cfg.cluster.name)
+        status = cf_stack.stack_status  # Will throw exception if error/non-existant
+        return True
+    except ClientError:
+        return False
 
 
 class ElasticBlastAws:
@@ -74,17 +112,11 @@ class ElasticBlastAws:
             cfg - configuration to use for cluster creation
             create - if cluster does not exist, create it. Default: False
         """
-        try:
-            self._init(cfg, create)
-        except ClientError as e:
-            if e.response.get('Error', {}).get('Code', 'Unknown') == 'AccessDenied':
-                code = PERMISSIONS_ERROR
-            else:
-                code = CLUSTER_ERROR
-            raise UserReportError(code, str(e))
+        self._init(cfg, create)
 
+    @handle_aws_error
     def _init(self, cfg: ElasticBlastConfig, create: bool):
-        """ Internal constructor, not protected against exceptions in AWS """
+        """ Internal constructor, converts AWS exceptions to UserReportError """
         self.boto_cfg = create_aws_config(cfg.aws.region)
         self.cfg = cfg
 
@@ -115,6 +147,15 @@ class ElasticBlastAws:
             if not self.dry_run:
                 cf_stack = self.cf.Stack(self.stack_name)
                 status = cf_stack.stack_status  # Will throw exception if error/non-existant
+                if create:
+                    # If we'd want to retry jobs with different parameters on the same cluster we
+                    # need to wait here for status == 'CREATE_COMPLETE'
+                    raise UserReportError(INPUT_ERROR, f'An ElasticBLAST search that will write '
+                                          f'results to {self.results_bucket} has already been submitted '
+                                          f'(AWS CloudFormation stack {cf_stack.name}).\nPlease resubmit '
+                                          'your search with different value for "results" configuration '
+                                          'parameter or delete the previous ElasticBLAST search by running '
+                                          'elastic-blast delete.')
                 self.cf_stack = cf_stack
                 logging.debug(f'Initialized AWS CloudFormation stack {self.cf_stack}: status {status}')
             else:
@@ -122,9 +163,18 @@ class ElasticBlastAws:
         except ClientError:
             initialized = False
         if not initialized and create:
+            use_ssd = False
             tags = convert_labels_to_aws_tags(self.cfg.cluster.labels)
             disk_size = convert_disk_size_to_gb(self.cfg.cluster.pd_size)
+            disk_type = self.cfg.cluster.disk_type
             instance_type = self.cfg.cluster.machine_type
+            # FIXME: This is a shortcut, should be implemented in get_machine_properties
+            if re.match(r'[cmr]5a?dn?\.\d{0,2}xlarge', instance_type):
+                use_ssd = True
+                # Shrink the default EBS root disk since EC2 instances will use locally attached SSDs
+                logging.warning("Using gp2 30GB EBS root disk because locally attached SSDs will be used")
+                disk_size = 30
+                disk_type = 'gp2'
             if instance_type.lower() == 'optimal':  # EXPERIMENTAL!
                 max_cpus = self.cfg.cluster.num_nodes * self.cfg.cluster.num_cpus
             else:
@@ -135,7 +185,7 @@ class ElasticBlastAws:
                 {'ParameterKey': 'Owner', 'ParameterValue': self.owner},
                 {'ParameterKey': 'MaxCpus', 'ParameterValue': str(max_cpus)},
                 {'ParameterKey': 'MachineType', 'ParameterValue': instance_type},
-                {'ParameterKey': 'DiskType', 'ParameterValue': self.cfg.cluster.disk_type},
+                {'ParameterKey': 'DiskType', 'ParameterValue': disk_type},
                 {'ParameterKey': 'DiskSize', 'ParameterValue': str(disk_size)},
                 {'ParameterKey': 'Image', 'ParameterValue': ELB_DOCKER_IMAGE},
                 {'ParameterKey': 'RandomToken', 'ParameterValue': token}
@@ -185,6 +235,8 @@ class ElasticBlastAws:
                     params.append({'ParameterKey': 'SpotFleetRole',
                                    'ParameterValue': str(spot_fleet_role)})
 
+            params.append({'ParameterKey': 'UseSSD',
+                           'ParameterValue': str(use_ssd).lower()})
             capabilities = []
             if not (instance_role and batch_service_role and job_role and spot_fleet_role):
                 # this is needed if cloudformation template creates roles
@@ -390,17 +442,12 @@ class ElasticBlastAws:
 
     def delete(self):
         """Delete a CloudFormation stack associated with AWS Batch resources."""
-        try:
-            self._delete()
-        except ClientError as e:
-            if e.response.get('Error', {}).get('Code', 'Unknown') == 'AccessDenied':
-                code = PERMISSIONS_ERROR
-            else:
-                code = CLUSTER_ERROR
-            raise UserReportError(code, str(e))
+        self._delete()
 
+    @handle_aws_error
     def _delete(self):
-        """ Internal delete, not protected against exceptions in AWS """
+        """ Internal delete, converts AWS exceptions to UserReportError """
+        logging.debug(f'Request to delete {self.stack_name}')
         if not self.dry_run:
             if not self.cf_stack:
                 logging.info(f"AWS CloudFormation stack {self.stack_name} doesn't exist, nothing to delete")
@@ -468,17 +515,11 @@ class ElasticBlastAws:
         """ Initial attempt to submit an AWS Batch search.
         Starting point to further refactorings.
         """
-        try:
-            self._submit(query_batches)
-        except ClientError as e:
-            if e.response.get('Error', {}).get('Code', 'Unknown') == 'AccessDenied':
-                code = PERMISSIONS_ERROR
-            else:
-                code = CLUSTER_ERROR
-            raise UserReportError(code, str(e))
+        self._submit(query_batches)
 
+    @handle_aws_error
     def _submit(self, query_batches):
-        """ Internal submit, not protected against exceptions in AWS """
+        """ Internal submit, converts AWS exceptions to UserReportError  """
         self.job_ids = []
 
         prog = self.cfg.blast.program
@@ -578,23 +619,22 @@ class ElasticBlastAws:
         bucket.put_object(Body=str(query_length).encode(), Key=key)
 
 
-    def check_status(self) -> Dict[str, int]:
+    def check_status(self, extended=False) -> Tuple[Dict[str, int], str]:
         """Report status of batch searches.
-
+        Parameters:
+            extended - boolean defining whether to get detailed information
+                       about the jobs.
         Returns:
-            Dictionary with counts of jobs in pending, running, succeeded, and
-            failed status.
+            Tuple of
+              Dictionary with counts of jobs in pending, running, succeeded, and
+              failed status.
+            and
+              opional string with formatted detailed output.
         """
         try:
-            return self._check_status()
-        except ClientError as e:
-            if e.response.get('Error', {}).get('Code', 'Unknown') == 'AccessDenied':
-                code = PERMISSIONS_ERROR
-            else:
-                code = CLUSTER_ERROR
-            raise UserReportError(code, str(e))
+            return self._check_status(extended)
         except ParamValidationError:
-            raise UserReportError(CLUSTER_ERROR, "Cluster is not valid or not created yet")
+            raise UserReportError(CLUSTER_ERROR, f"Cluster {self.stack_name} is not valid or not created yet")
 
     def _load_job_ids_from_aws(self):
         """ Retrieve the list of AWS Batch job IDs from AWS 
@@ -619,33 +659,86 @@ class ElasticBlastAws:
                 else:
                     raise
 
-    def _check_status(self) -> Dict[str, int]:
-        """ Internal check_status, not protected against exceptions in AWS """
-        if not self.dry_run:
-            if not self.job_ids:
-                self._load_job_ids_from_aws()
-
-            counts : Dict[str, int] = defaultdict(int)
-            # check status of jobs in batches of JOB_BATCH_NUM
-            JOB_BATCH_NUM = 100
-            for i in range(0, len(self.job_ids), JOB_BATCH_NUM):
-                job_batch = self.batch.describe_jobs(jobs=self.job_ids[i:i + JOB_BATCH_NUM])['jobs']
-                # get number for AWS Batch job states
-                for st in AWS_BATCH_JOB_STATES:
-                    counts[st] += sum([j['status'] == st for j in job_batch])
-
-            # compute numbers for elastic-blast job states
-            status = {
-                'pending': counts['SUBMITTED'] + counts['PENDING'] + counts['RUNNABLE'] + counts['STARTING'],
-                'running':  counts['RUNNING'],
-                'succeeded': counts['SUCCEEDED'],
-                'failed': counts['FAILED'],
-            }
-        else:
-            status = defaultdict(int)
+    @handle_aws_error
+    def _check_status(self, extended) -> Tuple[Dict[str, int], str]:
+        """ Internal check_status, converts AWS exceptions to UserReportError  """
+        counts : Dict[str, int] = defaultdict(int)
+        if self.dry_run:
             logging.info('dry-run: would have checked status')
-        return status
-            
+            return counts, ''
+        
+        if extended:
+            return self._check_status_extended()
+
+        if not self.job_ids:
+            self._load_job_ids_from_aws()
+
+        # check status of jobs in batches of JOB_BATCH_NUM
+        JOB_BATCH_NUM = 100
+        for i in range(0, len(self.job_ids), JOB_BATCH_NUM):
+            job_batch = self.batch.describe_jobs(jobs=self.job_ids[i:i + JOB_BATCH_NUM])['jobs']
+            # get number for AWS Batch job states
+            for st in AWS_BATCH_JOB_STATES:
+                counts[st] += sum([j['status'] == st for j in job_batch])
+
+        # compute numbers for elastic-blast job states
+        status = {
+            'pending': counts['SUBMITTED'] + counts['PENDING'] + counts['RUNNABLE'] + counts['STARTING'],
+            'running':  counts['RUNNING'],
+            'succeeded': counts['SUCCEEDED'],
+            'failed': counts['FAILED'],
+        }
+        return status, ''
+
+    def _check_status_extended(self) -> Tuple[Dict[str, int], str]:
+        """ Internal check_status_extended, not protected against exceptions in AWS """
+        logging.debug(f'Retrieving jobs for queue {self.job_queue_name}')
+        jobs = {}
+        # As statuses in AWS_BATCH_JOB_STATES are ordered in job transition
+        # succession, if job changes status between calls it will be reflected
+        # in updated value in jobs dictionary
+        for status in AWS_BATCH_JOB_STATES:
+            batch_of_jobs = self.batch.list_jobs(jobQueue=self.job_queue_name,
+                                            jobStatus=status)
+            for j in batch_of_jobs['jobSummaryList']:
+                jobs[j['jobId']] = j
+
+            while 'nextToken' in batch_of_jobs:
+                batch_of_jobs = self.batch.list_jobs(jobQueue=self.job_queue_name,
+                                                    jobStatus=status,
+                                                    nextToken=batch_of_jobs['nextToken'])
+                for j in batch_of_jobs['jobSummaryList']:
+                    jobs[j['jobId']] = j
+        counts : Dict[str, int] = defaultdict(int)
+        detailed_info: Dict[str, List[str]] = defaultdict(list)
+        pending_set = set(['SUBMITTED', 'PENDING', 'RUNNABLE', 'STARTING'])
+        for job_id, job in jobs.items():
+            if job['status'] in pending_set:
+                status = 'pending'
+            else:
+                status = job['status'].lower()
+            counts[status] += 1
+            info = [f' {len(detailed_info[status])+1}. ']
+            for k in ['jobArn', 'jobName', 'statusReason']:
+                if k in job:
+                    info.append(f'  {k[0].upper()+k[1:]}: {job[k]}')
+            if 'container' in job:
+                container = job['container']
+                for k in ['exitCode', 'reason']:
+                    if k in container:
+                        info.append(f'  Container{k[0].upper()+k[1:]}: {container[k]}')
+            if 'startedAt' in job and 'stoppedAt' in job:
+                # NB: these Unix timestamps are in milliseconds
+                info.append(f'  RuntimeInSeconds: {(job["stoppedAt"] - job["startedAt"])/1000}')
+            detailed_info[status].append('\n'.join(info))
+        detailed_rep = []
+        for status in ['pending', 'running', 'succeeded', 'failed']:
+            jobs_in_status = len(detailed_info[status])
+            detailed_rep.append(f'{status.capitalize()} {jobs_in_status}')
+            if jobs_in_status:
+                detailed_rep.append('\n'.join(detailed_info[status]))
+        return counts, '\n'.join(detailed_rep)
+
     def wait_until_done(self):
         if self.dry_run:
             return

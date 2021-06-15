@@ -16,7 +16,9 @@ export BLAST_USAGE_REPORT=false
 DRY_RUN=''
 #DRY_RUN=--dry-run     # uncomment for debugging
 timeout_minutes=${2:-10}
-logfile=elb.log
+logfile=${3:-elb.log}
+runsummary_output=${4:-elb-run-summary.json}
+logs=${5:-k8s.log}
 rm -f $logfile
 
 get_num_cores() {
@@ -52,7 +54,8 @@ else
 fi
 
 if ! grep -qi aws $CFG; then
-    $ROOT_DIR/elastic-blast run-summary --cfg $CFG --loglevel DEBUG --logfile $logfile $DRY_RUN
+    make logs 2>&1 | tee $logs
+    $ROOT_DIR/elastic-blast run-summary --cfg $CFG --loglevel DEBUG --logfile $logfile -o $runsummary_output $DRY_RUN
 
     # Get results
     gsutil -qm cp ${ELB_RESULTS}/*.out.gz .
@@ -70,6 +73,7 @@ if ! grep -qi aws $CFG; then
     fi
     test $(du -a -b *.out.gz | sort -n | head -n 1 | cut -f 1) -gt 0
 else
+    $ROOT_DIR/elastic-blast run-summary --cfg $CFG --loglevel DEBUG --logfile $logfile -o $runsummary_output --write-logs $logs --detailed $DRY_RUN
     # As we have no logs yet we can't check ASN.1 integrity
     # Get results
     aws s3 cp ${ELB_RESULTS}/ . --recursive --exclude '*' --include "*.out.gz" --exclude '*/*'

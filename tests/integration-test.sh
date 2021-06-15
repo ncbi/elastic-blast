@@ -17,7 +17,9 @@ export BLAST_USAGE_REPORT=false
 DRY_RUN=''
 #DRY_RUN=--dry-run     # uncomment for debugging
 timeout_minutes=${2:-5}
-logfile=elb.log
+logfile=${3:-elb.log}
+runsummary_output=${4:-elb-run-summary.json}
+logs=${5:-k8s.log}
 rm -f $logfile
 
 # if set to "false", the script will not download search results
@@ -54,7 +56,7 @@ attempts=0
 [ ! -z "$DRY_RUN" ] || sleep 10    # Should be enough for the BLAST k8s jobs to get started
 
 while [ $attempts -lt $timeout_minutes ]; do
-    $ROOT_DIR/elastic-blast status --cfg $CFG $DRY_RUN | tee $TMP
+    $ROOT_DIR/elastic-blast status --verbose --cfg $CFG $DRY_RUN | tee $TMP
     #set +e
     if grep '^Pending 0' $TMP && grep '^Running 0' $TMP; then
         break
@@ -69,8 +71,8 @@ if [ $TEST_RESULTS = false ] ; then
 fi
 
 if ! grep -qi aws $CFG; then
-    make logs 2>&1 | tee -a $logfile
-    $ROOT_DIR/elastic-blast run-summary --cfg $CFG --loglevel DEBUG --logfile $logfile $DRY_RUN
+    make logs 2>&1 | tee $logs
+    $ROOT_DIR/elastic-blast run-summary --cfg $CFG --loglevel DEBUG --logfile $logfile -o $runsummary_output $DRY_RUN
     # Get intermediate results
     gsutil -qm cp ${QUERY_BATCHES}/*.fa .
 
@@ -91,6 +93,8 @@ if ! grep -qi aws $CFG; then
     test $(ls -1 *fa | wc -l) -eq $(ls -1 *.out.gz | wc -l)
     test $(du -a -b *.out.gz | sort -n | head -n 1 | cut -f 1) -gt 0
 else
+    $ROOT_DIR/elastic-blast run-summary --cfg $CFG --loglevel DEBUG --logfile $logfile -o $runsummary_output --write-logs $logs --detailed $DRY_RUN
+
     $ROOT_DIR/elastic-blast delete --cfg $CFG --loglevel DEBUG --logfile $logfile $DRY_RUN
     # Get query batches
     aws s3 cp ${QUERY_BATCHES}/ . --recursive --exclude '*' --include "*.fa" --exclude '*/*'

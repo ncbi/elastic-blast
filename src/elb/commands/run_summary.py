@@ -37,6 +37,7 @@ from typing import List
 import boto3  # type: ignore
 from botocore.exceptions import ClientError  #type: ignore
 from elb.aws_traits import create_aws_config
+from elb.aws import handle_aws_error
 from elb.util import safe_exec, UserReportError
 from elb.filehelper import parse_bucket_name_key
 from elb.constants import CLUSTER_ERROR, ELB_AWS_JOB_IDS, ELB_AWS_QUERY_LENGTH, ELB_METADATA_DIR, PERMISSIONS_ERROR
@@ -84,15 +85,7 @@ def _run_summary(args, cfg, clean_up_stack):
         if args.read_logs:
             run = _read_job_logs_aws_from_file(args.read_logs)
         else:
-            try:
-                run = _read_job_logs_aws(cfg, args.write_logs)
-            except ClientError as e:
-                code_str = e.response.get('Error', {}).get('Code', 'Unknown')
-                if code_str == 'AccessDenied' or code_str == 'ExpiredToken':
-                    code = PERMISSIONS_ERROR
-                else:
-                    code = CLUSTER_ERROR
-                raise UserReportError(code, str(e))
+            run = _read_job_logs_aws(cfg, args.write_logs)
     elif cloud_provider == CSP.GCP:
         run = _read_job_logs_gcp(cfg)
     else:
@@ -339,6 +332,7 @@ class AwsCompEnv:
         self.min_vcpus: int = 0
         self.max_vcpus: int = 0
         self.num_nodes: int = 0
+        self.ce_name: str = ''
 
     def parseJobQueue(self, queue):
         res = self.batch.describe_job_queues(jobQueues=[queue])
@@ -350,15 +344,17 @@ class AwsCompEnv:
         ce = job_queue_descr['computeEnvironmentOrder'][0]['computeEnvironment']
         res = self.batch.describe_compute_environments(computeEnvironments=[ce])
         ce_descr = res['computeEnvironments'][0]
+        self.ce_name = ce_descr['computeEnvironmentName']
         comp_res = ce_descr['computeResources']
         self.instance_type = comp_res['instanceTypes'][0]
-        res = self.ec2.describe_instance_types(InstanceTypes=[self.instance_type])
-        instance_type_descr = res['InstanceTypes'][0]
-        self.instance_vcpus = instance_type_descr['VCpuInfo']['DefaultVCpus']
-        self.instance_ram = instance_type_descr['MemoryInfo']['SizeInMiB']
-        self.min_vcpus = comp_res['minvCpus']
-        self.max_vcpus = comp_res['maxvCpus']
-        self.num_nodes = int(comp_res['maxvCpus'] / self.instance_vcpus)
+        if self.instance_type != 'optimal':
+            res = self.ec2.describe_instance_types(InstanceTypes=[self.instance_type])
+            instance_type_descr = res['InstanceTypes'][0]
+            self.instance_vcpus = instance_type_descr['VCpuInfo']['DefaultVCpus']
+            self.instance_ram = instance_type_descr['MemoryInfo']['SizeInMiB']
+            self.min_vcpus = comp_res['minvCpus']
+            self.max_vcpus = comp_res['maxvCpus']
+            self.num_nodes = int(comp_res['maxvCpus'] / self.instance_vcpus)
 
 
 def _read_job_logs_aws_from_file(read_logs):
@@ -392,6 +388,8 @@ def _read_job_logs_aws_from_file(read_logs):
         run.num_nodes = log_parser.num_nodes
     return run
 
+
+@handle_aws_error
 def _read_job_logs_aws(cfg, write_logs):
     """ return Run object with number of finished job, start, end, and exit codes,
         and any additional information we can learn about this run """
@@ -448,6 +446,7 @@ def _read_job_logs_aws(cfg, write_logs):
                 aws_comp_env = AwsCompEnv(batch, ec2)
                 aws_comp_env.parseJobQueue(job_queue)
                 if write_logs:
+                    write_logs.write(f'cluster_name\t{aws_comp_env.ce_name}\n')
                     write_logs.write(f'instance_type\t{aws_comp_env.instance_type}\n')
                     write_logs.write(f'instance_vcpus\t{aws_comp_env.instance_vcpus}\n')
                     write_logs.write(f'instance_ram\t{aws_comp_env.instance_ram}\n')

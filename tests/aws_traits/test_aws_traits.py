@@ -50,10 +50,14 @@ def test_machine_properties():
     props = get_machine_properties('m4.10xlarge')
     assert props == InstanceProperties(ncpus=40, memory=160)
     with pytest.raises(UserReportError) as err:
-        n, m = get_machine_properties('dummy')
+        props = get_machine_properties('dummy')
     assert err.value.returncode == INPUT_ERROR
     assert 'Invalid AWS machine type' in err.value.message
 
+def test_machine_properties_optimal():
+    with pytest.raises(ValueError) as err:
+        props = get_machine_properties('optimal')
+    assert 'optimal instance type is not supported' in str(err)
 
 @pytest.mark.skipif(os.getenv('TEAMCITY_VERSION') is not None, reason='AWS credentials not set in TC')
 def test_get_azs_us_east_1():

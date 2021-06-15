@@ -40,6 +40,8 @@ def create_arg_parser(subparser, common_opts_parser):
                                   help='Get the status of an ElasticBLAST search')
     parser.add_argument("--wait", action='store_true',
                         help="Wait for job completion")
+    parser.add_argument('--verbose', default=False, action='store_true',
+                        help='Detailed information about jobs')
     # FIXME: EB-132
     parser.add_argument("--run-label", type=str,
                         help="Run-label for this ElasticBLAST search, format: key:value")
@@ -57,21 +59,24 @@ def _status(args, cfg, clean_up_stack):
         if cfg.cloud_provider.cloud == CSP.GCP:
             gcp.get_gke_credentials(cfg)
 
+        verbose_result = ''
         while True:
 
             if cfg.cloud_provider.cloud == CSP.AWS:
                 eb = aws.ElasticBlastAws(cfg)
-                counts = eb.check_status()
+                counts, verbose_result = eb.check_status(args.verbose)
                 pending = counts['pending']
                 running = counts['running']
                 succeeded = counts['succeeded']
                 failed = counts['failed']
+                result = f'Pending {pending}\nRunning {running}\nSucceeded {succeeded}\nFailed {failed}'
             else:
                 pending, running, succeeded, failed = get_status(args.run_label, dry_run=dry_run)
+                result = f'Pending {pending}\nRunning {running}\nSucceeded {succeeded}\nFailed {failed}'
 
             if not args.wait or pending + running == 0:
                 break
-            logging.debug(f'Pending {pending}, Running {running}, Succeeded {succeeded}, Failed {failed}')
+            logging.debug(result)
             time.sleep(20)  # TODO: make this a parameter (granularity)
     except RuntimeError as e:
         returncode = e.args[0]
@@ -88,5 +93,8 @@ def _status(args, cfg, clean_up_stack):
         else:
             raise UserReportError(CLUSTER_ERROR, f'The cluster "{cfg.cluster.name}" was not found')
     else:
-        print(f'Pending {pending}\nRunning {running}\nSucceeded {succeeded}\nFailed {failed}')
+        if verbose_result:
+            print(verbose_result)
+        else:
+            print(result)
     return returncode

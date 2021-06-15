@@ -6,3 +6,4 @@ pex
 boto3
 awslimitchecker
 tenacity
+types-pkg-resources
