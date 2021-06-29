@@ -1,4 +1,5 @@
-# ElasticBLAST
+ElasticBLAST
+============
 
 ElasticBLAST is a cloud-based tool to perform your BLAST searches faster and make you more effective.
 
@@ -23,20 +24,24 @@ ElasticBLAST.  Owing to resource constraints,
 they cannot absolutely commit to act on all issue reports, except critical
 security vulnerabilities.
 
-## End-user documentation
+End-user documentation
+----------------------
 
 Please visit https://blast.ncbi.nlm.nih.gov/doc/elastic-blast/
 
-## How to get ElasticBLAST
+How to get ElasticBLAST
+-----------------------
 
 Please see instructions here:
 https://blast.ncbi.nlm.nih.gov/doc/elastic-blast/quickstart-aws.html#get-elasticblast
 
-## How to build ElasticBLAST
+How to build ElasticBLAST
+-------------------------
 
-`make elastic-blast`
+    make elastic-blast
 
-### Requirements for building ElasticBLAST
+Requirements for building ElasticBLAST
+--------------------------------------
 
 In addition to the requirements listed in the page below, [AWS Command Line Interface](https://aws.amazon.com/cli/) is required.
 

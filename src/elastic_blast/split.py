@@ -19,7 +19,7 @@
 # Please cite NCBI in any work or product based on this material.
 
 """
-Module elb.split
+Module elastic_blast.split
 
 Split FASTA file into smaller chunks
 

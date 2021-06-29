@@ -26,50 +26,54 @@ Created: Wed 22 Apr 2020 06:31:30 AM EDT
 """
 import os
 import logging
+import math
 from tempfile import TemporaryDirectory
 from pathlib import Path
 from timeit import default_timer as timer
 import uuid
 from typing import List, Tuple
 
-from elb.resources.quotas.quota_check import check_resource_quotas
-from elb.aws import ElasticBlastAws
-from elb.aws import check_cluster as aws_check_cluster
-from elb.filehelper import open_for_read, open_for_read_iter, copy_to_bucket
-from elb.filehelper import check_for_read, check_dir_for_write, cleanup_temp_bucket_dirs
-from elb.split import FASTAReader
-from elb.jobs import read_job_template, write_job_files
-from elb.gcp import get_gke_credentials, delete_cluster_with_cleanup
-from elb.gcp import enable_gcp_api, start_cluster
-from elb.gcp import check_cluster as gcp_check_cluster
-from elb.gcp import remove_split_query
-from elb.gcp_traits import get_machine_properties
-from elb.kubernetes import initialize_storage, submit_jobs
-from elb.kubernetes import get_logs, get_maximum_number_of_allowed_k8s_jobs
-from elb.status import get_status
-from elb.util import get_blastdb_size, UserReportError, ElbSupportedPrograms
-from elb.util import get_blastdb_info
-from elb.util import get_usage_reporting
-from elb.constants import ELB_AWS_JOB_IDS, ELB_METADATA_DIR, ELB_STATE_DISK_ID_FILE, K8S_JOB_BLAST, K8S_JOB_GET_BLASTDB, K8S_JOB_RESULTS_EXPORT
-from elb.constants import K8S_JOB_IMPORT_QUERY_BATCHES, K8S_JOB_LOAD_BLASTDB_INTO_RAM
-from elb.constants import ELB_QUERY_BATCH_DIR, BLASTDB_ERROR, INPUT_ERROR
-from elb.constants import PERMISSIONS_ERROR, CLUSTER_ERROR, CSP
-from elb.constants import ELB_DOCKER_IMAGE, QUERY_LIST_EXT
-from elb.constants import ElbCommand
-from elb.taxonomy import setup_taxid_filtering
-from elb.config import validate_cloud_storage_object_uri
-from elb.elb_config import ElasticBlastConfig
+from elastic_blast.resources.quotas.quota_check import check_resource_quotas
+from elastic_blast.aws import ElasticBlastAws
+from elastic_blast.aws import check_cluster as aws_check_cluster
+from elastic_blast.filehelper import open_for_read, open_for_read_iter, copy_to_bucket
+from elastic_blast.filehelper import check_for_read, check_dir_for_write, cleanup_temp_bucket_dirs
+from elastic_blast.filehelper import get_length
+from elastic_blast.split import FASTAReader
+from elastic_blast.jobs import read_job_template, write_job_files
+from elastic_blast.gcp import get_gke_credentials, delete_cluster_with_cleanup
+from elastic_blast.gcp import enable_gcp_api, start_cluster
+from elastic_blast.gcp import check_cluster as gcp_check_cluster
+from elastic_blast.gcp import remove_split_query
+from elastic_blast.gcp_traits import get_machine_properties
+from elastic_blast.kubernetes import initialize_storage, submit_jobs
+from elastic_blast.kubernetes import get_logs, get_maximum_number_of_allowed_k8s_jobs
+from elastic_blast.status import get_status
+from elastic_blast.util import get_blastdb_size, UserReportError, ElbSupportedPrograms
+from elastic_blast.util import get_blastdb_info
+from elastic_blast.util import get_usage_reporting
+from elastic_blast.constants import ELB_AWS_JOB_IDS, ELB_METADATA_DIR, ELB_STATE_DISK_ID_FILE, K8S_JOB_BLAST, K8S_JOB_GET_BLASTDB, K8S_JOB_RESULTS_EXPORT
+from elastic_blast.constants import K8S_JOB_IMPORT_QUERY_BATCHES, K8S_JOB_LOAD_BLASTDB_INTO_RAM
+from elastic_blast.constants import ELB_QUERY_BATCH_DIR, BLASTDB_ERROR, INPUT_ERROR
+from elastic_blast.constants import PERMISSIONS_ERROR, CLUSTER_ERROR, CSP
+from elastic_blast.constants import ELB_DOCKER_IMAGE, QUERY_LIST_EXT
+from elastic_blast.constants import ElbCommand
+from elastic_blast.taxonomy import setup_taxid_filtering
+from elastic_blast.config import validate_cloud_storage_object_uri
+from elastic_blast.elb_config import ElasticBlastConfig
+
 
 # TODO: use cfg only when args.wait, args.sync, and args.run_label are replicated in cfg
 def submit(args, cfg, clean_up_stack):
     """ Entry point to submit an ElasticBLAST search
     """
     dry_run = cfg.cluster.dry_run
-    cfg.validate(ElbCommand.SUBMIT)
+    cfg.validate(ElbCommand.SUBMIT, dry_run)
 
     # For now, checking resources is only implemented for AWS
     if cfg.cloud_provider.cloud == CSP.AWS:
-        check_resource_quotas(cfg)
+        if not dry_run:
+            check_resource_quotas(cfg)
     else:
         enable_gcp_api(cfg)
     
@@ -88,9 +92,26 @@ def submit(args, cfg, clean_up_stack):
     #mode_str = "synchronous" if args.sync else "asynchronous"
     #logging.info(f'Running ElasticBLAST on {cfg.cloud_provider.cloud.name} in {mode_str} mode')
 
-    # split FASTA query into batches
-    clean_up_stack.append(cleanup_temp_bucket_dirs)
-    queries, query_length = split_query(query_files, cfg)
+    cluster_name = cfg.cluster.name
+
+    use_1_stage_cloud_split = 'ELB_USE_1_STAGE_CLOUD_SPLIT' in os.environ
+    # Case for cloud split on AWS: one file on S3
+    cloud_split = False
+    if use_1_stage_cloud_split and cfg.cloud_provider.cloud == CSP.AWS \
+      and len(query_files) == 1 and query_files[0].startswith('s3://'):
+        cloud_split = True
+        query_file = query_files[0]
+        # Get file length as approximation of sequence length
+        query_length = get_length(query_file)
+        if query_file.endswith('.gz'):
+            query_length = query_length * 4 # approximation again
+        batch_len = cfg.blast.batch_len
+        nbatch = math.ceil(query_length/batch_len)
+        queries = nbatch * [query_file]
+    else:
+        # split FASTA query into batches
+        clean_up_stack.append(cleanup_temp_bucket_dirs)
+        queries, query_length = split_query(query_files, cfg)
 
     # setup taxonomy filtering, if requested
     setup_taxid_filtering(cfg)
@@ -100,7 +121,7 @@ def submit(args, cfg, clean_up_stack):
         elastic_blast = ElasticBlastAws(cfg, create=True)
         upload_split_query_to_bucket(cfg, clean_up_stack, dry_run)
         elastic_blast.upload_query_length(query_length)
-        elastic_blast.submit(queries)
+        elastic_blast.submit(queries, cloud_split)
         return 0
 
 
@@ -211,6 +232,8 @@ def check_running_cluster(cfg: ElasticBlastConfig) -> bool:
                  false if neither cluster is running nor results
                  are present
     """
+    if cfg.cluster.dry_run:
+        return False
     metadata_dir = os.path.join(cfg.cluster.results, ELB_METADATA_DIR)
     if cfg.cloud_provider.cloud == CSP.AWS:
         metadata_file = os.path.join(metadata_dir, ELB_AWS_JOB_IDS)

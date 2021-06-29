@@ -24,8 +24,8 @@ SHELL=/bin/bash
 
 VENV?=.env
 
-PYTHON_SRC=$(shell find src/elb bin -type f -name "*.py" ! -path "*eggs*" ! -path "*${VENV}*" ! -name __init__.py ! -path "*.tox*" ! -path "*coverage*" ! -path "*cache*" ! -path "./build*")
-YAML_TEMPLATES=$(shell find src/elb/templates -type f)
+PYTHON_SRC=$(shell find src/elastic_blast bin -type f -name "*.py" ! -path "*eggs*" ! -path "*${VENV}*" ! -name __init__.py ! -path "*.tox*" ! -path "*coverage*" ! -path "*cache*" ! -path "./build*")
+YAML_TEMPLATES=$(shell find src/elastic_blast/templates -type f)
 
 all: elastic-blast
 
@@ -77,11 +77,11 @@ validate-iam-policy: iam-policy.json
 	-AWS_PAGER='' aws accessanalyzer validate-policy --no-paginate --policy-document file://$< --policy-type RESOURCE_POLICY
 
 .PHONY: validate-cf-templates
-validate-cf-templates: src/elb/templates/elastic-blast-cf.yaml
+validate-cf-templates: src/elastic_blast/templates/elastic-blast-cf.yaml
 	AWS_PAGER='' aws --region us-east-1 cloudformation validate-template --template-body file://$<
 
 .PHONY: cfn-lint
-cfn-lint: src/elb/templates/elastic-blast-cf.yaml ${VENV}
+cfn-lint: src/elastic_blast/templates/elastic-blast-cf.yaml ${VENV}
 	source ${VENV}/bin/activate && cfn-lint -t $<
 
 #############################################################################
@@ -94,20 +94,20 @@ pylint: ${VENV}
 
 .PHONY: mypy
 mypy: ${VENV}
-	source ${VENV}/bin/activate && mypy src/elb/
+	source ${VENV}/bin/activate && mypy src/elastic_blast/
 
 .PHONY: yamllint
 yamllint: ${VENV}
 	source ${VENV}/bin/activate && \
-		yamllint -d share/etc/yamllint-config.yaml src/elb/templates/elastic-blast-cf.yaml
+		yamllint -d share/etc/yamllint-config.yaml src/elastic_blast/templates/elastic-blast-cf.yaml
 	source ${VENV}/bin/activate && \
-		yamllint -d share/etc/yamllint-config.yaml src/elb/templates/storage-gcp.yaml
+		yamllint -d share/etc/yamllint-config.yaml src/elastic_blast/templates/storage-gcp.yaml
 	source ${VENV}/bin/activate && \
-		yamllint -d share/etc/yamllint-config.yaml src/elb/templates/storage-gcp-ssd.yaml
+		yamllint -d share/etc/yamllint-config.yaml src/elastic_blast/templates/storage-gcp-ssd.yaml
 	source ${VENV}/bin/activate && \
-		yamllint -d share/etc/yamllint-config.yaml src/elb/templates/pvc.yaml.template
+		yamllint -d share/etc/yamllint-config.yaml src/elastic_blast/templates/pvc.yaml.template
 	source ${VENV}/bin/activate && \
-		yamllint -d share/etc/yamllint-config.yaml src/elb/templates/job-init-*
+		yamllint -d share/etc/yamllint-config.yaml src/elastic_blast/templates/job-init-*
 	source ${VENV}/bin/activate && \
-		yamllint -d share/etc/yamllint-config.yaml src/elb/templates/blast-batch-job*
+		yamllint -d share/etc/yamllint-config.yaml src/elastic_blast/templates/blast-batch-job*
 

@@ -29,42 +29,41 @@ import re
 import configparser
 from dataclasses import dataclass, fields
 from unittest.mock import MagicMock, patch
-from elb.constants import CSP
-from elb.constants import CFG_CLOUD_PROVIDER
-from elb.constants import CFG_CP_GCP_PROJECT, CFG_CP_GCP_REGION, CFG_CP_GCP_ZONE
-from elb.constants import CFG_CP_GCP_NETWORK, CFG_CP_GCP_SUBNETWORK
-from elb.constants import CFG_CP_AWS_REGION, CFG_CP_AWS_VPC, CFG_CP_AWS_SUBNET
-from elb.constants import CFG_CP_AWS_JOB_ROLE, CFG_CP_AWS_BATCH_SERVICE_ROLE
-from elb.constants import CFG_CP_AWS_INSTANCE_ROLE, CFG_CP_AWS_SPOT_FLEET_ROLE
-from elb.constants import CFG_CP_AWS_SECURITY_GROUP, CFG_CP_AWS_KEY_PAIR
-from elb.constants import CFG_BLAST, CFG_BLAST_PROGRAM, CFG_BLAST_DB
-from elb.constants import CFG_BLAST_DB_SRC, CFG_BLAST_RESULTS, CFG_BLAST_QUERY
-from elb.constants import CFG_BLAST_OPTIONS, CFG_BLAST_BATCH_LEN
-from elb.constants import CFG_BLAST_MEM_REQUEST, CFG_BLAST_MEM_LIMIT
-from elb.constants import CFG_BLAST_TAXIDLIST, CFG_BLAST_DB_MEM_MARGIN
-from elb.constants import ELB_BLASTDB_MEMORY_MARGIN
-from elb.constants import CFG_CLUSTER, CFG_CLUSTER_NAME, CFG_CLUSTER_MACHINE_TYPE
-from elb.constants import CFG_CLUSTER_NUM_NODES, CFG_CLUSTER_NUM_CPUS
-from elb.constants import CFG_CLUSTER_PD_SIZE, CFG_CLUSTER_USE_PREEMPTIBLE
-from elb.constants import CFG_CLUSTER_DRY_RUN, CFG_CLUSTER_DISK_TYPE
-from elb.constants import CFG_CLUSTER_PROVISIONED_IOPS, CFG_CLUSTER_BID_PERCENTAGE
-from elb.constants import CFG_CLUSTER_LABELS, CFG_CLUSTER_EXP_USE_LOCAL_SSD
-from elb.constants import CFG_CLUSTER_MIN_NODES, CFG_CLUSTER_MAX_NODES
-from elb.constants import CFG_CLUSTER_ENABLE_STACKDRIVER
-from elb.constants import ELB_DFLT_NUM_NODES
-from elb.constants import ELB_DFLT_USE_PREEMPTIBLE
-from elb.constants import ELB_DFLT_GCP_PD_SIZE, ELB_DFLT_AWS_PD_SIZE
-from elb.constants import ELB_DFLT_GCP_MACHINE_TYPE, ELB_DFLT_AWS_MACHINE_TYPE
-from elb.constants import ELB_DFLT_INIT_PV_TIMEOUT, ELB_DFLT_BLAST_K8S_TIMEOUT
-from elb.constants import ELB_DFLT_AWS_SPOT_BID_PERCENTAGE
-from elb.constants import ELB_DFLT_AWS_DISK_TYPE, ELB_DFLT_OUTFMT
-from elb.base import ConfigParserToDataclassMapper, ParamInfo, DBSource
-from elb.base import InstanceProperties
-from elb.elb_config import CloudURI, GCPString, AWSRegion
-from elb.elb_config import GCPConfig, AWSConfig, BlastConfig, ClusterConfig
-from elb.elb_config import ElasticBlastConfig, get_instance_props
-from elb.constants import ElbCommand
-from elb.util import UserReportError, get_query_batch_size
+from elastic_blast.constants import CSP
+from elastic_blast.constants import CFG_CLOUD_PROVIDER
+from elastic_blast.constants import CFG_CP_GCP_PROJECT, CFG_CP_GCP_REGION, CFG_CP_GCP_ZONE
+from elastic_blast.constants import CFG_CP_GCP_NETWORK, CFG_CP_GCP_SUBNETWORK
+from elastic_blast.constants import CFG_CP_AWS_REGION, CFG_CP_AWS_VPC, CFG_CP_AWS_SUBNET
+from elastic_blast.constants import CFG_CP_AWS_JOB_ROLE, CFG_CP_AWS_BATCH_SERVICE_ROLE
+from elastic_blast.constants import CFG_CP_AWS_INSTANCE_ROLE, CFG_CP_AWS_SPOT_FLEET_ROLE
+from elastic_blast.constants import CFG_CP_AWS_SECURITY_GROUP, CFG_CP_AWS_KEY_PAIR
+from elastic_blast.constants import CFG_BLAST, CFG_BLAST_PROGRAM, CFG_BLAST_DB
+from elastic_blast.constants import CFG_BLAST_DB_SRC, CFG_BLAST_RESULTS, CFG_BLAST_QUERY
+from elastic_blast.constants import CFG_BLAST_OPTIONS, CFG_BLAST_BATCH_LEN
+from elastic_blast.constants import CFG_BLAST_MEM_REQUEST, CFG_BLAST_MEM_LIMIT
+from elastic_blast.constants import CFG_BLAST_TAXIDLIST, CFG_BLAST_DB_MEM_MARGIN
+from elastic_blast.constants import ELB_BLASTDB_MEMORY_MARGIN
+from elastic_blast.constants import CFG_CLUSTER, CFG_CLUSTER_NAME, CFG_CLUSTER_MACHINE_TYPE
+from elastic_blast.constants import CFG_CLUSTER_NUM_NODES, CFG_CLUSTER_NUM_CPUS
+from elastic_blast.constants import CFG_CLUSTER_PD_SIZE, CFG_CLUSTER_USE_PREEMPTIBLE
+from elastic_blast.constants import CFG_CLUSTER_DRY_RUN, CFG_CLUSTER_DISK_TYPE
+from elastic_blast.constants import CFG_CLUSTER_PROVISIONED_IOPS, CFG_CLUSTER_BID_PERCENTAGE
+from elastic_blast.constants import CFG_CLUSTER_LABELS, CFG_CLUSTER_EXP_USE_LOCAL_SSD
+from elastic_blast.constants import CFG_CLUSTER_ENABLE_STACKDRIVER
+from elastic_blast.constants import ELB_DFLT_NUM_NODES
+from elastic_blast.constants import ELB_DFLT_USE_PREEMPTIBLE
+from elastic_blast.constants import ELB_DFLT_GCP_PD_SIZE, ELB_DFLT_AWS_PD_SIZE
+from elastic_blast.constants import ELB_DFLT_GCP_MACHINE_TYPE, ELB_DFLT_AWS_MACHINE_TYPE
+from elastic_blast.constants import ELB_DFLT_INIT_PV_TIMEOUT, ELB_DFLT_BLAST_K8S_TIMEOUT
+from elastic_blast.constants import ELB_DFLT_AWS_SPOT_BID_PERCENTAGE
+from elastic_blast.constants import ELB_DFLT_AWS_DISK_TYPE, ELB_DFLT_OUTFMT
+from elastic_blast.base import ConfigParserToDataclassMapper, ParamInfo, DBSource
+from elastic_blast.base import InstanceProperties
+from elastic_blast.elb_config import CloudURI, GCPString, AWSRegion
+from elastic_blast.elb_config import GCPConfig, AWSConfig, BlastConfig, ClusterConfig
+from elastic_blast.elb_config import ElasticBlastConfig, get_instance_props
+from elastic_blast.constants import ElbCommand
+from elastic_blast.util import UserReportError, get_query_batch_size
 
 import pytest
 
@@ -346,7 +345,7 @@ def test_blastconfig_validation():
     assert [message for message in errors if BAD_URI in message]
 
 
-@patch(target='elb.elb_config.aws_get_machine_properties', new=MagicMock(return_value=InstanceProperties(32, 120)))
+@patch(target='elastic_blast.elb_config.aws_get_machine_properties', new=MagicMock(return_value=InstanceProperties(32, 120)))
 def test_blastconfig_from_configparser():
     """Test BlastConfig initialized from a ConfigParser object"""
     PROGRAM = 'blastn'
@@ -405,7 +404,7 @@ def test_blastconfig_from_configparser_missing():
         assert 'Missing ' + param in str(err.value)
                                     
 
-@patch(target='elb.elb_config.aws_get_machine_properties', new=MagicMock(return_value=InstanceProperties(32, 120)))
+@patch(target='elastic_blast.elb_config.aws_get_machine_properties', new=MagicMock(return_value=InstanceProperties(32, 120)))
 def test_blastconfig_from_configparser_errors():
     """Test that incorrect parameter values in ConfigParser are properly
     reported"""
@@ -456,8 +455,6 @@ def test_clusterconfig_gcp():
     assert cfg.num_cpus == get_instance_props(gcp_cfg, cfg.machine_type).ncpus - 1
     assert cfg.num_nodes == ELB_DFLT_NUM_NODES
     assert cfg.results == RESULTS
-    assert not cfg.min_nodes
-    assert not cfg.max_nodes
     assert not cfg.use_preemptible
     assert not cfg.iops
     assert not cfg.labels
@@ -468,7 +465,7 @@ def test_clusterconfig_gcp():
     assert not errors
 
 
-@patch(target='elb.elb_config.aws_get_machine_properties', new=MagicMock(return_value=InstanceProperties(32, 120)))
+@patch(target='elastic_blast.elb_config.aws_get_machine_properties', new=MagicMock(return_value=InstanceProperties(32, 120)))
 def test_clusterconfig_aws():
     """Test ClusterConfig defaults for GCP"""
     RESULTS = CloudURI('s3://test-results')
@@ -480,8 +477,6 @@ def test_clusterconfig_aws():
     assert cfg.pd_size == ELB_DFLT_AWS_PD_SIZE
     assert cfg.num_cpus == get_instance_props(aws_cfg, cfg.machine_type).ncpus
     assert cfg.num_nodes == ELB_DFLT_NUM_NODES
-    assert not cfg.min_nodes
-    assert not cfg.max_nodes
     assert not cfg.use_preemptible
     assert cfg.disk_type == ELB_DFLT_AWS_DISK_TYPE
     assert not cfg.iops
@@ -494,20 +489,7 @@ def test_clusterconfig_aws():
     assert not errors
 
 
-def test_clusterconfig_validation():
-    """Test ClusterConfig validation"""
-    cfg = ClusterConfig(cloud_provider = GCPConfig(project = 'test-project',
-                                                   region = 'test-region',
-                                                   zone = 'test-zone'),
-                        results = CloudURI('gs://test-results'),
-                        min_nodes = 5)
-    errors = []
-    cfg.validate(errors, ElbCommand.SUBMIT)
-    assert errors
-    assert [message for message in errors if 'min-nodes and max-nodes' in message]
-
-
-@patch(target='elb.elb_config.aws_get_machine_properties', new=MagicMock(return_value=InstanceProperties(32, 120)))
+@patch(target='elastic_blast.elb_config.aws_get_machine_properties', new=MagicMock(return_value=InstanceProperties(32, 120)))
 def test_clusterconfig_from_configparser():
     """Test ClusterConfig initialized from a ConfigParser object"""
     RESULTS = 's3://test-bucket'
@@ -516,8 +498,6 @@ def test_clusterconfig_from_configparser():
     PD_SIZE = 'test-pd-size'
     NUM_CPUS = 123
     NUM_NODES = 5000
-    MIN_NODES = 12
-    MAX_NODES = 999
     USE_PREEMPTIBLE = 'Yes'
     DISK_TYPE = 'test-disk-type'
     IOPS = 987
@@ -532,8 +512,6 @@ def test_clusterconfig_from_configparser():
                              CFG_CLUSTER_PD_SIZE: PD_SIZE,
                              CFG_CLUSTER_NUM_CPUS: str(NUM_CPUS),
                              CFG_CLUSTER_NUM_NODES: str(NUM_NODES),
-                             CFG_CLUSTER_MIN_NODES: str(MIN_NODES),
-                             CFG_CLUSTER_MAX_NODES: str(MAX_NODES),
                              CFG_CLUSTER_USE_PREEMPTIBLE: USE_PREEMPTIBLE,
                              CFG_CLUSTER_DISK_TYPE: DISK_TYPE,
                              CFG_CLUSTER_PROVISIONED_IOPS: IOPS,
@@ -551,8 +529,6 @@ def test_clusterconfig_from_configparser():
     assert cfg.pd_size == PD_SIZE
     assert cfg.num_cpus == NUM_CPUS
     assert cfg.num_nodes == NUM_NODES
-    assert cfg.min_nodes == MIN_NODES
-    assert cfg.max_nodes == MAX_NODES
     assert cfg.use_preemptible == True
     assert cfg.disk_type == DISK_TYPE
     assert cfg.iops == IOPS
@@ -567,7 +543,7 @@ def test_clusterconfig_from_configparser():
     assert not errors
 
 
-@patch(target='elb.elb_config.aws_get_machine_properties', new=MagicMock(return_value=InstanceProperties(32, 120)))
+@patch(target='elastic_blast.elb_config.aws_get_machine_properties', new=MagicMock(return_value=InstanceProperties(32, 120)))
 def test_clusterconfig_from_configparser_missing():
     """Test ClusterConfig initialization from a ConfigParser object with
     missing required parameters"""
@@ -586,8 +562,6 @@ def test_clusterconfig_from_configparser_errors():
     confpars = configparser.ConfigParser()
     confpars[CFG_CLUSTER] = {CFG_CLUSTER_NUM_CPUS: '-25',
                              CFG_CLUSTER_NUM_NODES: 'abc',
-                             CFG_CLUSTER_MIN_NODES: '0.1',
-                             CFG_CLUSTER_MAX_NODES: 'aaa',
                              CFG_CLUSTER_BID_PERCENTAGE: '101'}
 
     with pytest.raises(ValueError) as err:
@@ -608,12 +582,12 @@ def test_ElasticBlastConfig_init_errors():
 
     with pytest.raises(AttributeError) as err:
         cfg = ElasticBlastConfig(5)
-    assert 'one positional parameter' in str(err.value)
+    assert 'two positional arguments' in str(err.value)
     assert 'ConfigParser object' in str(err.value)
 
     with pytest.raises(AttributeError) as err:
-        cfg = ElasticBlastConfig(configparser.ConfigParser(), 5)
-    assert 'one positional parameter' in str(err.value)
+        cfg = ElasticBlastConfig(configparser.ConfigParser(), False, 5)
+    assert 'two positional arguments' in str(err.value)
     assert 'ConfigParser object' in str(err.value)
 
     with pytest.raises(AttributeError) as err:
@@ -625,7 +599,7 @@ def test_ElasticBlastConfig_init_errors():
     assert 'task parameter must be specified' in str(err.value)
 
 
-@patch(target='elb.elb_config.aws_get_machine_properties', new=MagicMock(return_value=InstanceProperties(2, 8)))
+@patch(target='elastic_blast.elb_config.aws_get_machine_properties', new=MagicMock(return_value=InstanceProperties(2, 8)))
 def test_validate_too_many_cpus():
     """Test that requesting too many CPUs is reported"""
     cfg = ElasticBlastConfig(aws_region = 'test-region',

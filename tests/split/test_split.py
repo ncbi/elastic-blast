@@ -28,7 +28,7 @@ from io import StringIO
 import tempfile
 import shutil
 import hashlib
-from elb import split
+from elastic_blast import split
 import pytest
 
 

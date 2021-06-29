@@ -10,8 +10,8 @@ import logging
 import boto3 # type: ignore
 from pprint import pformat
 from botocore.config import Config  # type: ignore
-from elb.util import UserReportError
-from elb.constants import DEPENDENCY_ERROR
+from elastic_blast.util import UserReportError
+from elastic_blast.constants import DEPENDENCY_ERROR
 
 OUT_OF_QUOTA_ERR_MSG = 'ElasticBLAST cannot create the necessary AWS resources ({}) to run your search. Please run elastic-blast delete on searches that have already completed.'
 

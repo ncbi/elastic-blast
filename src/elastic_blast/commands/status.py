@@ -27,12 +27,12 @@ Author: Victor Joukov joukovv@ncbi.nlm.nih.gov
 import sys
 import time
 import logging
-from elb import gcp
-from elb import aws
-from elb.util import SafeExecError, UserReportError
-from elb.status import get_status
-from elb.constants import CLUSTER_ERROR, CSP, ElbCommand
-from elb.elb_config import ElasticBlastConfig
+from elastic_blast import gcp
+from elastic_blast import aws
+from elastic_blast.util import SafeExecError, UserReportError
+from elastic_blast.status import get_status
+from elastic_blast.constants import CLUSTER_ERROR, CSP, ElbCommand
+from elastic_blast.elb_config import ElasticBlastConfig
 
 def create_arg_parser(subparser, common_opts_parser):
     """ Create the command line options subparser for the status command. """

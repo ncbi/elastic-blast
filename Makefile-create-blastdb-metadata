@@ -1,0 +1,25 @@
+# Makefile to test create-blastdb-metadata.py script
+# Author: Christiam Camacho (camacho@ncbi.nlm.nih.gov)
+# Created: Tue 15 Jun 2021 11:01:20 AM EDT
+
+SHELL=/bin/bash
+.PHONY: all clean check check_python
+
+#########################################################################
+# Python support
+
+all:
+	bin/create-blastdb-metadata.py --help
+	bin/create-blastdb-metadata.py --version
+
+check: check_python
+	bin/create-blastdb-metadata.py --db tests/blastdb/testdb --dbtype prot --out testdb.json
+	cat testdb.json | jq -Mr '.' >/dev/null
+	rm testdb.json
+
+check_python:
+	python3 -m py_compile bin/create-blastdb-metadata.py
+	python3 -m unittest bin/create-blastdb-metadata.py
+
+clean:
+	find . -name __pycache__ | xargs ${RM} -fr

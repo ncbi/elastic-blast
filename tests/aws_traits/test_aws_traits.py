@@ -19,15 +19,15 @@
 # Please cite NCBI in any work or product based on this material.
 
 """
-Test for elb.aws_traits
+Test for elastic_blast.aws_traits
 
 Author: Greg Boratyn boratyng@ncbi.nlm.nih.gov
 """
 import os
-from elb.aws_traits import get_machine_properties, create_aws_config, get_availability_zones_for
-from elb.base import InstanceProperties
-from elb.util import UserReportError
-from elb.constants import INPUT_ERROR, ELB_DFLT_AWS_REGION
+from elastic_blast.aws_traits import get_machine_properties, create_aws_config, get_availability_zones_for
+from elastic_blast.base import InstanceProperties
+from elastic_blast.util import UserReportError
+from elastic_blast.constants import INPUT_ERROR, ELB_DFLT_AWS_REGION
 import pytest
 
 

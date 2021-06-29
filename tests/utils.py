@@ -28,10 +28,10 @@ Created: Wed 29 Apr 2020 06:50:51 PM EDT
 """
 
 import json
-from elb.util import SafeExecError
-from elb import config
-from elb.elb_config import ElasticBlastConfig
-from elb.constants import ElbCommand
+from elastic_blast.util import SafeExecError
+from elastic_blast import config
+from elastic_blast.elb_config import ElasticBlastConfig
+from elastic_blast.constants import ElbCommand
 from typing import Optional, List, Union
 import pytest
 
@@ -58,10 +58,10 @@ def gke_mock(mocker):
     # we need gcp.safe_exec instead of util.safe exec here, because
     # safe_exec is imported in gcp.py with 'from util import safe_exec'
     # and safe_exec in gcp is seen as local, python is funny this way
-    mocker.patch('elb.gcp.safe_exec', side_effect=mock.mocked_safe_exec)
-    mocker.patch('elb.kubernetes.safe_exec', side_effect=mock.mocked_safe_exec)
-    mocker.patch('elb.status.safe_exec', side_effect=mock.mocked_safe_exec)
-    mocker.patch('elb.util.safe_exec', side_effect=mock.mocked_safe_exec)
+    mocker.patch('elastic_blast.gcp.safe_exec', side_effect=mock.mocked_safe_exec)
+    mocker.patch('elastic_blast.kubernetes.safe_exec', side_effect=mock.mocked_safe_exec)
+    mocker.patch('elastic_blast.status.safe_exec', side_effect=mock.mocked_safe_exec)
+    mocker.patch('elastic_blast.util.safe_exec', side_effect=mock.mocked_safe_exec)
     yield mock
     del mock
 

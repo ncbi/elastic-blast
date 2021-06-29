@@ -1,13 +1,13 @@
 #                           PUBLIC DOMAIN NOTICE
 #              National Center for Biotechnology Information
-#  
+#
 # This software is a "United States Government Work" under the
 # terms of the United States Copyright Act.  It was written as part of
 # the authors' official duties as United States Government employees and
 # thus cannot be copyrighted.  This software is freely available
 # to the public for use.  The National Library of Medicine and the U.S.
 # Government have not placed any restriction on its use or reproduction.
-#   
+#
 # Although all reasonable efforts have been taken to ensure the accuracy
 # and reliability of the software and data, the NLM and the U.S.
 # Government do not and cannot warrant the performance or results that
@@ -15,7 +15,7 @@
 # Government disclaim all warranties, express or implied, including
 # warranties of performance, merchantability or fitness for any particular
 # purpose.
-#   
+#
 # Please cite NCBI in any work or product based on this material.
 
 """
@@ -36,18 +36,24 @@ from dataclasses import dataclass, field
 from typing import List
 import boto3  # type: ignore
 from botocore.exceptions import ClientError  #type: ignore
-from elb.aws_traits import create_aws_config
-from elb.aws import handle_aws_error
-from elb.util import safe_exec, UserReportError
-from elb.filehelper import parse_bucket_name_key
-from elb.constants import CLUSTER_ERROR, ELB_AWS_JOB_IDS, ELB_AWS_QUERY_LENGTH, ELB_METADATA_DIR, PERMISSIONS_ERROR
-from elb.constants import ELB_LOG_DIR, CSP, ElbCommand
+from elastic_blast.aws_traits import create_aws_config
+from elastic_blast.aws import handle_aws_error
+from elastic_blast.util import safe_exec
+from elastic_blast.filehelper import parse_bucket_name_key
+from elastic_blast.constants import ELB_AWS_JOB_IDS, ELB_AWS_QUERY_LENGTH, ELB_METADATA_DIR
+from elastic_blast.constants import ELB_LOG_DIR, CSP, ElbCommand
 
 # Artificial exit codes to differentiate failure modes
 # of AWS job.
 JOB_EXIT_CODE_UNINITIALIZED = -1
 JOB_EXIT_CODE_FAILED_WITH_NO_ATTEMPT = 100000
 JOB_EXIT_CODE_FAILED_WITH_NO_EXIT_CODE = 100001
+
+# Phases of AWS job
+PHASE_BLASTDB_SETUP = 'blastDbSetup'
+PHASE_BLAST = 'blast'
+PHASE_QUERY_DOWNLOAD = 'queryDownload'
+PHASE_QUERY_SPLIT = 'querySplit'
 
 
 @dataclass
@@ -56,7 +62,30 @@ class Run:
     start_time: int = 0
     end_time:  int = 0
     exit_codes: List[int] = field(default_factory=list)
+    phase_names: List[str] = field(default_factory=list)
+    def read_log_parser(self, log_parser):
+        # Copy all run phases
+        for _, _, phase in run_phases:
+            vars = [
+                phase + '_time',
+                phase + '_num',
+                phase + '_min',
+                phase + '_max'
+            ]
+            var_present = False
+            for var in vars:
+                if hasattr(log_parser, var):
+                    setattr(self, var, getattr(log_parser, var))
+                    var_present = True
+            if var_present:
+                self.phase_names.append(phase)
 
+        vars = [ 'db_num_seq', 'db_length', 'query_length', 'instance_type',
+                'instance_vcpus', 'instance_ram', 'min_vcpus', 'max_vcpus',
+                'num_nodes']
+        for var in vars:
+            if hasattr(log_parser, var):
+                setattr(self, var, getattr(log_parser, var))
 
 def create_arg_parser(subparser, common_opts_parser):
     """ Create the command line options subparser for the command. """
@@ -102,7 +131,7 @@ def _run_summary(args, cfg, clean_up_stack):
 #    logging.debug(f'JOBS blast {njobs} done, {nfailed} failed')
 #    logging.debug(f'RUNTIME blast {end_time-start_time:.3f} seconds')
     summary = {}
-    summary['version'] = "1.0"  # FIXME: should this match elb.version?
+    summary['version'] = "1.0"  # FIXME: should this match elastic_blast.version?
     summary['clusterInfo'] = {}
     summary['clusterInfo']['provider'] = cloud_provider.name
     if hasattr(run, 'num_nodes'):
@@ -113,6 +142,8 @@ def _run_summary(args, cfg, clean_up_stack):
         machineType = run.instance_type
     else:
         machineType = cfg.cluster.machine_type
+    if hasattr(run, 'cluster_name'):
+        summary['clusterInfo']['name'] = run.cluster_name
     if hasattr(run, 'instance_vcpus'):
         summary['clusterInfo']['numVCPUsPerMachine'] = run.instance_vcpus
     if hasattr(run, 'instance_ram'):
@@ -124,22 +155,21 @@ def _run_summary(args, cfg, clean_up_stack):
     blast_run_time = (run.end_time - run.start_time) / 1000
     summary['runtime'] = {}
     summary['runtime']['wallClock'] = blast_run_time
-    if hasattr(run, 'blastdb_total_time') or hasattr(run, 'blastdb_min_time') or hasattr(run, 'blastdb_max_time'):
-        summary['runtime']['blastdbSetup'] = {}
-        if hasattr(run, 'blastdb_total_time'):
-            summary['runtime']['blastdbSetup']['totalTime'] = run.blastdb_total_time / 1000
-        if hasattr(run, 'blastdb_min_time'):
-            summary['runtime']['blastdbSetup']['minTime'] = run.blastdb_min_time / 1000
-        if hasattr(run, 'blastdb_max_time'):
-            summary['runtime']['blastdbSetup']['maxTime'] = run.blastdb_max_time / 1000
-    if hasattr(run, 'blast_total_time') or hasattr(run, 'blast_min_time') or hasattr(run, 'blast_max_time'):
-        summary['runtime']['blast'] = {}
-        if hasattr(run, 'blast_total_time'):
-            summary['runtime']['blast']['totalTime'] = run.blast_total_time / 1000
-        if hasattr(run, 'blast_min_time'):
-            summary['runtime']['blast']['minTime'] = run.blast_min_time / 1000
-        if hasattr(run, 'blast_max_time'):
-            summary['runtime']['blast']['maxTime'] = run.blast_max_time / 1000
+    for phase in run.phase_names:
+        total_var = phase + '_time'
+        num_var = phase + '_num'
+        min_var = phase + '_min'
+        max_var = phase + '_max'
+        if hasattr(run, total_var):
+            summary['runtime'][phase] = {}
+            if hasattr(run, num_var):
+                summary['runtime'][phase]['num'] = getattr(run, num_var)
+            if hasattr(run, total_var):
+                summary['runtime'][phase]['totalTime']  = getattr(run, total_var) / 1000
+            if hasattr(run, min_var):
+                summary['runtime'][phase]['minTime'] = getattr(run, min_var) / 1000
+            if hasattr(run, max_var):
+                summary['runtime'][phase]['maxTime'] = getattr(run, max_var) / 1000
 
     summary['blastData'] = {}
     if hasattr(run, 'query_length'):
@@ -234,10 +264,20 @@ re_blastdbcmdstart = re.compile(r'^Start database download')
 re_blastdbcmdend = re.compile(r'^End database download')
 re_blastcmdstart = re.compile(r'^Start blast search')
 re_blastcmdend = re.compile(r'^End blast search')
+re_query_download_start = re.compile(r'^Start quer(y|ies) download')
+re_query_download_end = re.compile(r'^End quer(y|ies) download')
+re_query_split_start = re.compile(r'^Start query splitting')
+re_query_split_end = re.compile(r'^End query splitting')
+run_phases = [
+    (re_blastdbcmdstart, re_blastdbcmdend, PHASE_BLASTDB_SETUP),
+    (re_blastcmdstart, re_blastcmdend, PHASE_BLAST),
+    (re_query_download_start, re_query_download_end, PHASE_QUERY_DOWNLOAD),
+    (re_query_split_start, re_query_split_end, PHASE_QUERY_SPLIT)
+]
 class AwsLogParser:
     def __init__(self):
-        self.num_seq = 0
-        self.letters = 0
+        self.db_num_seq = 0
+        self.db_length = 0
         self.start_time = 0
         self.end_time = 0
         self.blastdb_total_time = 0
@@ -248,36 +288,27 @@ class AwsLogParser:
         self.blast_max_time = 0
         self.njobs = 0
         self.exit_codes = []
-        self.blastdb_start_time = 0
-        self.blast_start_time = 0
+        self.phase_start_time = 0
 
     def init_job(self, exit_code):
         self.exit_codes.append(exit_code)
         self.njobs += 1
-        self.blastdb_start_time = 0
-        self.blast_start_time = 0
 
     def parse_line(self, line):
+        """ Parse a line of saved log file """
         parts = line.strip().split('\t')
         if len(parts) <= 1:
             return
         if parts[0] == 'job':
             exit_code = int(parts[2])
             self.init_job(exit_code)
+        elif parts[0] == 'cluster_name':
+            self.cluster_name = parts[1]
         elif parts[0] == 'instance_type':
             self.instance_type = parts[1]
-        elif parts[0] == 'instance_vcpus':
-            self.instance_vcpus = int(parts[1])
-        elif parts[0] == 'instance_ram':
-            self.instance_ram = int(parts[1])
-        elif parts[0] == 'min_vcpus':
-            self.min_vcpus = int(parts[1])
-        elif parts[0] == 'max_vcpus':
-            self.max_vcpus = int(parts[1])
-        elif parts[0] == 'num_nodes':
-            self.num_nodes = int(parts[1])
-        elif parts[0] == 'query_length':
-            self.query_length = int(parts[1])
+        elif parts[0] in ('instance_vcpus', 'instance_ram', 'min_vcpus',
+                          'max_vcpus', 'num_nodes', 'query_length'):
+            setattr(self, parts[0], int(parts[1]))
         else:
             try:
                 ts = int(parts[0])
@@ -286,6 +317,7 @@ class AwsLogParser:
                 pass
 
     def parse(self, ts, message):
+        """ Parse timestamp and message of a log record """
         if self.start_time == 0 or ts < self.start_time:
             self.start_time = ts
         if ts > self.end_time:
@@ -293,34 +325,39 @@ class AwsLogParser:
         # find blastcmd  -info to get database stats
         mo = re_db_stat.search(message)
         if mo:
-            self.num_seq, self.letters = map(lambda x: int(re.sub(',', '', x)), mo.groups())
-        mo = re_blastdbcmdstart.search(message)
-        if mo:
-            self.blastdb_start_time = ts
-            logging.debug(f'Start database {ts}')
-        elif self.blastdb_start_time and re_blastdbcmdend.search(message):
-            blastdb_time = ts - self.blastdb_start_time
-            logging.debug(f'End database {ts}, elapsed {blastdb_time}')
-            self.blastdb_total_time += blastdb_time
-            if blastdb_time > self.blastdb_max_time:
-                self.blastdb_max_time = blastdb_time
-            if blastdb_time < self.blastdb_min_time or self.blastdb_min_time == 0:
-                self.blastdb_min_time = blastdb_time
-            self.blastdb_start_time = 0
-        mo = re_blastcmdstart.search(message)
-        if mo:
-            self.blast_start_time = ts
-            logging.debug(f'Start search {ts}')
-        elif self.blast_start_time and re_blastcmdend.search(message):
-            blast_time = ts - self.blast_start_time
-            logging.debug(f'End search {ts}, elapsed {blast_time}')
-            self.blast_total_time += blast_time
-            if blast_time > self.blast_max_time:
-                self.blast_max_time = blast_time
-            if blast_time < self.blast_min_time or self.blast_min_time == 0:
-                self.blast_min_time = blast_time
-            self.blast_start_time = 0
-
+            self.db_num_seq, self.db_length = map(lambda x: int(re.sub(',', '', x)), mo.groups())
+        for re_start, re_end, phase in run_phases:
+            mo = re_start.search(message)
+            if mo:
+                self.phase_start_time = ts
+            else:
+                mo = re_end.search(message)
+                if mo:
+                    t = ts - self.phase_start_time
+                    total_var = phase + '_time'
+                    num_var = phase + '_num'
+                    min_var = phase + '_min'
+                    max_var = phase + '_max'
+                    if hasattr(self, total_var):
+                        total = getattr(self, total_var) + t
+                    else:
+                        total = t
+                    setattr(self, total_var, total)
+                    if hasattr(self, num_var):
+                        n = getattr(self, num_var) + 1
+                    else:
+                        n = 1
+                    setattr(self, num_var, n)
+                    if hasattr(self, min_var):
+                        val = min(getattr(self, min_var), t)
+                    else:
+                        val = t
+                    setattr(self, min_var, val)
+                    if hasattr(self, max_var):
+                        val = max(getattr(self, max_var), t)
+                    else:
+                        val = t
+                    setattr(self, max_var, val)
 
 class AwsCompEnv:
     def __init__(self, batch, ec2):
@@ -362,30 +399,10 @@ def _read_job_logs_aws_from_file(read_logs):
         and any additional information we can learn about this run """
     log_parser = AwsLogParser()
     for line in read_logs:
-        log_parser.parse_line(line)    
+        log_parser.parse_line(line)
+    
     run = Run(log_parser.njobs, log_parser.start_time, log_parser.end_time, log_parser.exit_codes)
-    run.db_num_seq = log_parser.num_seq
-    run.db_length = log_parser.letters
-    run.blast_total_time = log_parser.blast_total_time
-    run.blast_min_time = log_parser.blast_min_time
-    run.blast_max_time = log_parser.blast_max_time
-    run.blastdb_total_time = log_parser.blastdb_total_time
-    run.blastdb_min_time = log_parser.blastdb_min_time
-    run.blastdb_max_time = log_parser.blastdb_max_time
-    if hasattr(log_parser, 'query_length'):
-        run.query_length = log_parser.query_length
-    if hasattr(log_parser, 'instance_type'):
-        run.instance_type = log_parser.instance_type
-    if hasattr(log_parser, 'instance_vcpus'):
-        run.instance_vcpus = log_parser.instance_vcpus
-    if hasattr(log_parser, 'instance_ram'):
-        run.instance_ram = log_parser.instance_ram
-    if hasattr(log_parser, 'min_vcpus'):
-        run.min_vcpus = log_parser.min_vcpus
-    if hasattr(log_parser, 'max_vcpus'):
-        run.max_vcpus = log_parser.max_vcpus
-    if hasattr(log_parser, 'num_nodes'):
-        run.num_nodes = log_parser.num_nodes
+    run.read_log_parser(log_parser)
     return run
 
 
@@ -504,23 +521,18 @@ def _read_job_logs_aws(cfg, write_logs):
                     if e.response.get('Error', {}).get('Code', 'Unknown') != 'ResourceNotFoundException':
                         raise
 
-    run = Run(log_parser.njobs, log_parser.start_time, log_parser.end_time, log_parser.exit_codes)
-    run.db_num_seq = log_parser.num_seq
-    run.db_length = log_parser.letters
-    run.blast_total_time = log_parser.blast_total_time
-    run.blast_min_time = log_parser.blast_min_time
-    run.blast_max_time = log_parser.blast_max_time
-    run.blastdb_total_time = log_parser.blastdb_total_time
-    run.blastdb_min_time = log_parser.blastdb_min_time
-    run.blastdb_max_time = log_parser.blastdb_max_time
     if query_length:
-        run.query_length = query_length
+        log_parser.query_length = query_length
     if aws_comp_env:
-        run.instance_type = aws_comp_env.instance_type
-        run.instance_vcpus = aws_comp_env.instance_vcpus
-        run.instance_ram = aws_comp_env.instance_ram
-        run.min_vcpus = aws_comp_env.min_vcpus
-        run.max_vcpus = aws_comp_env.max_vcpus
-        run.num_nodes = aws_comp_env.num_nodes
+        log_parser.cluster_name = aws_comp_env.ce_name
+        log_parser.instance_type = aws_comp_env.instance_type
+        log_parser.instance_vcpus = aws_comp_env.instance_vcpus
+        log_parser.instance_ram = aws_comp_env.instance_ram
+        log_parser.min_vcpus = aws_comp_env.min_vcpus
+        log_parser.max_vcpus = aws_comp_env.max_vcpus
+        log_parser.num_nodes = aws_comp_env.num_nodes
+
+    run = Run(log_parser.njobs, log_parser.start_time, log_parser.end_time, log_parser.exit_codes)
+    run.read_log_parser(log_parser)
     return run
 

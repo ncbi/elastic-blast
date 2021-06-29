@@ -19,12 +19,12 @@
 # Please cite NCBI in any work or product based on this material.
 
 """
-test_subst.py - unit test for elb.subst module
+test_subst.py - unit test for elastic_blast.subst module
 
 Author: Victor Joukov joukovv@ncbi.nlm.nih.gov
 """
 
-from elb.subst import substitute_params
+from elastic_blast.subst import substitute_params
 
 def test_subst():
     query_num = '046'

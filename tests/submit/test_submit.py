@@ -29,14 +29,14 @@ import os
 import tempfile
 import shutil
 from unittest.mock import patch, MagicMock
-from elb.commands.submit import submit, assemble_query_file_list
-from elb.util import UserReportError
-from elb import constants
-from elb import gcp
-from elb.config import configure
-from elb.constants import QUERY_LIST_EXT, ElbCommand
-from elb.elb_config import ElasticBlastConfig
-from elb.base import InstanceProperties
+from elastic_blast.commands.submit import submit, assemble_query_file_list
+from elastic_blast.util import UserReportError
+from elastic_blast import constants
+from elastic_blast import gcp
+from elastic_blast.config import configure
+from elastic_blast.constants import QUERY_LIST_EXT, ElbCommand
+from elastic_blast.elb_config import ElasticBlastConfig
+from elastic_blast.base import InstanceProperties
 
 from tests.utils import gke_mock, MockedCompletedProcess
 import pytest
@@ -52,7 +52,7 @@ def test_blastdb_not_found(gke_mock, mocker):
     def mocked_check_cluster(cfg):
         """Mocked check cluster that simulates non-existent cluster status"""
         return ''
-    mocker.patch('elb.commands.submit.gcp_check_cluster', side_effect=mocked_check_cluster)
+    mocker.patch('elastic_blast.commands.submit.gcp_check_cluster', side_effect=mocked_check_cluster)
     def mock_safe_exec(cmd):
         if isinstance(cmd, list):
             cmd = ' '.join(cmd)
@@ -61,7 +61,7 @@ def test_blastdb_not_found(gke_mock, mocker):
         elif cmd == 'gsutil cat gs://blast-db/2020-20-20/blastdb-manifest.json':
             return MockedCompletedProcess(stdout='{"nt":{"size":93.36}, "nr":{"size":227.4}}')
         return MockedCompletedProcess()
-    mocker.patch('elb.util.safe_exec', side_effect=mock_safe_exec)
+    mocker.patch('elastic_blast.util.safe_exec', side_effect=mock_safe_exec)
 
     print(INI_NO_BLASTDB)
 
@@ -85,7 +85,7 @@ def tmpdir():
     shutil.rmtree(name)
 
 
-@patch(target='elb.elb_config.aws_get_machine_properties', new=MagicMock(return_value=InstanceProperties(32, 120)))
+@patch(target='elastic_blast.elb_config.aws_get_machine_properties', new=MagicMock(return_value=InstanceProperties(32, 120)))
 def test_query_file_list(tmpdir):
     """Test getting a list of queries files from a file"""
     expected_query_files = ['query-file-1', 'query-file-2']
@@ -107,7 +107,7 @@ def test_query_file_list(tmpdir):
     assert sorted(query_files) == sorted(expected_query_files)
 
 
-@patch(target='elb.elb_config.aws_get_machine_properties', new=MagicMock(return_value=InstanceProperties(32, 120)))
+@patch(target='elastic_blast.elb_config.aws_get_machine_properties', new=MagicMock(return_value=InstanceProperties(32, 120)))
 def test_query_file_list_bad_uri(tmpdir):
     """Test list of queries with illigal cloud URIs"""
     query_files = ['gs://bucket!-123/@#$*/queris!.fa',

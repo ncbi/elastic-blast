@@ -31,13 +31,13 @@ Unit tests for aws module
 # To make things easier, the cloudformation, iam, ec2, batch, and s3 fixtures
 # do the above for you.
 
-# To make things even easier, if you need elb.aws.ElasticBlastAws object with
+# To make things even easier, if you need elastic_blast.aws.ElasticBlastAws object with
 # default parameters, use ElasticBlastAws fixture (see
 # test_ElasticBlastAws_init_auto_vpc as an example). If you need to modify
 # elastic-blast config, use at least cloudformation, iam, ec2, and batch
 # fixtures (see test_ElasticBlastAws_init_custom_vpc as an example).
 
-# Mocks must be set up before boto3 clients, so if we have any code in elb.aws
+# Mocks must be set up before boto3 clients, so if we have any code in elastic_blast.aws
 # that initializes boto3 clients during import, aws will have to be
 # imported inside test function.
 
@@ -49,15 +49,15 @@ import boto3 #type: ignore
 import getpass
 from moto import mock_batch, mock_s3, mock_ec2, mock_cloudformation, mock_iam #type: ignore
 
-from elb import aws
-from elb import aws_traits
-from elb.constants import ELB_DFLT_AWS_REGION, CSP
-from elb.constants import BLASTDB_ERROR, DEPENDENCY_ERROR, INPUT_ERROR
-from elb.constants import ElbCommand
-from elb.util import UserReportError
-from elb.filehelper import parse_bucket_name_key
-from elb.base import InstanceProperties, DBSource
-from elb.elb_config import ElasticBlastConfig, PositiveInteger
+from elastic_blast import aws
+from elastic_blast import aws_traits
+from elastic_blast.constants import ELB_DFLT_AWS_REGION, CSP
+from elastic_blast.constants import BLASTDB_ERROR, DEPENDENCY_ERROR, INPUT_ERROR
+from elastic_blast.constants import ElbCommand
+from elastic_blast.util import UserReportError
+from elastic_blast.filehelper import parse_bucket_name_key
+from elastic_blast.base import InstanceProperties, DBSource
+from elastic_blast.elb_config import ElasticBlastConfig, PositiveInteger
 
 from botocore.exceptions import ClientError #type: ignore
 from unittest.mock import call
@@ -193,14 +193,14 @@ def initialize_cfg() -> ElasticBlastConfig:
 
 
 def create_ElasticBlastAws(cfg: ElasticBlastConfig):
-    """Create elb.aws.ElasticBlastAws object with default parameters unless set
+    """Create elastic_blast.aws.ElasticBlastAws object with default parameters unless set
     otherwise.
 
     Arguments:
         cfg: Elastic-BLAST config
 
     Returns:
-        elb.aws.ElasticBlastAws object
+        elastic_blast.aws.ElasticBlastAws object
     """
     service_role, instance_profile = create_roles()
 
@@ -212,7 +212,7 @@ def create_ElasticBlastAws(cfg: ElasticBlastConfig):
 
 @pytest.fixture
 def ElasticBlastAws(cloudformation, iam, ec2, batch):
-    """Fixture that creates elb.aws.ElasticBlastAws object with default
+    """Fixture that creates elastic_blast.aws.ElasticBlastAws object with default
     parameters"""
     cfg = initialize_cfg()
     yield create_ElasticBlastAws(cfg)
@@ -223,7 +223,7 @@ def check_ElasticBlastAws_object(eb, cfg):
     resources it creates.
 
     Arguments:
-        eb: elb.aws.ElasticBlastAws object
+        eb: elastic_blast.aws.ElasticBlastAws object
         cfg: Config
     """
     batch_client = boto3.client('batch')
@@ -276,7 +276,7 @@ def check_ElasticBlastAws_object(eb, cfg):
 
 @pytest.mark.skipif(True, reason='There seems to be a bug in moto library handling CloudFormation conditions')
 def test_ElasticBlastAws_init_custom_vpc(cloudformation, ec2, iam, batch):
-    """Test initialization of elb.aws.ElasticBlastAws with AWS resource
+    """Test initialization of elastic_blast.aws.ElasticBlastAws with AWS resource
     creation and user-provided VPC"""
 
     # create VPC, subnet, and security group
@@ -296,7 +296,7 @@ def test_ElasticBlastAws_init_custom_vpc(cloudformation, ec2, iam, batch):
 
 @pytest.mark.skipif(True, reason='There seems to be a bug in moto library handling CloudFormation conditions')
 def test_ElasticBlastAws_init_auto_vpc(ElasticBlastAws, batch):
-    """Test initialization of elb.aws.ElasticBlastAws with AWS resource
+    """Test initialization of elastic_blast.aws.ElasticBlastAws with AWS resource
     creation and auto-created VPC"""
     eb = ElasticBlastAws
     check_ElasticBlastAws_object(eb, eb.cfg)
@@ -304,7 +304,7 @@ def test_ElasticBlastAws_init_auto_vpc(ElasticBlastAws, batch):
 
 @pytest.mark.skipif(True, reason='There seems to be a bug in moto library handling CloudFormation conditions')
 def test_ElasticBlastAws_delete(ElasticBlastAws, s3, mocker):
-    """Test elb.ElasticBlastAws.delete function"""
+    """Test elastic_blast.ElasticBlastAws.delete function"""
 
     eb = ElasticBlastAws
 
@@ -350,7 +350,7 @@ def test_create_config_from_file(mocker):
         assert instance_type == 'm5.8xlarge'
         return InstanceProperties(32, 128)
 
-    mocker.patch('elb.elb_config.aws_get_machine_properties', side_effect=mocked_get_machine_properties)
+    mocker.patch('elastic_blast.elb_config.aws_get_machine_properties', side_effect=mocked_get_machine_properties)
 
     cfg = configparser.ConfigParser()
     cfg.read(f"{TEST_DATA_DIR}/elb-aws-blastn-pdbnt.ini")
@@ -518,7 +518,7 @@ class MockedCloudformation:
 def test_report_cloudformation_create_errors(batch, s3, iam, ec2, mocker):
     """Test proper reporting of cloudformation stack creation errors"""
 
-    from elb.aws import ElasticBlastAws
+    from elastic_blast.aws import ElasticBlastAws
 
     def mocked_resource(name, config):
         """Mocked boto3 resource function that creates mocked cloudformation
@@ -552,7 +552,7 @@ def test_report_cloudformation_delete_errors(ElasticBlastAws, mocker):
     eb = ElasticBlastAws
 
     def mocked_remove_ancillary_data(direcotry):
-        """Mocked elb.aws.ElasticBlastAws._remove_ancillary_data that does
+        """Mocked elastic_blast.aws.ElasticBlastAws._remove_ancillary_data that does
         nothing"""
         pass
 
@@ -563,7 +563,7 @@ def test_report_cloudformation_delete_errors(ElasticBlastAws, mocker):
     mocker.patch.object(eb, 'cf', mocked_cf)
     mocker.patch.object(eb, 'cf_stack', mocked_stack)
     # this is mocked so that we do not need put fake query_batch file in fake S3
-    mocker.patch('elb.aws.ElasticBlastAws._remove_ancillary_data',
+    mocker.patch('elastic_blast.aws.ElasticBlastAws._remove_ancillary_data',
                  side_effect=mocked_remove_ancillary_data)
 
     with pytest.raises(UserReportError) as err:

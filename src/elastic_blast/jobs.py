@@ -19,7 +19,7 @@
 # Please cite NCBI in any work or product based on this material.
 
 """
-Module elb.jobs
+Module elastic_blast.jobs
 
 Generate Kubernetes job YAML files from template
 
@@ -49,7 +49,7 @@ def read_job_template(template_name=ELB_DFLT_BLAST_JOB_TEMPLATE, cfg: ElasticBla
     resource_prefix_len = len(resource_prefix)
     if template_name[:resource_prefix_len] == resource_prefix:
         template_name = template_name[resource_prefix_len:]
-        return resource_string('elb', template_name).decode()
+        return resource_string('elastic_blast', template_name).decode()
     with open_for_read(template_name) as f:
         return f.read()
 

@@ -34,6 +34,7 @@ import re
 import time
 import socket
 import logging
+import shlex
 from typing import Optional, List
 from typing import cast
 from .constants import CSP, ElbCommand
@@ -45,7 +46,7 @@ from .constants import ELB_DFLT_INIT_PV_TIMEOUT, ELB_DFLT_BLAST_K8S_TIMEOUT
 from .constants import ELB_DFLT_AWS_SPOT_BID_PERCENTAGE
 from .constants import ELB_DFLT_AWS_DISK_TYPE, ELB_DFLT_OUTFMT
 from .constants import ELB_BLASTDB_MEMORY_MARGIN
-from .constants import CFG_CLOUD_PROVIDER, CFG_CP_NAME
+from .constants import CFG_CLOUD_PROVIDER
 from .constants import CFG_CP_GCP_PROJECT, CFG_CP_GCP_REGION, CFG_CP_GCP_ZONE
 from .constants import CFG_CP_GCP_NETWORK, CFG_CP_GCP_SUBNETWORK
 from .constants import CFG_CP_AWS_REGION, CFG_CP_AWS_VPC, CFG_CP_AWS_SUBNET
@@ -56,14 +57,13 @@ from .constants import CFG_BLAST, CFG_BLAST_PROGRAM, CFG_BLAST_DB
 from .constants import CFG_BLAST_DB_SRC, CFG_BLAST_RESULTS, CFG_BLAST_QUERY
 from .constants import CFG_BLAST_OPTIONS, CFG_BLAST_BATCH_LEN
 from .constants import CFG_BLAST_MEM_REQUEST, CFG_BLAST_MEM_LIMIT
-from .constants import CFG_BLAST_TAXIDLIST, CFG_BLAST_DB_MEM_MARGIN
+from .constants import CFG_BLAST_DB_MEM_MARGIN
 from .constants import CFG_CLUSTER, CFG_CLUSTER_NAME, CFG_CLUSTER_MACHINE_TYPE
 from .constants import CFG_CLUSTER_NUM_NODES, CFG_CLUSTER_NUM_CPUS
 from .constants import CFG_CLUSTER_PD_SIZE, CFG_CLUSTER_USE_PREEMPTIBLE
 from .constants import CFG_CLUSTER_DRY_RUN, CFG_CLUSTER_DISK_TYPE
 from .constants import CFG_CLUSTER_PROVISIONED_IOPS, CFG_CLUSTER_BID_PERCENTAGE
 from .constants import CFG_CLUSTER_LABELS, CFG_CLUSTER_EXP_USE_LOCAL_SSD
-from .constants import CFG_CLUSTER_MIN_NODES, CFG_CLUSTER_MAX_NODES
 from .constants import CFG_CLUSTER_ENABLE_STACKDRIVER
 from .constants import CFG_TIMEOUTS, CFG_TIMEOUT_INIT_PV
 from .constants import CFG_TIMEOUT_BLAST_K8S_JOB
@@ -77,7 +77,7 @@ from .util import UserReportError
 from .gcp_traits import get_machine_properties as gcp_get_machine_properties
 from .aws_traits import get_machine_properties as aws_get_machine_properties
 from .aws_traits import create_aws_config
-from .base import InstanceProperties, PositiveInteger, Percentage, BoolFromStr
+from .base import InstanceProperties, PositiveInteger, Percentage
 from .base import ParamInfo, ConfigParserToDataclassMapper, DBSource, MemoryStr
 from .config import validate_cloud_storage_object_uri, _validate_csp
 
@@ -217,7 +217,6 @@ class AWSConfig(CloudProviderBaseConfig, ConfigParserToDataclassMapper):
         # nothing to do
         pass
 
-
 @dataclass
 class BlastConfig(ConfigParserToDataclassMapper):
     """ElasticBLAST BLAST parameters"""
@@ -286,6 +285,11 @@ class BlastConfig(ConfigParserToDataclassMapper):
                     validate_cloud_storage_object_uri(query_file)
                 except ValueError as err:
                     errors.append(f'Incorrect queries URI "{query_file}": {str(err)}')
+        try:
+            shlex.split(self.options)
+        except ValueError as err:
+            errors.append(f'Incorrect BLAST options: {str(err)}')
+
 
 
 @dataclass
@@ -302,8 +306,6 @@ class ClusterConfig(ConfigParserToDataclassMapper):
     pd_size: str = field(init=False)
     num_cpus: PositiveInteger = PositiveInteger(ELB_NOT_INITIALIZED_NUM)
     num_nodes: PositiveInteger = PositiveInteger(ELB_DFLT_NUM_NODES)
-    min_nodes: Optional[PositiveInteger] = None
-    max_nodes: Optional[PositiveInteger] = None
     use_preemptible: bool = ELB_DFLT_USE_PREEMPTIBLE
     disk_type: str = ELB_DFLT_AWS_DISK_TYPE
     iops: Optional[int] = None
@@ -319,8 +321,6 @@ class ClusterConfig(ConfigParserToDataclassMapper):
                'pd_size': ParamInfo(CFG_CLUSTER, CFG_CLUSTER_PD_SIZE),
                'num_cpus': ParamInfo(CFG_CLUSTER, CFG_CLUSTER_NUM_CPUS),
                'num_nodes': ParamInfo(CFG_CLUSTER, CFG_CLUSTER_NUM_NODES),
-               'min_nodes': ParamInfo(CFG_CLUSTER, CFG_CLUSTER_MIN_NODES),
-               'max_nodes': ParamInfo(CFG_CLUSTER, CFG_CLUSTER_MAX_NODES),
                'use_preemptible': ParamInfo(CFG_CLUSTER, CFG_CLUSTER_USE_PREEMPTIBLE),
                'disk_type': ParamInfo(CFG_CLUSTER, CFG_CLUSTER_DISK_TYPE),
                'iops': ParamInfo(CFG_CLUSTER, CFG_CLUSTER_PROVISIONED_IOPS),
@@ -372,13 +372,8 @@ class ClusterConfig(ConfigParserToDataclassMapper):
         if task != ElbCommand.SUBMIT:
             return
 
-        if (self.min_nodes is None and self.max_nodes is not None) or \
-           (self.min_nodes is not None and self.max_nodes is None):
-            errors.append('Both min-nodes and max-nodes must be specified for auto-scaling to work')
-
-        if self.min_nodes is not None or self.max_nodes is not None:
-            if self.use_local_ssd:
-                raise NotImplementedError('Usage of local SSD is EXPERIMENTAL and is not supported with autoscaling')
+        if self.use_local_ssd:
+            raise NotImplementedError('Usage of local SSD is EXPERIMENTAL and is not supported with autoscaling')
 
         if self.machine_type.lower() == 'optimal':
             logging.warn("Optimal AWS instance type is NOT FULLY TESTED - for internal development ONLY")
@@ -469,15 +464,16 @@ class ElasticBlastConfig:
         """
         # ArrtibuteError is raises below because the exceptions would be
         # caused by incorrect code rather than user input.
-        if len(args) > 1 or \
+        dry_run = False
+        if len(args) > 2 or \
                (len(args) > 0 and not isinstance(args[0], configparser.ConfigParser)):
-            raise AttributeError('ElasticBlastConfig.__init__ method takes only one positional parameter: ConfigParser object')
+            raise AttributeError('ElasticBlastConfig.__init__ method takes only up to two positional arguments: ConfigParser object and bool dry_run')
 
         if 'task' not in kwargs:
             raise AttributeError('The task parameter must be specified in ElasticBlastConfig.__init__')
 
         if len(args) > 0 and len(kwargs) > 1:
-            raise AttributeError('ElasticBlastConfig.__init__ takes either one positional argument: ConfigParser object and one kyename parameter: ElastiBLAST task or only keyname parameters')
+            raise AttributeError('ElasticBlastConfig.__init__ takes either up to two positional arguments: ConfigParser object and bool dry_run, and one keyname parameter: ElastiBLAST task or only keyname parameters')
 
         if not isinstance(kwargs['task'], ElbCommand):
             raise AttributeError('Incorrect type for function argument "task". It must be ElbCommand')
@@ -490,8 +486,11 @@ class ElasticBlastConfig:
             except ValueError as err:
                 raise UserReportError(returncode=INPUT_ERROR,
                                       message=str(err))
+            if len(args) > 1 and isinstance(args[1], bool):
+                dry_run = args[1]
         else:
             self._init_from_parameters(**kwargs)
+            dry_run = kwargs.get('dry_run', False)
 
         # post-init activities
         # compute default labels unless provided
@@ -500,7 +499,7 @@ class ElasticBlastConfig:
                                                         self.cluster.results,
                                                         self.blast,
                                                         self.cluster.name)
-        self.validate(task)
+        self.validate(task, dry_run)
 
 
     def __getattr__(self, name):
@@ -606,7 +605,7 @@ class ElasticBlastConfig:
             self.appstate = AppState()
 
 
-    def validate(self, task: ElbCommand = ElbCommand.SUBMIT):
+    def validate(self, task: ElbCommand = ElbCommand.SUBMIT, dry_run=False):
         """Validate config"""
         errors: List[str] = []
 
@@ -632,13 +631,9 @@ class ElasticBlastConfig:
             errors.append('Results bucket must start with "s3://"')
 
         if task == ElbCommand.SUBMIT:
-            if self.cloud_provider.cloud == CSP.AWS and \
-               (self.cluster.min_nodes or self.cluster.max_nodes):
-                logging.warn(f"cluster.min_nodes and cluster.max_nodes configuration parameters are not applicable to AWS")
-
             # validate number of CPUs and memory limit for searching a batch
             # of queries
-            if self.cluster.machine_type.lower() != 'optimal':
+            if not dry_run and self.cluster.machine_type.lower() != 'optimal':
                 instance_props = get_instance_props(self.cloud_provider,
                                                     self.cluster.machine_type)
                 if instance_props.ncpus < self.cluster.num_cpus:
@@ -646,8 +641,6 @@ class ElasticBlastConfig:
 
                 if instance_props.memory - SYSTEM_MEMORY_RESERVE < self.blast.mem_limit.asGB():
                     errors.append(f'Memory limit "{self.blast.mem_limit}" exceeds memory available on the selected machine type {self.cluster.machine_type}: {instance_props.memory - SYSTEM_MEMORY_RESERVE}GB. Please, select machine type with more memory or lower memory limit')
-
-
 
         if errors:
             raise UserReportError(returncode=INPUT_ERROR,

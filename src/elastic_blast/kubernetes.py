@@ -314,7 +314,7 @@ def initialize_local_ssd(cfg: ElasticBlastConfig, db: str, db_path: str = '') ->
         set_extraction_path(d)
 
         start = timer()
-        job_init_local_ssd_tmpl = resource_string('elb', f'templates/{job_init_template}').decode()
+        job_init_local_ssd_tmpl = resource_string('elastic_blast', f'templates/{job_init_template}').decode()
         for n in range(num_nodes):
             job_init_local_ssd = pathlib.Path(os.path.join(d, f'job-init-local-ssd-{n}.yaml'))
             subs['NODE_ORDINAL'] = str(n)
@@ -414,7 +414,7 @@ def initialize_persistent_disk(cfg: ElasticBlastConfig, db: str, db_path: str = 
 
     with TemporaryDirectory() as d:
         set_extraction_path(d)
-        storage_gcp = resource_filename('elb', 'templates/storage-gcp-ssd.yaml')
+        storage_gcp = resource_filename('elastic_blast', 'templates/storage-gcp-ssd.yaml')
         cmd = f"kubectl apply -f {storage_gcp}"
         if dry_run:
             logging.info(cmd)
@@ -423,7 +423,7 @@ def initialize_persistent_disk(cfg: ElasticBlastConfig, db: str, db_path: str = 
 
         pvc_yaml = os.path.join(d, 'pvc.yaml')
         with open(pvc_yaml, 'wt') as f:
-            f.write(substitute_params(resource_string('elb', 'templates/pvc.yaml.template').decode(), subs))
+            f.write(substitute_params(resource_string('elastic_blast', 'templates/pvc.yaml.template').decode(), subs))
         cmd = f"kubectl apply -f {pvc_yaml}"
         if dry_run:
             logging.info(cmd)
@@ -433,7 +433,7 @@ def initialize_persistent_disk(cfg: ElasticBlastConfig, db: str, db_path: str = 
         start = timer()
         job_init_pv = pathlib.Path(os.path.join(d, 'job-init-pv.yaml'))
         with job_init_pv.open(mode='wt') as f:
-            f.write(substitute_params(resource_string('elb', f'templates/{job_init_pv_template}').decode(), subs))
+            f.write(substitute_params(resource_string('elastic_blast', f'templates/{job_init_pv_template}').decode(), subs))
         cmd = f"kubectl apply -f {job_init_pv}"
         if dry_run:
             logging.info(cmd)

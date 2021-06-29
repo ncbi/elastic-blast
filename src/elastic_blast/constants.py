@@ -1,13 +1,13 @@
 #                           PUBLIC DOMAIN NOTICE
 #              National Center for Biotechnology Information
-#  
+#
 # This software is a "United States Government Work" under the
 # terms of the United States Copyright Act.  It was written as part of
 # the authors' official duties as United States Government employees and
 # thus cannot be copyrighted.  This software is freely available
 # to the public for use.  The National Library of Medicine and the U.S.
 # Government have not placed any restriction on its use or reproduction.
-#   
+#
 # Although all reasonable efforts have been taken to ensure the accuracy
 # and reliability of the software and data, the NLM and the U.S.
 # Government do not and cannot warrant the performance or results that
@@ -15,7 +15,7 @@
 # Government disclaim all warranties, express or implied, including
 # warranties of performance, merchantability or fitness for any particular
 # purpose.
-#   
+#
 # Please cite NCBI in any work or product based on this material.
 
 """
@@ -65,6 +65,9 @@ ELB_DFLT_GCP_MACHINE_TYPE = 'n1-standard-32'
 ELB_DFLT_AWS_MACHINE_TYPE = 'm5.8xlarge'
 
 ELB_DFLT_NUM_NODES = 1
+ELB_DFLT_MIN_NUM_NODES = 1
+
+ELB_UNKNOWN_NUMBER_OF_QUERY_SPLITS = -1
 
 # Ancillary ElasticBLAST "directories" and files in output bucket
 ELB_QUERY_BATCH_DIR = 'query_batches'
@@ -123,7 +126,7 @@ MOL_TYPE_PROT = 'prot'
 MOL_TYPE_NUCL = 'nucl'
 
 ELB_DFLT_AWS_REGION = 'us-east-1'
-ELB_DOCKER_IMAGE = 'ncbi/elb:0.0.25'
+ELB_DOCKER_IMAGE = 'ncbi/elb:0.0.27'
 ELB_DFLT_AWS_DISK_TYPE = 'gp2'
 # minimal size of gp2 disk which triggers fastest speed
 ELB_DFLT_AWS_PD_SIZE = '334G'
@@ -160,8 +163,6 @@ CFG_CLUSTER_MACHINE_TYPE = 'machine-type'
 CFG_CLUSTER_LABELS = 'labels'
 CFG_CLUSTER_RUN_LABEL = 'run-label'
 CFG_CLUSTER_NUM_NODES = 'num-nodes'
-CFG_CLUSTER_MIN_NODES = 'min-nodes'
-CFG_CLUSTER_MAX_NODES = 'max-nodes'
 CFG_CLUSTER_NUM_CPUS = 'num-cpus'
 CFG_CLUSTER_DISK_TYPE = 'disk-type'
 CFG_CLUSTER_PD_SIZE = 'pd-size'

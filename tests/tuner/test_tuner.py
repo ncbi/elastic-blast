@@ -25,12 +25,12 @@ Unit tests for tuner module
 
 import json
 import os
-from elb.tuner import get_db_data, MolType, DbData, SeqData, get_mt_mode
-from elb.tuner import MTMode, get_num_cpus, get_batch_length
-from elb.filehelper import open_for_read
-from elb.base import DBSource
-from elb.constants import ELB_BLASTDB_MEMORY_MARGIN
-from elb.util import UserReportError, get_query_batch_size
+from elastic_blast.tuner import get_db_data, MolType, DbData, SeqData, get_mt_mode
+from elastic_blast.tuner import MTMode, get_num_cpus, get_batch_length
+from elastic_blast.filehelper import open_for_read
+from elastic_blast.base import DBSource
+from elastic_blast.constants import ELB_BLASTDB_MEMORY_MARGIN
+from elastic_blast.util import UserReportError, get_query_batch_size
 import pytest
 
 
@@ -58,7 +58,7 @@ def mocked_db_metadata(mocker):
                     raise RuntimeError('No json extension for database metadata file')
                 return f_db_metadata
 
-        mocker.patch('elb.tuner.open_for_read', side_effect=mocked_open_for_read)
+        mocker.patch('elastic_blast.tuner.open_for_read', side_effect=mocked_open_for_read)
         yield TEST_METADATA_FILE
 
 

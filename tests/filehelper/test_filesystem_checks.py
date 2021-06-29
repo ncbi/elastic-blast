@@ -26,7 +26,7 @@ Author: Victor Joukov joukovv@ncbi.nlm.nih.gov
 
 import pytest
 import os
-from elb import filehelper
+from elastic_blast import filehelper
 from tempfile import TemporaryDirectory
 
 TEST_DATA_DIR = os.path.join(os.path.dirname(__file__), 'data')

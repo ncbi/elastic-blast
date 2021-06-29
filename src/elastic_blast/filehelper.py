@@ -245,8 +245,8 @@ def unpack_stream(s:IO, gzipped:bool, tarred:bool) -> IO:
 
 
 def check_for_read(fname: str, dry_run=False) -> None:
-    """ Check that path on local, GS, or URL-available filesystem can be read from.
-    raises FileNotFoundErrror if there is no such file
+    """ Check that path on local, GS, AWS S3 or URL-available filesystem can be read from.
+    raises FileNotFoundError if there is no such file
     """
     if fname.startswith('gs:'):
         cmd = f'gsutil -q stat {fname}'
@@ -280,8 +280,52 @@ def check_for_read(fname: str, dry_run=False) -> None:
         except:
             raise FileNotFoundError()
         return
+    if dry_run:
+        logging.info(f'Open file {fname} for read')
+        return
     open(fname, 'r')
 
+def get_length(fname: str, dry_run=False) -> int:
+    """ Get length of a path on local, GS, AWS S3, or URL-available filesystem.
+    raises FileNotFoundError if there is no such file
+    """
+    if fname.startswith('gs:'):
+        cmd = f'gsutil stat {fname}'
+        if dry_run:
+            logging.info(cmd)
+            return 10000  # Arbitrary fake length
+        try:
+            p = safe_exec(cmd)
+            for line in p.stdout.decode().split('\n'):
+                mo = re.search(r'Content-Length: +(\d+)', line)
+                if mo:
+                    return int(mo.group(1))
+            raise FileNotFoundError(2, f'Length is not available for {fname}')
+        except SafeExecError as e:
+            raise FileNotFoundError(e.returncode, e.message)
+    if fname.startswith('s3:'):
+        if dry_run:
+            logging.info(f'Check length of S3 file {fname}')
+            return 10000
+        s3 = boto3.resource('s3')
+        bucket, key = parse_bucket_name_key(fname)
+        try:
+            obj = s3.Object(bucket, key)
+            obj.load()
+            return obj.content_length
+        except:
+            raise FileNotFoundError(2, f'Length is not available for {fname}')
+    if fname.startswith('http') or fname.startswith('ftp:'):
+        if dry_run:
+            logging.info(f'Check length of URL {fname}')
+            return 10000
+        req = urllib.request.Request(fname, method='HEAD')
+        try:
+            obj = urllib.request.urlopen(req)
+            return int(obj.headers['Content-Length'])
+        except:
+            raise FileNotFoundError(2, f'Length is not available for {fname}')
+    return os.stat(fname).st_size
 
 error_report_funcs = {}
 

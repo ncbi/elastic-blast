@@ -27,8 +27,8 @@ Created: Fri 12 Feb 2021 01:18:34 AM EDT
 
 from dataclasses import dataclass, field
 import configparser
-from elb.base import ConfigParserToDataclassMapper, ParamInfo
-from elb.base import PositiveInteger, Percentage, BoolFromStr, MemoryStr
+from elastic_blast.base import ConfigParserToDataclassMapper, ParamInfo
+from elastic_blast.base import PositiveInteger, Percentage, BoolFromStr, MemoryStr
 import pytest
 
 

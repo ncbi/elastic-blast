@@ -34,11 +34,11 @@ from tests.utils import MockedCompletedProcess
 from tests.utils import mocked_safe_exec
 from tests.utils import GKE_PVS, GCP_DISKS, K8S_JOBS, gke_mock
 
-from elb import kubernetes
-from elb import gcp
-from elb.config import configure
-from elb.elb_config import ElasticBlastConfig
-from elb.constants import ElbCommand
+from elastic_blast import kubernetes
+from elastic_blast import gcp
+from elastic_blast.config import configure
+from elastic_blast.elb_config import ElasticBlastConfig
+from elastic_blast.constants import ElbCommand
 
 from typing import List
 
@@ -54,7 +54,7 @@ def kubectl_mock(mocker):
     # we need kubernetes.safe_exec instead of util.safe_exec here, because
     # safe_exec is imported in kubernetes.py with 'from util import safe_exec'
     # and safe_exec in kubernetes is seen as local, python is funny this way
-    mocker.patch('elb.kubernetes.safe_exec', side_effect=mocked_safe_exec)
+    mocker.patch('elastic_blast.kubernetes.safe_exec', side_effect=mocked_safe_exec)
 
 
 def test_fake_kubectl(kubectl_mock):
@@ -73,7 +73,7 @@ def test_get_persistent_volumes(mocker):
         for i in GKE_PVS:
             result['items'].append({'metadata': {'name': i}})
         return MockedCompletedProcess(json.dumps(result))
-    mocker.patch('elb.kubernetes.safe_exec', side_effect=fake_safe_exec)
+    mocker.patch('elastic_blast.kubernetes.safe_exec', side_effect=fake_safe_exec)
 
     pvs = kubernetes.get_persistent_volumes()
     assert sorted(pvs) == sorted(GKE_PVS)
@@ -86,7 +86,7 @@ def test_get_persistent_volumes_bad_json(mocker):
         """Mocked kubectl that returns garbage"""
         return MockedCompletedProcess('some strange string')
 
-    mocker.patch('elb.kubernetes.safe_exec', side_effect=safe_exec_bad_json)
+    mocker.patch('elastic_blast.kubernetes.safe_exec', side_effect=safe_exec_bad_json)
     with pytest.raises(RuntimeError):
         kubernetes.get_persistent_volumes()
     kubernetes.safe_exec.assert_called()
@@ -105,7 +105,7 @@ def test_get_persistent_disk_empty(mocker):
         """Mocked safe_exec"""
         result = {'items': []}
         return MockedCompletedProcess(json.dumps(result))
-    mocker.patch('elb.kubernetes.safe_exec', side_effect=safe_exec_no_disks)
+    mocker.patch('elastic_blast.kubernetes.safe_exec', side_effect=safe_exec_no_disks)
 
     disks = kubernetes.get_persistent_disks()
     assert disks is not None
@@ -161,7 +161,7 @@ def safe_exec_mock(mocker):
     # we need kubernetes.safe_exec instead of util.safe exec here, because
     # safe_exec is imported in kubernetes.py with 'from util import safe_exec'
     # and safe_exec in kubernetes is seen as local, python is funny this way
-    mocker.patch('elb.kubernetes.safe_exec', side_effect=print_safe_exec)
+    mocker.patch('elastic_blast.kubernetes.safe_exec', side_effect=print_safe_exec)
 
 
 def test_initialize_persistent_disk(safe_exec_mock, mocker):
@@ -172,7 +172,7 @@ def test_initialize_persistent_disk(safe_exec_mock, mocker):
     def mocked_upload_file_to_gcs(fname, loc, dryrun):
         """Mocked upload to GS function"""
         pass
-    mocker.patch('elb.kubernetes.upload_file_to_gcs', side_effect=mocked_upload_file_to_gcs)
+    mocker.patch('elastic_blast.kubernetes.upload_file_to_gcs', side_effect=mocked_upload_file_to_gcs)
 
     args = Namespace(cfg=os.path.join(TEST_DATA_DIR, 'initialize_persistent_disk.ini'))
     cfg = ElasticBlastConfig(configure(args), task = ElbCommand.SUBMIT)
@@ -183,7 +183,7 @@ def test_initialize_persistent_disk_failed(mocker):
     def fake_safe_exec_failed_job(cmd):
         fn = os.path.join(TEST_DATA_DIR, 'job-status-failed.json')
         return MockedCompletedProcess(stdout=Path(fn).read_text())
-    mocker.patch('elb.kubernetes.safe_exec',
+    mocker.patch('elastic_blast.kubernetes.safe_exec',
                  side_effect=fake_safe_exec_failed_job)
     from argparse import Namespace
     args = Namespace(cfg=os.path.join(TEST_DATA_DIR, 'initialize_persistent_disk.ini'))
@@ -219,7 +219,7 @@ def test_delete_all_no_resources(mocker):
         """Mocked safe_exec returning no resources found"""
         return MockedCompletedProcess('No resources found')
 
-    mocker.patch('elb.kubernetes.safe_exec',
+    mocker.patch('elastic_blast.kubernetes.safe_exec',
                  side_effect=safe_exec_no_resources)
     deleted = kubernetes.delete_all()
     # result must be an empty list

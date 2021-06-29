@@ -22,7 +22,7 @@
 
 import pytest  # type: ignore
 import os, subprocess, io
-from elb.cost import get_cost, DFLT_BQ_DATASET, DFLT_BQ_TABLE, BQ_ERROR, NO_RESULTS_ERROR, CMD_ARGS_ERROR
+from elastic_blast.cost import get_cost, DFLT_BQ_DATASET, DFLT_BQ_TABLE, BQ_ERROR, NO_RESULTS_ERROR, CMD_ARGS_ERROR
 
 #TEST_CMD = 'python3 elb-cost.py'
 TEST_CMD = 'elb-cost.py'

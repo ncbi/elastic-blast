@@ -19,12 +19,12 @@
 # Please cite NCBI in any work or product based on this material.
 
 """
-Test for elb.gcp_traits
+Test for elastic_blast.gcp_traits
 
 Author: Victor Joukov joukovv@ncbi.nlm.nih.gov
 """
-from elb.gcp_traits import get_machine_properties
-from elb.base import InstanceProperties
+from elastic_blast.gcp_traits import get_machine_properties
+from elastic_blast.base import InstanceProperties
 import pytest
 
 def test_ram():

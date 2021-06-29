@@ -25,7 +25,7 @@ Author: Victor Joukov joukovv@ncbi.nlm.nih.gov
 """
 
 import os
-from elb import filehelper
+from elastic_blast import filehelper
 
 TEST_DATA_DIR = os.path.join(os.path.dirname(__file__), 'data')
 

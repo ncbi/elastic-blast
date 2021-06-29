@@ -19,7 +19,7 @@
 # Please cite NCBI in any work or product based on this material.
 
 """
-Module elb.subst - substitute variables of form ${VAR_NAME} from either parameters or environment
+Module elastic_blast.subst - substitute variables of form ${VAR_NAME} from either parameters or environment
 
 Author: Victor Joukov joukovv@ncbi.nlm.nih.gov
 """

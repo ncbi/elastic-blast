@@ -34,26 +34,26 @@ import argparse
 import hashlib
 import getpass
 import re
-from elb.util import UserReportError
+from elastic_blast.util import UserReportError
 
-from elb.config import configure, _set_sections
-from elb.constants import CFG_BLAST, CFG_BLAST_BATCH_LEN, CFG_BLAST_DB, CFG_BLAST_DB_MEM_MARGIN
-from elb.constants import CFG_BLAST_DB_SRC, CFG_BLAST_MEM_LIMIT, CFG_BLAST_MEM_REQUEST, CFG_BLAST_OPTIONS, CFG_BLAST_QUERY
-from elb.constants import CFG_CLUSTER_EXP_USE_LOCAL_SSD, CFG_CP_AWS_KEY_PAIR, CFG_CP_AWS_REGION, CFG_CP_AWS_SECURITY_GROUP
-from elb.constants import CFG_CP_AWS_SUBNET, CFG_CP_GCP_NETWORK, CFG_CP_GCP_PROJECT, CFG_CP_GCP_REGION, CFG_CP_GCP_ZONE
-from elb.constants import CFG_TIMEOUTS, CFG_TIMEOUT_BLAST_K8S_JOB, CFG_TIMEOUT_INIT_PV
-from elb.constants import CFG_BLAST_PROGRAM, CFG_BLAST_RESULTS, CFG_CLOUD_PROVIDER
-from elb.constants import CFG_CLUSTER, CFG_CLUSTER_BID_PERCENTAGE, CFG_CLUSTER_MACHINE_TYPE
-from elb.constants import CFG_CLUSTER_MAX_NODES, CFG_CLUSTER_MIN_NODES, CFG_CLUSTER_NAME
-from elb.constants import CFG_CLUSTER_NUM_CPUS, CFG_CLUSTER_NUM_NODES, CFG_CLUSTER_PD_SIZE
-from elb.constants import CFG_CLUSTER_PROVISIONED_IOPS, CFG_CLUSTER_USE_PREEMPTIBLE
-from elb.constants import CFG_CP_NAME, CSP, INPUT_ERROR, SYSTEM_MEMORY_RESERVE
-from elb.constants import ELB_DFLT_AWS_MACHINE_TYPE, ELB_DFLT_OUTFMT, ElbCommand
-from elb import constants
-from elb.util import ElbSupportedPrograms
-from elb.gcp_traits import get_machine_properties
-from elb.base import InstanceProperties, DBSource
-from elb.elb_config import ElasticBlastConfig
+from elastic_blast.config import configure, _set_sections
+from elastic_blast.constants import CFG_BLAST, CFG_BLAST_BATCH_LEN, CFG_BLAST_DB, CFG_BLAST_DB_MEM_MARGIN
+from elastic_blast.constants import CFG_BLAST_DB_SRC, CFG_BLAST_MEM_LIMIT, CFG_BLAST_MEM_REQUEST, CFG_BLAST_OPTIONS, CFG_BLAST_QUERY
+from elastic_blast.constants import CFG_CLUSTER_EXP_USE_LOCAL_SSD, CFG_CP_AWS_KEY_PAIR, CFG_CP_AWS_REGION, CFG_CP_AWS_SECURITY_GROUP
+from elastic_blast.constants import CFG_CP_AWS_SUBNET, CFG_CP_GCP_NETWORK, CFG_CP_GCP_PROJECT, CFG_CP_GCP_REGION, CFG_CP_GCP_ZONE
+from elastic_blast.constants import CFG_TIMEOUTS, CFG_TIMEOUT_BLAST_K8S_JOB, CFG_TIMEOUT_INIT_PV
+from elastic_blast.constants import CFG_BLAST_PROGRAM, CFG_BLAST_RESULTS, CFG_CLOUD_PROVIDER
+from elastic_blast.constants import CFG_CLUSTER, CFG_CLUSTER_BID_PERCENTAGE, CFG_CLUSTER_MACHINE_TYPE
+from elastic_blast.constants import CFG_CLUSTER_NAME
+from elastic_blast.constants import CFG_CLUSTER_NUM_CPUS, CFG_CLUSTER_NUM_NODES, CFG_CLUSTER_PD_SIZE
+from elastic_blast.constants import CFG_CLUSTER_PROVISIONED_IOPS, CFG_CLUSTER_USE_PREEMPTIBLE
+from elastic_blast.constants import CFG_CP_NAME, CSP, INPUT_ERROR, SYSTEM_MEMORY_RESERVE
+from elastic_blast.constants import ELB_DFLT_AWS_MACHINE_TYPE, ELB_DFLT_OUTFMT, ElbCommand
+from elastic_blast import constants
+from elastic_blast.util import ElbSupportedPrograms
+from elastic_blast.gcp_traits import get_machine_properties
+from elastic_blast.base import InstanceProperties, DBSource
+from elastic_blast.elb_config import ElasticBlastConfig
 
 TEST_DATA_DIR = os.path.join(os.path.dirname(__file__), 'data')
 
@@ -148,21 +148,6 @@ class ElbConfigLibTester(unittest.TestCase):
         self.cfg[CFG_TIMEOUTS][CFG_TIMEOUT_BLAST_K8S_JOB] = '1'
         ElasticBlastConfig(self.cfg, task = ElbCommand.SUBMIT)
 
-        # Test some explicitly set incorrect values: cluster.min-nodes
-        self.cfg[CFG_CLUSTER][CFG_CLUSTER_MIN_NODES] = '0'
-        self.cfg[CFG_CLUSTER][CFG_CLUSTER_MAX_NODES] = '2'
-        with self.assertRaises(UserReportError):
-            ElasticBlastConfig(self.cfg, task = ElbCommand.SUBMIT)
-        self.cfg[CFG_CLUSTER][CFG_CLUSTER_MIN_NODES] = '1'
-        ElasticBlastConfig(self.cfg, task = ElbCommand.SUBMIT)
-
-        # Test some explicitly set incorrect values: cluster.max-nodes
-        self.cfg[CFG_CLUSTER][CFG_CLUSTER_MAX_NODES] = '0'
-        with self.assertRaises(UserReportError):
-            ElasticBlastConfig(self.cfg, task = ElbCommand.SUBMIT)
-        self.cfg[CFG_CLUSTER][CFG_CLUSTER_MAX_NODES] = '10'
-        ElasticBlastConfig(self.cfg, task = ElbCommand.SUBMIT)
-
         # Test some explicitly set incompatible values: auto-scaling and local SSD
         self.cfg[CFG_CLUSTER][CFG_CLUSTER_EXP_USE_LOCAL_SSD] = 'yes'
         with self.assertRaises(NotImplementedError):
@@ -214,7 +199,7 @@ class ElbConfigLibTester(unittest.TestCase):
         self.cfg[CFG_CLOUD_PROVIDER][CFG_CP_GCP_NETWORK] = "custom-vpc"
         ElasticBlastConfig(self.cfg, task = ElbCommand.SUBMIT)
 
-    @patch(target='elb.elb_config.aws_get_machine_properties', new=MagicMock(return_value=InstanceProperties(32, 120)))
+    @patch(target='elastic_blast.elb_config.aws_get_machine_properties', new=MagicMock(return_value=InstanceProperties(32, 120)))
     def test_provisioned_iops(self):
         self.cfg.read(f"{TEST_DATA_DIR}/elb-aws-blastn-pdbnt.ini")
         ElasticBlastConfig(self.cfg, task = ElbCommand.SUBMIT)
@@ -343,7 +328,7 @@ def test_validate_gcp_config():
     assert [s for s in messages if s.startswith('Parameter "gcp-zone" has an invalid value')]
 
 
-@patch(target='elb.elb_config.aws_get_machine_properties', new=MagicMock(return_value=InstanceProperties(32, 120)))
+@patch(target='elastic_blast.elb_config.aws_get_machine_properties', new=MagicMock(return_value=InstanceProperties(32, 120)))
 def test_validate_aws_config():
     """Test validation of AWS config"""
     cfg = configparser.ConfigParser()
@@ -399,7 +384,7 @@ def test_validate_aws_config():
     assert [s for s in messages if s.startswith('Parameter "program" has an invalid value')]
 
 
-@patch(target='elb.elb_config.aws_get_machine_properties', new=MagicMock(return_value=InstanceProperties(32, 120)))
+@patch(target='elastic_blast.elb_config.aws_get_machine_properties', new=MagicMock(return_value=InstanceProperties(32, 120)))
 def test_validate_results_bucket_config():
     """Test validation of AWS config"""
     cfg = configparser.ConfigParser()
@@ -443,7 +428,7 @@ def test_validate_results_bucket_config():
     ElasticBlastConfig(cfg, task = ElbCommand.SUBMIT)
 
 
-@patch(target='elb.elb_config.aws_get_machine_properties', new=MagicMock(return_value=InstanceProperties(32, 120)))
+@patch(target='elastic_blast.elb_config.aws_get_machine_properties', new=MagicMock(return_value=InstanceProperties(32, 120)))
 def test_validate_queries_config():
     """Test validation of AWS config"""
     cfg = configparser.ConfigParser()
@@ -539,7 +524,7 @@ def check_common_defaults(cfg):
     assert cfg.blast.db_mem_margin == constants.ELB_BLASTDB_MEMORY_MARGIN
 
 
-@patch(target='elb.elb_config.aws_get_machine_properties', new=MagicMock(return_value=InstanceProperties(32, 120)))
+@patch(target='elastic_blast.elb_config.aws_get_machine_properties', new=MagicMock(return_value=InstanceProperties(32, 120)))
 def test_aws_defaults():
     """Test that default config parameters are set correctly for AWS"""
     args = argparse.Namespace(cfg=os.path.join(TEST_DATA_DIR, 'aws-defaults.ini'))
@@ -604,7 +589,7 @@ def test_generated_cluster_name(env_config_no_cluster):
     assert cfg.cluster.name == f'elasticblast-{user.lower()}-{digest}'
 
 
-@patch(target='elb.elb_config.aws_get_machine_properties', new=MagicMock(return_value=InstanceProperties(32, 120)))
+@patch(target='elastic_blast.elb_config.aws_get_machine_properties', new=MagicMock(return_value=InstanceProperties(32, 120)))
 def test_multiple_query_files():
     """Test getting config with multiple query files"""
     args = argparse.Namespace(cfg=os.path.join(TEST_DATA_DIR, 'multiple-query-files.ini'))
@@ -624,7 +609,7 @@ def test_mem_limit_too_high():
     assert m is not None
     
 
-@patch(target='elb.elb_config.aws_get_machine_properties', new=MagicMock(return_value=InstanceProperties(4, 2)))
+@patch(target='elastic_blast.elb_config.aws_get_machine_properties', new=MagicMock(return_value=InstanceProperties(4, 2)))
 def test_instance_too_small_aws():
     """Test that using too small an instance triggers an error"""
     args = argparse.Namespace(cfg=os.path.join(TEST_DATA_DIR, 'instance-too-small-aws.ini'))

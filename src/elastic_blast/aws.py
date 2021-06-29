@@ -1,13 +1,13 @@
 #                           PUBLIC DOMAIN NOTICE
 #              National Center for Biotechnology Information
-#  
+#
 # This software is a "United States Government Work" under the
 # terms of the United States Copyright Act.  It was written as part of
 # the authors' official duties as United States Government employees and
 # thus cannot be copyrighted.  This software is freely available
 # to the public for use.  The National Library of Medicine and the U.S.
 # Government have not placed any restriction on its use or reproduction.
-#   
+#
 # Although all reasonable efforts have been taken to ensure the accuracy
 # and reliability of the software and data, the NLM and the U.S.
 # Government do not and cannot warrant the performance or results that
@@ -15,7 +15,7 @@
 # Government disclaim all warranties, express or implied, including
 # warranties of performance, merchantability or fitness for any particular
 # purpose.
-#   
+#
 # Please cite NCBI in any work or product based on this material.
 
 """
@@ -28,7 +28,6 @@ import logging
 import re
 import time
 import os
-import base64
 from collections import defaultdict
 from functools import wraps
 import json
@@ -37,12 +36,18 @@ import uuid
 
 from pprint import pformat
 from pathlib import Path
+
+from typing import Any, Dict, List, Tuple
+
+import boto3  # type: ignore
+from botocore.exceptions import ClientError, NoCredentialsError, ParamValidationError, WaiterError # type: ignore
+
 from .util import convert_labels_to_aws_tags, convert_disk_size_to_gb
 from .util import convert_memory_to_mb, UserReportError
 from .util import ElbSupportedPrograms
 from .util import get_usage_reporting
 from .util import UserReportError, sanitize_aws_batch_job_name
-from .constants import BLASTDB_ERROR, CLUSTER_ERROR, ELB_AWS_QUERY_LENGTH, PERMISSIONS_ERROR
+from .constants import BLASTDB_ERROR, CLUSTER_ERROR, ELB_AWS_QUERY_LENGTH, ELB_UNKNOWN_NUMBER_OF_QUERY_SPLITS, PERMISSIONS_ERROR
 from .constants import ELB_QUERY_BATCH_DIR, ELB_METADATA_DIR, ELB_LOG_DIR
 from .constants import ELB_DOCKER_IMAGE, INPUT_ERROR
 from .constants import DEPENDENCY_ERROR, TIMEOUT_ERROR
@@ -52,32 +57,27 @@ from .aws_traits import get_machine_properties, create_aws_config, get_availabil
 from .base import DBSource
 from .elb_config import ElasticBlastConfig
 
-import boto3  # type: ignore
-from botocore.exceptions import ClientError, NoCredentialsError, ParamValidationError, WaiterError # type: ignore
 
-from typing import Dict, List, Tuple
-
-    
 CF_TEMPLATE = os.path.join(os.path.dirname(__file__), 'templates', 'elastic-blast-cf.yaml')
 # the order of job states reflects state transitions and is important for
 # ElasticBlastAws.get_job_ids method
 AWS_BATCH_JOB_STATES = ['SUBMITTED', 'PENDING', 'RUNNABLE', 'STARTING', 'RUNNING', 'SUCCEEDED', 'FAILED']
 
 def handle_aws_error(f):
+    """ Defines decorator to consistently handle exceptions stemming from AWS API calls. """
     @wraps(f)
     def wrapper(*args, **kwargs):
         try:
             return f(*args, **kwargs)
-        except NoCredentialsError as e:
-            raise UserReportError(PERMISSIONS_ERROR, str(e))
-        except ClientError as e:
-            code_str = e.response.get('Error', {}).get('Code', 'Unknown')
-            if code_str == 'AccessDenied' or code_str == 'RequestExpired' or \
-            code_str == 'ExpiredToken' or code_str == 'ExpiredTokenException':
+        except NoCredentialsError as err:
+            raise UserReportError(PERMISSIONS_ERROR, str(err))
+        except ClientError as err:
+            code_str = err.response.get('Error', {}).get('Code', 'Unknown')
+            if code_str in ('AccessDenied', 'RequestExpired', 'ExpiredToken', 'ExpiredTokenException'):
                 code = PERMISSIONS_ERROR
             else:
                 code = CLUSTER_ERROR
-            raise UserReportError(code, str(e))
+            raise UserReportError(code, str(err))
     return wrapper
 
 
@@ -308,6 +308,8 @@ class ElasticBlastAws:
 
     def _provide_subnets(self):
         """ Read subnets from config file or if not set try to get them from default VPC """
+        if self.dry_run:
+            return
         if not self.cfg.aws.subnet:
             logging.debug("Subnets are not provided")
             # Try to get subnet from default VPC or VPC set in aws-vpc config parameter
@@ -325,7 +327,7 @@ class ElasticBlastAws:
             vpc = None
             if self.vpc_id:
                 if self.vpc_id.lower() == 'none':
-                    return None
+                    return
                 vpc = self.ec2.Vpc(self.vpc_id)
             for subnet_name in subnets:
                 subnet = self.ec2.Subnet(subnet_name)
@@ -440,13 +442,10 @@ class ElasticBlastAws:
             logging.debug('Spot Fleet role will be created by cloudformation')
             return ''
 
-    def delete(self):
-        """Delete a CloudFormation stack associated with AWS Batch resources."""
-        self._delete()
-
     @handle_aws_error
-    def _delete(self):
-        """ Internal delete, converts AWS exceptions to UserReportError """
+    def delete(self):
+        """Delete a CloudFormation stack associated with AWS Batch resources,
+           convert AWS exceptions to UserReportError """
         logging.debug(f'Request to delete {self.stack_name}')
         if not self.dry_run:
             if not self.cf_stack:
@@ -511,15 +510,12 @@ class ElasticBlastAws:
 
         return db, db_path, sanitize_aws_batch_job_name(db)
 
-    def submit(self, query_batches):
-        """ Initial attempt to submit an AWS Batch search.
-        Starting point to further refactorings.
-        """
-        self._submit(query_batches)
-
     @handle_aws_error
-    def _submit(self, query_batches):
-        """ Internal submit, converts AWS exceptions to UserReportError  """
+    def submit(self, query_batches: List[str], cloud_query_split: bool) -> None:
+        """ Submit query batches to cluster, converts AWS exceptions to UserReportError
+            Parameters:
+                query_batches     - list of bucket names of queries to submit
+                cloud_query_split - do the query split in the cloud """
         self.job_ids = []
 
         prog = self.cfg.blast.program
@@ -527,7 +523,7 @@ class ElasticBlastAws:
         if self.cfg.blast.db_source != DBSource.AWS:
             logging.warning(f'BLAST databases for AWS based ElasticBLAST obtained from {self.cfg.blast.db_source.name}')
 
-        overrides = {
+        overrides: Dict[str, Any] = {
             'vcpus': self.cfg.cluster.num_cpus,
             'memory': int(convert_memory_to_mb(self.cfg.blast.mem_limit))
         }
@@ -545,11 +541,28 @@ class ElasticBlastAws:
 
         if self.cfg.blast.taxidlist:
             parameters['taxidlist'] = self.cfg.blast.taxidlist
-        
+
+        no_search = 'ELB_NO_SEARCH' in os.environ
+        if no_search:
+            parameters['do-search'] = '--no-search'
+
         logging.debug(f'Job definition container overrides {overrides}')
 
+        num_parts = ELB_UNKNOWN_NUMBER_OF_QUERY_SPLITS
+        if cloud_query_split:
+            num_parts = len(query_batches)
+            logging.debug(f'Performing one stage cloud query split into {num_parts} parts')
+        else:
+            logging.debug(f'Performing query split on the local host')
+        parameters['num-parts'] = str(num_parts)
+
+        # For testing purposes if there is no search requested
+        # we can use limited number of jobs
+        if no_search and cloud_query_split:
+            query_batches = query_batches[:100]
         for i, q in enumerate(query_batches):
             parameters['query-batch'] = q
+            parameters['split-part'] = str(i)
             jname = f'elasticblast-{self.owner}-{prog}-batch-{self.db_label}-job-{i}'
             # add random search id for ElasticBLAST usage reporting
             # and pass BLAST_USAGE_REPORT environment var to container
@@ -585,7 +598,7 @@ class ElasticBlastAws:
         """Get a list of batch job ids"""
         # we can only query for job ids by jobs states which can change
         # between calls, so order in which job states are processed matters
-        ids = defaultdict(int)        
+        ids = defaultdict(int)
         logging.debug(f'Retrieving job IDs from job queue {self.job_queue_name}')
         for status in AWS_BATCH_JOB_STATES:
             batch_of_jobs = self.batch.list_jobs(jobQueue=self.job_queue_name,
@@ -637,7 +650,7 @@ class ElasticBlastAws:
             raise UserReportError(CLUSTER_ERROR, f"Cluster {self.stack_name} is not valid or not created yet")
 
     def _load_job_ids_from_aws(self):
-        """ Retrieve the list of AWS Batch job IDs from AWS 
+        """ Retrieve the list of AWS Batch job IDs from AWS
             First it tries to get them from S3, if this isn't available, gets this data from
             AWS Batch APIs.
             Post-condition: self.job_ids contains the list of job IDs for this search
@@ -666,7 +679,7 @@ class ElasticBlastAws:
         if self.dry_run:
             logging.info('dry-run: would have checked status')
             return counts, ''
-        
+
         if extended:
             return self._check_status_extended()
 

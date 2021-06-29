@@ -26,12 +26,12 @@ Author: Victor Joukov joukovv@ncbi.nlm.nih.gov
 """
 
 import pytest
-from elb.constants import ELB_DFLT_GCP_MACHINE_TYPE
+from elastic_blast.constants import ELB_DFLT_GCP_MACHINE_TYPE
 from tests.utils import MockedCompletedProcess
-import elb
-from elb.commands.submit import check_memory_requirements
-from elb.elb_config import ElasticBlastConfig
-from elb.constants import ElbCommand
+import elastic_blast
+from elastic_blast.commands.submit import check_memory_requirements
+from elastic_blast.elb_config import ElasticBlastConfig
+from elastic_blast.constants import ElbCommand
 
 def test_check_memory_requirements(mocker):
     def mock_safe_exec(cmd):
@@ -51,7 +51,7 @@ def test_check_memory_requirements(mocker):
                              results = 'gs://results',
                              task = ElbCommand.SUBMIT)
 
-    mocker.patch('elb.util.safe_exec', side_effect=mock_safe_exec)
+    mocker.patch('elastic_blast.util.safe_exec', side_effect=mock_safe_exec)
     check_memory_requirements(cfg)
     cfg.blast.db_mem_margin = 2.0
     with pytest.raises(RuntimeError):

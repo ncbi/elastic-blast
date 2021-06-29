@@ -1,1170 +1,540 @@
 AWS job log dump
-query_length	80502331
+query_length	53353969
+cluster_name	elasticblast-joukovv-d484acbac
 instance_type	m5.8xlarge
 instance_vcpus	32
 instance_ram	131072
 min_vcpus	0
-max_vcpus	512
-num_nodes	16
-job	775817f2-4edb-4590-bfd6-71e8c6351a91	0	SUCCEEDED
-1617486038443	DB: nt
-1617486038443	DB_PATH: None
-1617486038443	DB_SOURCE: AWS
-1617486038443	QUERY_BATCH: s3://elasticblast-joukovv/results/bash/hepa-16-node/query_batches/batch_024.fa
-1617486038443	ELB_NUM_CPUS: 30
-1617486038443	PROGRAM: blastn
-1617486038443	BUCKET: s3://elasticblast-joukovv/results/bash/hepa-16-node
-1617486038443	DB_MOL_TYPE: nucl
-1617486038443	TAXIDLIST:  
-1617486038443	BLAST_PARAMS:  -outfmt 11
-1617486038443	Start queries download
-1617486039719	End queries download
-1617486041372	           Files: 70
-1617486041372	     Directories: 0
-1617486041372	  Resident Pages: 25661269/25768124  97G/98G  99.6%
-1617486041373	         Elapsed: 1.5569 seconds
-1617486041375	time blastn -query batch_024.fa -db nt -num_threads 30 -out batch_024.out -outfmt 11
-1617486041375	Start blast search
-1617486174942	real\t2m13.566s
-1617486174942	user\t56m45.898s
-1617486174942	sys\t0m11.712s
-1617486174942	End blast search
-1617486174944	Blast4-archive ::= {
-1617486174944	  request {
-1617486174944	    ident "2.11.3+",
-1617486174944	    body queue-search {
-1617486174944	      program "blastn",
-1617486174944	      service "megablast",
-1617486174944	      queries bioseq-set {
-1617486174944	        seq-set {
-1617486174944	          seq {
-1617486174944	            id {
-1617486179601	Start copy results
-1617486180566	End copy results
-job	7de9f927-9cc1-47f3-9170-7f41bfee8bf5	0	SUCCEEDED
-1617486220547	DB: nt
-1617486220547	DB_PATH: None
-1617486220547	DB_SOURCE: AWS
-1617486220547	QUERY_BATCH: s3://elasticblast-joukovv/results/bash/hepa-16-node/query_batches/batch_037.fa
-1617486220547	ELB_NUM_CPUS: 30
-1617486220547	PROGRAM: blastn
-1617486220547	BUCKET: s3://elasticblast-joukovv/results/bash/hepa-16-node
-1617486220547	DB_MOL_TYPE: nucl
-1617486220547	TAXIDLIST:  
-1617486220547	BLAST_PARAMS:  -outfmt 11
-1617486220547	Start queries download
-1617486222254	End queries download
-1617486223959	           Files: 70
-1617486223959	     Directories: 0
-1617486223959	  Resident Pages: 25662688/25768124  97G/98G  99.6%
-1617486223959	         Elapsed: 1.5491 seconds
-1617486223962	time blastn -query batch_037.fa -db nt -num_threads 30 -out batch_037.out -outfmt 11
-1617486223962	Start blast search
-1617486405201	real\t3m1.238s
-1617486405201	user\t67m36.174s
-1617486405201	sys\t0m12.749s
-1617486405201	End blast search
-1617486405204	Blast4-archive ::= {
-1617486405204	  request {
-1617486405204	    ident "2.11.3+",
-1617486405204	    body queue-search {
-1617486405204	      program "blastn",
-1617486405204	      service "megablast",
-1617486405204	      queries bioseq-set {
-1617486405204	        seq-set {
-1617486405204	          seq {
-1617486405204	            id {
-1617486413320	Start copy results
-1617486418079	End copy results
-job	04a9a71f-7094-4478-9c85-a0f0e74b6159	0	SUCCEEDED
-1617486282001	DB: nt
-1617486282001	DB_PATH: None
-1617486282001	DB_SOURCE: AWS
-1617486282001	QUERY_BATCH: s3://elasticblast-joukovv/results/bash/hepa-16-node/query_batches/batch_039.fa
-1617486282001	ELB_NUM_CPUS: 30
-1617486282001	PROGRAM: blastn
-1617486282001	BUCKET: s3://elasticblast-joukovv/results/bash/hepa-16-node
-1617486282001	DB_MOL_TYPE: nucl
-1617486282001	TAXIDLIST:  
-1617486282001	BLAST_PARAMS:  -outfmt 11
-1617486282001	Start queries download
-1617486283429	End queries download
-1617486285089	           Files: 70
-1617486285089	     Directories: 0
-1617486285089	  Resident Pages: 25661843/25768124  97G/98G  99.6%
-1617486285089	         Elapsed: 1.5564 seconds
-1617486285091	time blastn -query batch_039.fa -db nt -num_threads 30 -out batch_039.out -outfmt 11
-1617486285091	Start blast search
-1617486464214	real\t2m59.122s
-1617486464214	user\t66m1.784s
-1617486464214	sys\t0m12.899s
-1617486464214	End blast search
-1617486464216	Blast4-archive ::= {
-1617486464216	  request {
-1617486464216	    ident "2.11.3+",
-1617486464216	    body queue-search {
-1617486464216	      program "blastn",
-1617486464216	      service "megablast",
-1617486464216	      queries bioseq-set {
-1617486464216	        seq-set {
-1617486464216	          seq {
-1617486464216	            id {
-1617486472725	Start copy results
-1617486473766	End copy results
-job	837c3b02-0ff3-453d-946d-10f8c22d5bf8	0	SUCCEEDED
-1617485976076	DB: nt
-1617485976076	DB_PATH: None
-1617485976076	DB_SOURCE: AWS
-1617485976076	QUERY_BATCH: s3://elasticblast-joukovv/results/bash/hepa-16-node/query_batches/batch_016.fa
-1617485976076	ELB_NUM_CPUS: 30
-1617485976076	PROGRAM: blastn
-1617485976076	BUCKET: s3://elasticblast-joukovv/results/bash/hepa-16-node
-1617485976076	DB_MOL_TYPE: nucl
-1617485976076	TAXIDLIST:  
-1617485976076	BLAST_PARAMS:  -outfmt 11
-1617485976076	Start queries download
-1617485977482	End queries download
-1617485979161	           Files: 70
-1617485979161	     Directories: 0
-1617485979161	  Resident Pages: 25669361/25768124  97G/98G  99.6%
-1617485979161	         Elapsed: 1.5679 seconds
-1617485979164	time blastn -query batch_016.fa -db nt -num_threads 30 -out batch_016.out -outfmt 11
-1617485979164	Start blast search
-1617486119396	real\t2m20.232s
-1617486119396	user\t56m28.859s
-1617486119396	sys\t0m12.016s
-1617486119397	End blast search
-1617486119399	Blast4-archive ::= {
-1617486119399	  request {
-1617486119399	    ident "2.11.3+",
-1617486119399	    body queue-search {
-1617486119399	      program "blastn",
-1617486119399	      service "megablast",
-1617486119399	      queries bioseq-set {
-1617486119399	        seq-set {
-1617486119399	          seq {
-1617486119399	            id {
-1617486124427	Start copy results
-1617486125424	End copy results
-job	5f92e04f-715d-45a0-a495-63237f5912cf	0	SUCCEEDED
-1617485674606	real\t6m59.625s
-1617485674606	user\t13m49.779s
-1617485674606	sys\t7m29.119s
-1617485674606	End database download
-1617485674901	Database: Nucleotide collection (nt)
-1617485674901	\t68,873,103 sequences; 415,101,534,957 total bases
-1617485674901	Date: Mar 29, 2021  8:27 AM\tLongest sequence: 99,791,824 bases
-1617485674901	BLASTDB Version: 5
-1617485674904	Volumes:
-1617485674904	\t/blast/blastdb/nt.00
-1617485674904	\t/blast/blastdb/nt.01
-1617485674904	\t/blast/blastdb/nt.02
-1617485674904	\t/blast/blastdb/nt.03
-1617485674904	\t/blast/blastdb/nt.04
-1617485674904	\t/blast/blastdb/nt.05
-1617485674904	\t/blast/blastdb/nt.06
-1617485674904	\t/blast/blastdb/nt.07
-1617485674904	\t/blast/blastdb/nt.08
-1617485674904	\t/blast/blastdb/nt.09
-1617485674904	\t/blast/blastdb/nt.10
-1617485674904	\t/blast/blastdb/nt.11
-1617485674904	\t/blast/blastdb/nt.12
-1617485674904	\t/blast/blastdb/nt.13
-1617485674904	\t/blast/blastdb/nt.14
-1617485674904	\t/blast/blastdb/nt.15
-1617485674904	\t/blast/blastdb/nt.16
-1617485674904	\t/blast/blastdb/nt.17
-1617485674904	\t/blast/blastdb/nt.18
-1617485674904	\t/blast/blastdb/nt.19
-1617485674904	\t/blast/blastdb/nt.20
-1617485674904	\t/blast/blastdb/nt.21
-1617485674904	\t/blast/blastdb/nt.22
-1617485674904	\t/blast/blastdb/nt.23
-1617485674904	\t/blast/blastdb/nt.24
-1617485674904	\t/blast/blastdb/nt.25
-1617485674904	\t/blast/blastdb/nt.26
-1617485674904	\t/blast/blastdb/nt.27
-1617485674904	\t/blast/blastdb/nt.28
-1617485674904	\t/blast/blastdb/nt.29
-1617485674904	\t/blast/blastdb/nt.30
-1617485674904	\t/blast/blastdb/nt.31
-1617485674904	\t/blast/blastdb/nt.32
-1617485674904	\t/blast/blastdb/nt.33
-1617485674904	\t/blast/blastdb/nt.34
-1617485675002	Writing messages to <stdout> at verbosity (Minutiae)
-1617485675002	ISAM testing is DISABLED.
-1617485675002	Legacy testing is DISABLED.
-1617485675002	TaxID testing is DISABLED.
-1617485675002	Testing first 5 and last 5 OIDs.
-1617485675003	Testing 35 volume(s).
-1617485675003	 /blast/blastdb/nt.00
-1617485675006	  /blast/blastdb/nt.00 / EndPoints: <testing 5 OIDs at each end>
-1617485675020	  /blast/blastdb/nt.00 / EndPoints:       Status for OID 0: PASS
-1617485675021	  /blast/blastdb/nt.00 / EndPoints:       Status for OID 1: PASS
-1617485675021	  /blast/blastdb/nt.00 / EndPoints:       Status for OID 2: PASS
-1617485675021	  /blast/blastdb/nt.00 / EndPoints:       Status for OID 3: PASS
-1617485675021	  /blast/blastdb/nt.00 / EndPoints:       Status for OID 4: PASS
-1617485675024	  /blast/blastdb/nt.00 / EndPoints:       Status for OID 2285133: PASS
-1617485675024	  /blast/blastdb/nt.00 / EndPoints:       Status for OID 2285134: PASS
-1617485675024	  /blast/blastdb/nt.00 / EndPoints:       Status for OID 2285135: PASS
-1617485675024	  /blast/blastdb/nt.00 / EndPoints:       Status for OID 2285136: PASS
-1617485675024	  /blast/blastdb/nt.00 / EndPoints:       Status for OID 2285137: PASS
-1617485675024	 /blast/blastdb/nt.01
-1617485675025	  /blast/blastdb/nt.01 / EndPoints: <testing 5 OIDs at each end>
-1617485675025	  /blast/blastdb/nt.01 / EndPoints:       Status for OID 4203722: PASS
-1617485675025	  /blast/blastdb/nt.01 / EndPoints:       Status for OID 4203723: PASS
-1617485675025	  /blast/blastdb/nt.01 / EndPoints:       Status for OID 4203724: PASS
-1617485675025	  /blast/blastdb/nt.01 / EndPoints:       Status for OID 4203725: PASS
-1617485675025	  /blast/blastdb/nt.01 / EndPoints:       Status for OID 4203726: PASS
-1617485675025	 /blast/blastdb/nt.02
-1617485675025	  /blast/blastdb/nt.02 / EndPoints: <testing 5 OIDs at each end>
-1617485675070	  /blast/blastdb/nt.02 / EndPoints:       Status for OID 4400292: PASS
-1617485675110	  /blast/blastdb/nt.02 / EndPoints:       Status for OID 4400293: PASS
-1617485675126	  /blast/blastdb/nt.02 / EndPoints:       Status for OID 4400294: PASS
-1617485675180	  /blast/blastdb/nt.02 / EndPoints:       Status for OID 4400295: PASS
-1617485675211	  /blast/blastdb/nt.02 / EndPoints:       Status for OID 4400296: PASS
-1617485675212	 /blast/blastdb/nt.03
-1617485675212	  /blast/blastdb/nt.03 / EndPoints: <testing 5 OIDs at each end>
-1617485675236	  /blast/blastdb/nt.03 / EndPoints:       Status for OID 695558: PASS
-1617485675236	  /blast/blastdb/nt.03 / EndPoints:       Status for OID 695559: PASS
-1617485675236	  /blast/blastdb/nt.03 / EndPoints:       Status for OID 695560: PASS
-1617485675236	  /blast/blastdb/nt.03 / EndPoints:       Status for OID 695561: PASS
-1617485675236	  /blast/blastdb/nt.03 / EndPoints:       Status for OID 695562: PASS
-1617485675236	 /blast/blastdb/nt.04
-1617485675236	  /blast/blastdb/nt.04 / EndPoints: <testing 5 OIDs at each end>
-1617485675237	  /blast/blastdb/nt.04 / EndPoints:       Status for OID 712952: PASS
-1617485675237	  /blast/blastdb/nt.04 / EndPoints:       Status for OID 712953: PASS
-1617485675237	  /blast/blastdb/nt.04 / EndPoints:       Status for OID 712954: PASS
-1617485675238	  /blast/blastdb/nt.04 / EndPoints:       Status for OID 712955: PASS
-1617485675238	  /blast/blastdb/nt.04 / EndPoints:       Status for OID 712956: PASS
-1617485675238	 /blast/blastdb/nt.05
-1617485675238	  /blast/blastdb/nt.05 / EndPoints: <testing 5 OIDs at each end>
-1617485675240	  /blast/blastdb/nt.05 / EndPoints:       Status for OID 1455648: PASS
-1617485675240	  /blast/blastdb/nt.05 / EndPoints:       Status for OID 1455649: PASS
-1617485675240	  /blast/blastdb/nt.05 / EndPoints:       Status for OID 1455650: PASS
-1617485675240	  /blast/blastdb/nt.05 / EndPoints:       Status for OID 1455651: PASS
-1617485675240	  /blast/blastdb/nt.05 / EndPoints:       Status for OID 1455652: PASS
-1617485675240	 /blast/blastdb/nt.06
-1617485675240	  /blast/blastdb/nt.06 / EndPoints: <testing 5 OIDs at each end>
-1617485675240	  /blast/blastdb/nt.06 / EndPoints:       Status for OID 2695411: PASS
-1617485675240	  /blast/blastdb/nt.06 / EndPoints:       Status for OID 2695412: PASS
-1617485675240	  /blast/blastdb/nt.06 / EndPoints:       Status for OID 2695413: PASS
-1617485675240	  /blast/blastdb/nt.06 / EndPoints:       Status for OID 2695414: PASS
-1617485675240	  /blast/blastdb/nt.06 / EndPoints:       Status for OID 2695415: PASS
-1617485675241	 /blast/blastdb/nt.07
-1617485675241	  /blast/blastdb/nt.07 / EndPoints: <testing 5 OIDs at each end>
-1617485675241	  /blast/blastdb/nt.07 / EndPoints:       Status for OID 2432046: PASS
-1617485675241	  /blast/blastdb/nt.07 / EndPoints:       Status for OID 2432047: PASS
-1617485675241	  /blast/blastdb/nt.07 / EndPoints:       Status for OID 2432048: PASS
-1617485675242	  /blast/blastdb/nt.07 / EndPoints:       Status for OID 2432049: PASS
-1617485675242	  /blast/blastdb/nt.07 / EndPoints:       Status for OID 2432050: PASS
-1617485675242	 /blast/blastdb/nt.08
-1617485675242	  /blast/blastdb/nt.08 / EndPoints: <testing 5 OIDs at each end>
-1617485675242	  /blast/blastdb/nt.08 / EndPoints:       Status for OID 2561134: PASS
-1617485675242	  /blast/blastdb/nt.08 / EndPoints:       Status for OID 2561135: PASS
-1617485675242	  /blast/blastdb/nt.08 / EndPoints:       Status for OID 2561136: PASS
-1617485675242	  /blast/blastdb/nt.08 / EndPoints:       Status for OID 2561137: PASS
-1617485675251	  /blast/blastdb/nt.08 / EndPoints:       Status for OID 2561138: PASS
-1617485675251	 /blast/blastdb/nt.09
-1617485675251	  /blast/blastdb/nt.09 / EndPoints: <testing 5 OIDs at each end>
-1617485675258	  /blast/blastdb/nt.09 / EndPoints:       Status for OID 1341117: PASS
-1617485675259	  /blast/blastdb/nt.09 / EndPoints:       Status for OID 1341118: PASS
-1617485675260	  /blast/blastdb/nt.09 / EndPoints:       Status for OID 1341119: PASS
-1617485675263	  /blast/blastdb/nt.09 / EndPoints:       Status for OID 1341120: PASS
-1617485675264	  /blast/blastdb/nt.09 / EndPoints:       Status for OID 1341121: PASS
-1617485675265	 /blast/blastdb/nt.10
-1617485675265	  /blast/blastdb/nt.10 / EndPoints: <testing 5 OIDs at each end>
-1617485675273	  /blast/blastdb/nt.10 / EndPoints:       Status for OID 901521: PASS
-1617485675274	  /blast/blastdb/nt.10 / EndPoints:       Status for OID 901522: PASS
-1617485675274	  /blast/blastdb/nt.10 / EndPoints:       Status for OID 901523: PASS
-1617485675275	  /blast/blastdb/nt.10 / EndPoints:       Status for OID 901524: PASS
-1617485675276	  /blast/blastdb/nt.10 / EndPoints:       Status for OID 901525: PASS
-1617485675276	 /blast/blastdb/nt.11
-1617485675276	  /blast/blastdb/nt.11 / EndPoints: <testing 5 OIDs at each end>
-1617485675285	  /blast/blastdb/nt.11 / EndPoints:       Status for OID 578824: PASS
-1617485675285	  /blast/blastdb/nt.11 / EndPoints:       Status for OID 578825: PASS
-1617485675351	  /blast/blastdb/nt.11 / EndPoints:       Status for OID 578826: PASS
-1617485675403	  /blast/blastdb/nt.11 / EndPoints:       Status for OID 578827: PASS
-1617485675446	  /blast/blastdb/nt.11 / EndPoints:       Status for OID 578828: PASS
-1617485675447	 /blast/blastdb/nt.12
-1617485675448	  /blast/blastdb/nt.12 / EndPoints: <testing 5 OIDs at each end>
-1617485675472	  /blast/blastdb/nt.12 / EndPoints:       Status for OID 719492: PASS
-1617485675489	  /blast/blastdb/nt.12 / EndPoints:       Status for OID 719493: PASS
-1617485675510	  /blast/blastdb/nt.12 / EndPoints:       Status for OID 719494: PASS
-1617485675532	  /blast/blastdb/nt.12 / EndPoints:       Status for OID 719495: PASS
-1617485675581	  /blast/blastdb/nt.12 / EndPoints:       Status for OID 719496: PASS
-1617485675582	 /blast/blastdb/nt.13
-1617485675583	  /blast/blastdb/nt.13 / EndPoints: <testing 5 OIDs at each end>
-1617485675594	  /blast/blastdb/nt.13 / EndPoints:       Status for OID 1217156: PASS
-1617485675594	  /blast/blastdb/nt.13 / EndPoints:       Status for OID 1217157: PASS
-1617485675594	  /blast/blastdb/nt.13 / EndPoints:       Status for OID 1217158: PASS
-1617485675594	  /blast/blastdb/nt.13 / EndPoints:       Status for OID 1217159: PASS
-1617485675594	  /blast/blastdb/nt.13 / EndPoints:       Status for OID 1217160: PASS
-1617485675594	 /blast/blastdb/nt.14
-1617485675594	  /blast/blastdb/nt.14 / EndPoints: <testing 5 OIDs at each end>
-1617485675611	  /blast/blastdb/nt.14 / EndPoints:       Status for OID 3270965: PASS
-1617485675611	  /blast/blastdb/nt.14 / EndPoints:       Status for OID 3270966: PASS
-1617485675611	  /blast/blastdb/nt.14 / EndPoints:       Status for OID 3270967: PASS
-1617485675612	  /blast/blastdb/nt.14 / EndPoints:       Status for OID 3270968: PASS
-1617485675613	  /blast/blastdb/nt.14 / EndPoints:       Status for OID 3270969: PASS
-1617485675613	 /blast/blastdb/nt.15
-1617485675613	  /blast/blastdb/nt.15 / EndPoints: <testing 5 OIDs at each end>
-1617485675613	  /blast/blastdb/nt.15 / EndPoints:       Status for OID 3837776: PASS
-1617485675616	  /blast/blastdb/nt.15 / EndPoints:       Status for OID 3837777: PASS
-1617485675617	  /blast/blastdb/nt.15 / EndPoints:       Status for OID 3837778: PASS
-1617485675618	  /blast/blastdb/nt.15 / EndPoints:       Status for OID 3837779: PASS
-1617485675619	  /blast/blastdb/nt.15 / EndPoints:       Status for OID 3837780: PASS
-1617485675619	 /blast/blastdb/nt.16
-1617485675620	  /blast/blastdb/nt.16 / EndPoints: <testing 5 OIDs at each end>
-1617485675620	  /blast/blastdb/nt.16 / EndPoints:       Status for OID 3100482: PASS
-1617485675620	  /blast/blastdb/nt.16 / EndPoints:       Status for OID 3100483: PASS
-1617485675620	  /blast/blastdb/nt.16 / EndPoints:       Status for OID 3100484: PASS
-1617485675620	  /blast/blastdb/nt.16 / EndPoints:       Status for OID 3100485: PASS
-1617485675620	  /blast/blastdb/nt.16 / EndPoints:       Status for OID 3100486: PASS
-1617485675620	 /blast/blastdb/nt.17
-1617485675620	  /blast/blastdb/nt.17 / EndPoints: <testing 5 OIDs at each end>
-1617485675620	  /blast/blastdb/nt.17 / EndPoints:       Status for OID 3294328: PASS
-1617485675620	  /blast/blastdb/nt.17 / EndPoints:       Status for OID 3294329: PASS
-1617485675620	  /blast/blastdb/nt.17 / EndPoints:       Status for OID 3294330: PASS
-1617485675620	  /blast/blastdb/nt.17 / EndPoints:       Status for OID 3294331: PASS
-1617485675620	  /blast/blastdb/nt.17 / EndPoints:       Status for OID 3294332: PASS
-1617485675620	 /blast/blastdb/nt.18
-1617485675620	  /blast/blastdb/nt.18 / EndPoints: <testing 5 OIDs at each end>
-1617485675621	  /blast/blastdb/nt.18 / EndPoints:       Status for OID 2614068: PASS
-1617485675621	  /blast/blastdb/nt.18 / EndPoints:       Status for OID 2614069: PASS
-1617485675621	  /blast/blastdb/nt.18 / EndPoints:       Status for OID 2614070: PASS
-1617485675621	  /blast/blastdb/nt.18 / EndPoints:       Status for OID 2614071: PASS
-1617485675621	  /blast/blastdb/nt.18 / EndPoints:       Status for OID 2614072: PASS
-1617485675621	 /blast/blastdb/nt.19
-1617485675621	  /blast/blastdb/nt.19 / EndPoints: <testing 5 OIDs at each end>
-1617485675621	  /blast/blastdb/nt.19 / EndPoints:       Status for OID 2487173: PASS
-1617485675622	  /blast/blastdb/nt.19 / EndPoints:       Status for OID 2487174: PASS
-1617485675622	  /blast/blastdb/nt.19 / EndPoints:       Status for OID 2487175: PASS
-1617485675622	  /blast/blastdb/nt.19 / EndPoints:       Status for OID 2487176: PASS
-1617485675623	  /blast/blastdb/nt.19 / EndPoints:       Status for OID 2487177: PASS
-1617485675623	 /blast/blastdb/nt.20
-1617485675623	  /blast/blastdb/nt.20 / EndPoints: <testing 5 OIDs at each end>
-1617485675623	  /blast/blastdb/nt.20 / EndPoints:       Status for OID 2274208: PASS
-1617485675623	  /blast/blastdb/nt.20 / EndPoints:       Status for OID 2274209: PASS
-1617485675623	  /blast/blastdb/nt.20 / EndPoints:       Status for OID 2274210: PASS
-1617485675624	  /blast/blastdb/nt.20 / EndPoints:       Status for OID 2274211: PASS
-1617485675624	  /blast/blastdb/nt.20 / EndPoints:       Status for OID 2274212: PASS
-1617485675624	 /blast/blastdb/nt.21
-1617485675625	  /blast/blastdb/nt.21 / EndPoints: <testing 5 OIDs at each end>
-1617485675642	  /blast/blastdb/nt.21 / EndPoints:       Status for OID 2195362: PASS
-1617485675642	  /blast/blastdb/nt.21 / EndPoints:       Status for OID 2195363: PASS
-1617485675642	  /blast/blastdb/nt.21 / EndPoints:       Status for OID 2195364: PASS
-1617485675654	  /blast/blastdb/nt.21 / EndPoints:       Status for OID 2195365: PASS
-1617485675662	  /blast/blastdb/nt.21 / EndPoints:       Status for OID 2195366: PASS
-1617485675662	 /blast/blastdb/nt.22
-1617485675662	  /blast/blastdb/nt.22 / EndPoints: <testing 5 OIDs at each end>
-1617485675680	  /blast/blastdb/nt.22 / EndPoints:       Status for OID 2232206: PASS
-1617485675680	  /blast/blastdb/nt.22 / EndPoints:       Status for OID 2232207: PASS
-1617485675680	  /blast/blastdb/nt.22 / EndPoints:       Status for OID 2232208: PASS
-1617485675680	  /blast/blastdb/nt.22 / EndPoints:       Status for OID 2232209: PASS
-1617485675680	  /blast/blastdb/nt.22 / EndPoints:       Status for OID 2232210: PASS
-1617485675680	 /blast/blastdb/nt.23
-1617485675680	  /blast/blastdb/nt.23 / EndPoints: <testing 5 OIDs at each end>
-1617485675681	  /blast/blastdb/nt.23 / EndPoints:       Status for OID 2579778: PASS
-1617485675681	  /blast/blastdb/nt.23 / EndPoints:       Status for OID 2579779: PASS
-1617485675682	  /blast/blastdb/nt.23 / EndPoints:       Status for OID 2579780: PASS
-1617485675682	  /blast/blastdb/nt.23 / EndPoints:       Status for OID 2579781: PASS
-1617485675683	  /blast/blastdb/nt.23 / EndPoints:       Status for OID 2579782: PASS
-1617485675683	 /blast/blastdb/nt.24
-1617485675683	  /blast/blastdb/nt.24 / EndPoints: <testing 5 OIDs at each end>
-1617485675696	  /blast/blastdb/nt.24 / EndPoints:       Status for OID 1591880: PASS
-1617485675711	  /blast/blastdb/nt.24 / EndPoints:       Status for OID 1591881: PASS
-1617485675723	  /blast/blastdb/nt.24 / EndPoints:       Status for OID 1591882: PASS
-1617485675736	  /blast/blastdb/nt.24 / EndPoints:       Status for OID 1591883: PASS
-1617485675750	  /blast/blastdb/nt.24 / EndPoints:       Status for OID 1591884: PASS
-1617485675751	 /blast/blastdb/nt.25
-1617485675751	  /blast/blastdb/nt.25 / EndPoints: <testing 5 OIDs at each end>
-1617485675770	  /blast/blastdb/nt.25 / EndPoints:       Status for OID 1799628: PASS
-1617485675784	  /blast/blastdb/nt.25 / EndPoints:       Status for OID 1799629: PASS
-1617485675795	  /blast/blastdb/nt.25 / EndPoints:       Status for OID 1799630: PASS
-1617485675807	  /blast/blastdb/nt.25 / EndPoints:       Status for OID 1799631: PASS
-1617485675821	  /blast/blastdb/nt.25 / EndPoints:       Status for OID 1799632: PASS
-1617485675822	 /blast/blastdb/nt.26
-1617485675823	  /blast/blastdb/nt.26 / EndPoints: <testing 5 OIDs at each end>
-1617485675826	  /blast/blastdb/nt.26 / EndPoints:       Status for OID 815687: PASS
-1617485675826	  /blast/blastdb/nt.26 / EndPoints:       Status for OID 815688: PASS
-1617485675826	  /blast/blastdb/nt.26 / EndPoints:       Status for OID 815689: PASS
-1617485675826	  /blast/blastdb/nt.26 / EndPoints:       Status for OID 815690: PASS
-1617485675826	  /blast/blastdb/nt.26 / EndPoints:       Status for OID 815691: PASS
-1617485675826	 /blast/blastdb/nt.27
-1617485675827	  /blast/blastdb/nt.27 / EndPoints: <testing 5 OIDs at each end>
-1617485675827	  /blast/blastdb/nt.27 / EndPoints:       Status for OID 1745527: PASS
-1617485675827	  /blast/blastdb/nt.27 / EndPoints:       Status for OID 1745528: PASS
-1617485675827	  /blast/blastdb/nt.27 / EndPoints:       Status for OID 1745529: PASS
-1617485675827	  /blast/blastdb/nt.27 / EndPoints:       Status for OID 1745530: PASS
-1617485675827	  /blast/blastdb/nt.27 / EndPoints:       Status for OID 1745531: PASS
-1617485675827	 /blast/blastdb/nt.28
-1617485675827	  /blast/blastdb/nt.28 / EndPoints: <testing 5 OIDs at each end>
-1617485675827	  /blast/blastdb/nt.28 / EndPoints:       Status for OID 973358: PASS
-1617485675827	  /blast/blastdb/nt.28 / EndPoints:       Status for OID 973359: PASS
-1617485675827	  /blast/blastdb/nt.28 / EndPoints:       Status for OID 973360: PASS
-1617485675827	  /blast/blastdb/nt.28 / EndPoints:       Status for OID 973361: PASS
-1617485675827	  /blast/blastdb/nt.28 / EndPoints:       Status for OID 973362: PASS
-1617485675827	 /blast/blastdb/nt.29
-1617485675828	  /blast/blastdb/nt.29 / EndPoints: <testing 5 OIDs at each end>
-1617485675832	  /blast/blastdb/nt.29 / EndPoints:       Status for OID 1401563: PASS
-1617485675832	  /blast/blastdb/nt.29 / EndPoints:       Status for OID 1401564: PASS
-1617485675832	  /blast/blastdb/nt.29 / EndPoints:       Status for OID 1401565: PASS
-1617485675832	  /blast/blastdb/nt.29 / EndPoints:       Status for OID 1401566: PASS
-1617485675833	  /blast/blastdb/nt.29 / EndPoints:       Status for OID 1401567: PASS
-1617485675833	 /blast/blastdb/nt.30
-1617485675833	  /blast/blastdb/nt.30 / EndPoints: <testing 5 OIDs at each end>
-1617485675837	  /blast/blastdb/nt.30 / EndPoints:       Status for OID 1443477: PASS
-1617485675873	  /blast/blastdb/nt.30 / EndPoints:       Status for OID 1443478: PASS
-1617485675923	  /blast/blastdb/nt.30 / EndPoints:       Status for OID 1443479: PASS
-1617485675923	  /blast/blastdb/nt.30 / EndPoints:       Status for OID 1443480: PASS
-1617485675971	  /blast/blastdb/nt.30 / EndPoints:       Status for OID 1443481: PASS
-1617485675973	 /blast/blastdb/nt.31
-1617485675973	  /blast/blastdb/nt.31 / EndPoints: <testing 5 OIDs at each end>
-1617485676013	  /blast/blastdb/nt.31 / EndPoints:       Status for OID 916782: PASS
-1617485676030	  /blast/blastdb/nt.31 / EndPoints:       Status for OID 916783: PASS
-1617485676046	  /blast/blastdb/nt.31 / EndPoints:       Status for OID 916784: PASS
-1617485676061	  /blast/blastdb/nt.31 / EndPoints:       Status for OID 916785: PASS
-1617485676077	  /blast/blastdb/nt.31 / EndPoints:       Status for OID 916786: PASS
-1617485676078	 /blast/blastdb/nt.32
-1617485676078	  /blast/blastdb/nt.32 / EndPoints: <testing 5 OIDs at each end>
-1617485676108	  /blast/blastdb/nt.32 / EndPoints:       Status for OID 1259836: PASS
-1617485676135	  /blast/blastdb/nt.32 / EndPoints:       Status for OID 1259837: PASS
-1617485676146	  /blast/blastdb/nt.32 / EndPoints:       Status for OID 1259838: PASS
-1617485676179	  /blast/blastdb/nt.32 / EndPoints:       Status for OID 1259839: PASS
-1617485676201	  /blast/blastdb/nt.32 / EndPoints:       Status for OID 1259840: PASS
-1617485676203	 /blast/blastdb/nt.33
-1617485676203	  /blast/blastdb/nt.33 / EndPoints: <testing 5 OIDs at each end>
-1617485676211	  /blast/blastdb/nt.33 / EndPoints:       Status for OID 1500853: PASS
-1617485676211	  /blast/blastdb/nt.33 / EndPoints:       Status for OID 1500854: PASS
-1617485676211	  /blast/blastdb/nt.33 / EndPoints:       Status for OID 1500855: PASS
-1617485676211	  /blast/blastdb/nt.33 / EndPoints:       Status for OID 1500856: PASS
-1617485676211	  /blast/blastdb/nt.33 / EndPoints:       Status for OID 1500857: PASS
-1617485676211	 /blast/blastdb/nt.34
-1617485676212	  /blast/blastdb/nt.34 / EndPoints: <testing 5 OIDs at each end>
-1617485676212	  /blast/blastdb/nt.34 / EndPoints:       Status for OID 1337985: PASS
-1617485676212	  /blast/blastdb/nt.34 / EndPoints:       Status for OID 1337986: PASS
-1617485676212	  /blast/blastdb/nt.34 / EndPoints:       Status for OID 1337987: PASS
-1617485676212	  /blast/blastdb/nt.34 / EndPoints:       Status for OID 1337988: PASS
-1617485676212	  /blast/blastdb/nt.34 / EndPoints:       Status for OID 1337989: PASS
-1617485676212	 Result=SUCCESS. No errors reported for 35 volume(s).
-1617485676212	Testing 1 alias(es).
-1617485676212	 /blast/blastdb/nt.nal
-1617485676213	 Result=SUCCESS. No errors reported for 1 alias(es).
-1617485676220	Start queries download
-1617485676936	End queries download
-1617485678555	           Files: 70
-1617485678555	     Directories: 0
-1617485678555	  Resident Pages: 23441819/25768124  89G/98G  91%
-1617485678555	         Elapsed: 1.5317 seconds
-1617485678557	time blastn -query batch_001.fa -db nt -num_threads 30 -out batch_001.out -outfmt 11
-1617485678557	Start blast search
-1617485982176	real\t5m3.616s
-1617485982176	user\t66m44.075s
-1617485982176	sys\t0m24.621s
-1617485982176	End blast search
-1617485982182	Blast4-archive ::= {
-1617485982182	  request {
-1617485982182	    ident "2.11.3+",
-1617485982182	    body queue-search {
-1617485982182	      program "blastn",
-1617485982182	      service "megablast",
-1617485982182	      queries bioseq-set {
-1617485982182	        seq-set {
-1617485982182	          seq {
-1617485982182	            id {
-1617485991694	Start copy results
-1617485992738	End copy results
-job	8411d096-6076-43a2-918f-baf1752ac297	0	SUCCEEDED
-1617485726550	real\t6m51.996s
-1617485726550	user\t13m53.169s
-1617485726550	sys\t7m10.897s
-1617485726550	End database download
-1617485726837	Database: Nucleotide collection (nt)
-1617485726837	\t68,873,103 sequences; 415,101,534,957 total bases
-1617485726837	Date: Mar 29, 2021  8:27 AM\tLongest sequence: 99,791,824 bases
-1617485726837	BLASTDB Version: 5
-1617485726841	Volumes:
-1617485726841	\t/blast/blastdb/nt.00
-1617485726841	\t/blast/blastdb/nt.01
-1617485726841	\t/blast/blastdb/nt.02
-1617485726841	\t/blast/blastdb/nt.03
-1617485726841	\t/blast/blastdb/nt.04
-1617485726841	\t/blast/blastdb/nt.05
-1617485726841	\t/blast/blastdb/nt.06
-1617485726841	\t/blast/blastdb/nt.07
-1617485726841	\t/blast/blastdb/nt.08
-1617485726841	\t/blast/blastdb/nt.09
-1617485726841	\t/blast/blastdb/nt.10
-1617485726841	\t/blast/blastdb/nt.11
-1617485726841	\t/blast/blastdb/nt.12
-1617485726841	\t/blast/blastdb/nt.13
-1617485726841	\t/blast/blastdb/nt.14
-1617485726841	\t/blast/blastdb/nt.15
-1617485726841	\t/blast/blastdb/nt.16
-1617485726841	\t/blast/blastdb/nt.17
-1617485726841	\t/blast/blastdb/nt.18
-1617485726841	\t/blast/blastdb/nt.19
-1617485726841	\t/blast/blastdb/nt.20
-1617485726841	\t/blast/blastdb/nt.21
-1617485726841	\t/blast/blastdb/nt.22
-1617485726841	\t/blast/blastdb/nt.23
-1617485726841	\t/blast/blastdb/nt.24
-1617485726841	\t/blast/blastdb/nt.25
-1617485726841	\t/blast/blastdb/nt.26
-1617485726841	\t/blast/blastdb/nt.27
-1617485726841	\t/blast/blastdb/nt.28
-1617485726841	\t/blast/blastdb/nt.29
-1617485726841	\t/blast/blastdb/nt.30
-1617485726841	\t/blast/blastdb/nt.31
-1617485726841	\t/blast/blastdb/nt.32
-1617485726841	\t/blast/blastdb/nt.33
-1617485726841	\t/blast/blastdb/nt.34
-1617485726942	Writing messages to <stdout> at verbosity (Minutiae)
-1617485726942	ISAM testing is DISABLED.
-1617485726942	Legacy testing is DISABLED.
-1617485726942	TaxID testing is DISABLED.
-1617485726942	Testing first 5 and last 5 OIDs.
-1617485726944	Testing 35 volume(s).
-1617485726944	 /blast/blastdb/nt.00
-1617485726947	  /blast/blastdb/nt.00 / EndPoints: <testing 5 OIDs at each end>
-1617485726982	  /blast/blastdb/nt.00 / EndPoints:       Status for OID 0: PASS
-1617485726982	  /blast/blastdb/nt.00 / EndPoints:       Status for OID 1: PASS
-1617485726982	  /blast/blastdb/nt.00 / EndPoints:       Status for OID 2: PASS
-1617485726982	  /blast/blastdb/nt.00 / EndPoints:       Status for OID 3: PASS
-1617485726982	  /blast/blastdb/nt.00 / EndPoints:       Status for OID 4: PASS
-1617485726989	  /blast/blastdb/nt.00 / EndPoints:       Status for OID 2285133: PASS
-1617485726989	  /blast/blastdb/nt.00 / EndPoints:       Status for OID 2285134: PASS
-1617485726990	  /blast/blastdb/nt.00 / EndPoints:       Status for OID 2285135: PASS
-1617485726990	  /blast/blastdb/nt.00 / EndPoints:       Status for OID 2285136: PASS
-1617485726990	  /blast/blastdb/nt.00 / EndPoints:       Status for OID 2285137: PASS
-1617485726990	 /blast/blastdb/nt.01
-1617485726990	  /blast/blastdb/nt.01 / EndPoints: <testing 5 OIDs at each end>
-1617485726990	  /blast/blastdb/nt.01 / EndPoints:       Status for OID 4203722: PASS
-1617485726990	  /blast/blastdb/nt.01 / EndPoints:       Status for OID 4203723: PASS
-1617485726990	  /blast/blastdb/nt.01 / EndPoints:       Status for OID 4203724: PASS
-1617485726990	  /blast/blastdb/nt.01 / EndPoints:       Status for OID 4203725: PASS
-1617485726990	  /blast/blastdb/nt.01 / EndPoints:       Status for OID 4203726: PASS
-1617485726990	 /blast/blastdb/nt.02
-1617485726990	  /blast/blastdb/nt.02 / EndPoints: <testing 5 OIDs at each end>
-1617485727036	  /blast/blastdb/nt.02 / EndPoints:       Status for OID 4400292: PASS
-1617485727076	  /blast/blastdb/nt.02 / EndPoints:       Status for OID 4400293: PASS
-1617485727093	  /blast/blastdb/nt.02 / EndPoints:       Status for OID 4400294: PASS
-1617485727149	  /blast/blastdb/nt.02 / EndPoints:       Status for OID 4400295: PASS
-1617485727180	  /blast/blastdb/nt.02 / EndPoints:       Status for OID 4400296: PASS
-1617485727182	 /blast/blastdb/nt.03
-1617485727182	  /blast/blastdb/nt.03 / EndPoints: <testing 5 OIDs at each end>
-1617485727213	  /blast/blastdb/nt.03 / EndPoints:       Status for OID 695558: PASS
-1617485727213	  /blast/blastdb/nt.03 / EndPoints:       Status for OID 695559: PASS
-1617485727213	  /blast/blastdb/nt.03 / EndPoints:       Status for OID 695560: PASS
-1617485727213	  /blast/blastdb/nt.03 / EndPoints:       Status for OID 695561: PASS
-1617485727213	  /blast/blastdb/nt.03 / EndPoints:       Status for OID 695562: PASS
-1617485727213	 /blast/blastdb/nt.04
-1617485727214	  /blast/blastdb/nt.04 / EndPoints: <testing 5 OIDs at each end>
-1617485727214	  /blast/blastdb/nt.04 / EndPoints:       Status for OID 712952: PASS
-1617485727215	  /blast/blastdb/nt.04 / EndPoints:       Status for OID 712953: PASS
-1617485727215	  /blast/blastdb/nt.04 / EndPoints:       Status for OID 712954: PASS
-1617485727215	  /blast/blastdb/nt.04 / EndPoints:       Status for OID 712955: PASS
-1617485727216	  /blast/blastdb/nt.04 / EndPoints:       Status for OID 712956: PASS
-1617485727216	 /blast/blastdb/nt.05
-1617485727216	  /blast/blastdb/nt.05 / EndPoints: <testing 5 OIDs at each end>
-1617485727219	  /blast/blastdb/nt.05 / EndPoints:       Status for OID 1455648: PASS
-1617485727219	  /blast/blastdb/nt.05 / EndPoints:       Status for OID 1455649: PASS
-1617485727219	  /blast/blastdb/nt.05 / EndPoints:       Status for OID 1455650: PASS
-1617485727219	  /blast/blastdb/nt.05 / EndPoints:       Status for OID 1455651: PASS
-1617485727219	  /blast/blastdb/nt.05 / EndPoints:       Status for OID 1455652: PASS
-1617485727220	 /blast/blastdb/nt.06
-1617485727220	  /blast/blastdb/nt.06 / EndPoints: <testing 5 OIDs at each end>
-1617485727220	  /blast/blastdb/nt.06 / EndPoints:       Status for OID 2695411: PASS
-1617485727220	  /blast/blastdb/nt.06 / EndPoints:       Status for OID 2695412: PASS
-1617485727220	  /blast/blastdb/nt.06 / EndPoints:       Status for OID 2695413: PASS
-1617485727220	  /blast/blastdb/nt.06 / EndPoints:       Status for OID 2695414: PASS
-1617485727220	  /blast/blastdb/nt.06 / EndPoints:       Status for OID 2695415: PASS
-1617485727220	 /blast/blastdb/nt.07
-1617485727220	  /blast/blastdb/nt.07 / EndPoints: <testing 5 OIDs at each end>
-1617485727220	  /blast/blastdb/nt.07 / EndPoints:       Status for OID 2432046: PASS
-1617485727221	  /blast/blastdb/nt.07 / EndPoints:       Status for OID 2432047: PASS
-1617485727221	  /blast/blastdb/nt.07 / EndPoints:       Status for OID 2432048: PASS
-1617485727221	  /blast/blastdb/nt.07 / EndPoints:       Status for OID 2432049: PASS
-1617485727221	  /blast/blastdb/nt.07 / EndPoints:       Status for OID 2432050: PASS
-1617485727221	 /blast/blastdb/nt.08
-1617485727222	  /blast/blastdb/nt.08 / EndPoints: <testing 5 OIDs at each end>
-1617485727222	  /blast/blastdb/nt.08 / EndPoints:       Status for OID 2561134: PASS
-1617485727222	  /blast/blastdb/nt.08 / EndPoints:       Status for OID 2561135: PASS
-1617485727222	  /blast/blastdb/nt.08 / EndPoints:       Status for OID 2561136: PASS
-1617485727222	  /blast/blastdb/nt.08 / EndPoints:       Status for OID 2561137: PASS
-1617485727230	  /blast/blastdb/nt.08 / EndPoints:       Status for OID 2561138: PASS
-1617485727230	 /blast/blastdb/nt.09
-1617485727230	  /blast/blastdb/nt.09 / EndPoints: <testing 5 OIDs at each end>
-1617485727238	  /blast/blastdb/nt.09 / EndPoints:       Status for OID 1341117: PASS
-1617485727240	  /blast/blastdb/nt.09 / EndPoints:       Status for OID 1341118: PASS
-1617485727241	  /blast/blastdb/nt.09 / EndPoints:       Status for OID 1341119: PASS
-1617485727244	  /blast/blastdb/nt.09 / EndPoints:       Status for OID 1341120: PASS
-1617485727245	  /blast/blastdb/nt.09 / EndPoints:       Status for OID 1341121: PASS
-1617485727246	 /blast/blastdb/nt.10
-1617485727246	  /blast/blastdb/nt.10 / EndPoints: <testing 5 OIDs at each end>
-1617485727261	  /blast/blastdb/nt.10 / EndPoints:       Status for OID 901521: PASS
-1617485727262	  /blast/blastdb/nt.10 / EndPoints:       Status for OID 901522: PASS
-1617485727262	  /blast/blastdb/nt.10 / EndPoints:       Status for OID 901523: PASS
-1617485727263	  /blast/blastdb/nt.10 / EndPoints:       Status for OID 901524: PASS
-1617485727264	  /blast/blastdb/nt.10 / EndPoints:       Status for OID 901525: PASS
-1617485727264	 /blast/blastdb/nt.11
-1617485727264	  /blast/blastdb/nt.11 / EndPoints: <testing 5 OIDs at each end>
-1617485727280	  /blast/blastdb/nt.11 / EndPoints:       Status for OID 578824: PASS
-1617485727280	  /blast/blastdb/nt.11 / EndPoints:       Status for OID 578825: PASS
-1617485727347	  /blast/blastdb/nt.11 / EndPoints:       Status for OID 578826: PASS
-1617485727399	  /blast/blastdb/nt.11 / EndPoints:       Status for OID 578827: PASS
-1617485727443	  /blast/blastdb/nt.11 / EndPoints:       Status for OID 578828: PASS
-1617485727444	 /blast/blastdb/nt.12
-1617485727444	  /blast/blastdb/nt.12 / EndPoints: <testing 5 OIDs at each end>
-1617485727469	  /blast/blastdb/nt.12 / EndPoints:       Status for OID 719492: PASS
-1617485727487	  /blast/blastdb/nt.12 / EndPoints:       Status for OID 719493: PASS
-1617485727508	  /blast/blastdb/nt.12 / EndPoints:       Status for OID 719494: PASS
-1617485727530	  /blast/blastdb/nt.12 / EndPoints:       Status for OID 719495: PASS
-1617485727580	  /blast/blastdb/nt.12 / EndPoints:       Status for OID 719496: PASS
-1617485727582	 /blast/blastdb/nt.13
-1617485727582	  /blast/blastdb/nt.13 / EndPoints: <testing 5 OIDs at each end>
-1617485727588	  /blast/blastdb/nt.13 / EndPoints:       Status for OID 1217156: PASS
-1617485727588	  /blast/blastdb/nt.13 / EndPoints:       Status for OID 1217157: PASS
-1617485727588	  /blast/blastdb/nt.13 / EndPoints:       Status for OID 1217158: PASS
-1617485727588	  /blast/blastdb/nt.13 / EndPoints:       Status for OID 1217159: PASS
-1617485727588	  /blast/blastdb/nt.13 / EndPoints:       Status for OID 1217160: PASS
-1617485727588	 /blast/blastdb/nt.14
-1617485727589	  /blast/blastdb/nt.14 / EndPoints: <testing 5 OIDs at each end>
-1617485727599	  /blast/blastdb/nt.14 / EndPoints:       Status for OID 3270965: PASS
-1617485727599	  /blast/blastdb/nt.14 / EndPoints:       Status for OID 3270966: PASS
-1617485727600	  /blast/blastdb/nt.14 / EndPoints:       Status for OID 3270967: PASS
-1617485727601	  /blast/blastdb/nt.14 / EndPoints:       Status for OID 3270968: PASS
-1617485727601	  /blast/blastdb/nt.14 / EndPoints:       Status for OID 3270969: PASS
-1617485727601	 /blast/blastdb/nt.15
-1617485727602	  /blast/blastdb/nt.15 / EndPoints: <testing 5 OIDs at each end>
-1617485727602	  /blast/blastdb/nt.15 / EndPoints:       Status for OID 3837776: PASS
-1617485727604	  /blast/blastdb/nt.15 / EndPoints:       Status for OID 3837777: PASS
-1617485727606	  /blast/blastdb/nt.15 / EndPoints:       Status for OID 3837778: PASS
-1617485727607	  /blast/blastdb/nt.15 / EndPoints:       Status for OID 3837779: PASS
-1617485727608	  /blast/blastdb/nt.15 / EndPoints:       Status for OID 3837780: PASS
-1617485727608	 /blast/blastdb/nt.16
-1617485727608	  /blast/blastdb/nt.16 / EndPoints: <testing 5 OIDs at each end>
-1617485727609	  /blast/blastdb/nt.16 / EndPoints:       Status for OID 3100482: PASS
-1617485727609	  /blast/blastdb/nt.16 / EndPoints:       Status for OID 3100483: PASS
-1617485727609	  /blast/blastdb/nt.16 / EndPoints:       Status for OID 3100484: PASS
-1617485727609	  /blast/blastdb/nt.16 / EndPoints:       Status for OID 3100485: PASS
-1617485727609	  /blast/blastdb/nt.16 / EndPoints:       Status for OID 3100486: PASS
-1617485727609	 /blast/blastdb/nt.17
-1617485727609	  /blast/blastdb/nt.17 / EndPoints: <testing 5 OIDs at each end>
-1617485727609	  /blast/blastdb/nt.17 / EndPoints:       Status for OID 3294328: PASS
-1617485727609	  /blast/blastdb/nt.17 / EndPoints:       Status for OID 3294329: PASS
-1617485727609	  /blast/blastdb/nt.17 / EndPoints:       Status for OID 3294330: PASS
-1617485727609	  /blast/blastdb/nt.17 / EndPoints:       Status for OID 3294331: PASS
-1617485727609	  /blast/blastdb/nt.17 / EndPoints:       Status for OID 3294332: PASS
-1617485727609	 /blast/blastdb/nt.18
-1617485727609	  /blast/blastdb/nt.18 / EndPoints: <testing 5 OIDs at each end>
-1617485727609	  /blast/blastdb/nt.18 / EndPoints:       Status for OID 2614068: PASS
-1617485727609	  /blast/blastdb/nt.18 / EndPoints:       Status for OID 2614069: PASS
-1617485727609	  /blast/blastdb/nt.18 / EndPoints:       Status for OID 2614070: PASS
-1617485727609	  /blast/blastdb/nt.18 / EndPoints:       Status for OID 2614071: PASS
-1617485727609	  /blast/blastdb/nt.18 / EndPoints:       Status for OID 2614072: PASS
-1617485727609	 /blast/blastdb/nt.19
-1617485727610	  /blast/blastdb/nt.19 / EndPoints: <testing 5 OIDs at each end>
-1617485727610	  /blast/blastdb/nt.19 / EndPoints:       Status for OID 2487173: PASS
-1617485727611	  /blast/blastdb/nt.19 / EndPoints:       Status for OID 2487174: PASS
-1617485727611	  /blast/blastdb/nt.19 / EndPoints:       Status for OID 2487175: PASS
-1617485727611	  /blast/blastdb/nt.19 / EndPoints:       Status for OID 2487176: PASS
-1617485727612	  /blast/blastdb/nt.19 / EndPoints:       Status for OID 2487177: PASS
-1617485727612	 /blast/blastdb/nt.20
-1617485727612	  /blast/blastdb/nt.20 / EndPoints: <testing 5 OIDs at each end>
-1617485727612	  /blast/blastdb/nt.20 / EndPoints:       Status for OID 2274208: PASS
-1617485727612	  /blast/blastdb/nt.20 / EndPoints:       Status for OID 2274209: PASS
-1617485727612	  /blast/blastdb/nt.20 / EndPoints:       Status for OID 2274210: PASS
-1617485727613	  /blast/blastdb/nt.20 / EndPoints:       Status for OID 2274211: PASS
-1617485727613	  /blast/blastdb/nt.20 / EndPoints:       Status for OID 2274212: PASS
-1617485727613	 /blast/blastdb/nt.21
-1617485727614	  /blast/blastdb/nt.21 / EndPoints: <testing 5 OIDs at each end>
-1617485727624	  /blast/blastdb/nt.21 / EndPoints:       Status for OID 2195362: PASS
-1617485727624	  /blast/blastdb/nt.21 / EndPoints:       Status for OID 2195363: PASS
-1617485727624	  /blast/blastdb/nt.21 / EndPoints:       Status for OID 2195364: PASS
-1617485727636	  /blast/blastdb/nt.21 / EndPoints:       Status for OID 2195365: PASS
-1617485727644	  /blast/blastdb/nt.21 / EndPoints:       Status for OID 2195366: PASS
-1617485727645	 /blast/blastdb/nt.22
-1617485727645	  /blast/blastdb/nt.22 / EndPoints: <testing 5 OIDs at each end>
-1617485727649	  /blast/blastdb/nt.22 / EndPoints:       Status for OID 2232206: PASS
-1617485727649	  /blast/blastdb/nt.22 / EndPoints:       Status for OID 2232207: PASS
-1617485727649	  /blast/blastdb/nt.22 / EndPoints:       Status for OID 2232208: PASS
-1617485727649	  /blast/blastdb/nt.22 / EndPoints:       Status for OID 2232209: PASS
-1617485727649	  /blast/blastdb/nt.22 / EndPoints:       Status for OID 2232210: PASS
-1617485727649	 /blast/blastdb/nt.23
-1617485727649	  /blast/blastdb/nt.23 / EndPoints: <testing 5 OIDs at each end>
-1617485727650	  /blast/blastdb/nt.23 / EndPoints:       Status for OID 2579778: PASS
-1617485727650	  /blast/blastdb/nt.23 / EndPoints:       Status for OID 2579779: PASS
-1617485727651	  /blast/blastdb/nt.23 / EndPoints:       Status for OID 2579780: PASS
-1617485727651	  /blast/blastdb/nt.23 / EndPoints:       Status for OID 2579781: PASS
-1617485727652	  /blast/blastdb/nt.23 / EndPoints:       Status for OID 2579782: PASS
-1617485727652	 /blast/blastdb/nt.24
-1617485727652	  /blast/blastdb/nt.24 / EndPoints: <testing 5 OIDs at each end>
-1617485727656	  /blast/blastdb/nt.24 / EndPoints:       Status for OID 1591880: PASS
-1617485727671	  /blast/blastdb/nt.24 / EndPoints:       Status for OID 1591881: PASS
-1617485727684	  /blast/blastdb/nt.24 / EndPoints:       Status for OID 1591882: PASS
-1617485727697	  /blast/blastdb/nt.24 / EndPoints:       Status for OID 1591883: PASS
-1617485727712	  /blast/blastdb/nt.24 / EndPoints:       Status for OID 1591884: PASS
-1617485727712	 /blast/blastdb/nt.25
-1617485727713	  /blast/blastdb/nt.25 / EndPoints: <testing 5 OIDs at each end>
-1617485727731	  /blast/blastdb/nt.25 / EndPoints:       Status for OID 1799628: PASS
-1617485727746	  /blast/blastdb/nt.25 / EndPoints:       Status for OID 1799629: PASS
-1617485727757	  /blast/blastdb/nt.25 / EndPoints:       Status for OID 1799630: PASS
-1617485727769	  /blast/blastdb/nt.25 / EndPoints:       Status for OID 1799631: PASS
-1617485727784	  /blast/blastdb/nt.25 / EndPoints:       Status for OID 1799632: PASS
-1617485727784	 /blast/blastdb/nt.26
-1617485727785	  /blast/blastdb/nt.26 / EndPoints: <testing 5 OIDs at each end>
-1617485727788	  /blast/blastdb/nt.26 / EndPoints:       Status for OID 815687: PASS
-1617485727788	  /blast/blastdb/nt.26 / EndPoints:       Status for OID 815688: PASS
-1617485727788	  /blast/blastdb/nt.26 / EndPoints:       Status for OID 815689: PASS
-1617485727788	  /blast/blastdb/nt.26 / EndPoints:       Status for OID 815690: PASS
-1617485727788	  /blast/blastdb/nt.26 / EndPoints:       Status for OID 815691: PASS
-1617485727788	 /blast/blastdb/nt.27
-1617485727788	  /blast/blastdb/nt.27 / EndPoints: <testing 5 OIDs at each end>
-1617485727789	  /blast/blastdb/nt.27 / EndPoints:       Status for OID 1745527: PASS
-1617485727789	  /blast/blastdb/nt.27 / EndPoints:       Status for OID 1745528: PASS
-1617485727789	  /blast/blastdb/nt.27 / EndPoints:       Status for OID 1745529: PASS
-1617485727789	  /blast/blastdb/nt.27 / EndPoints:       Status for OID 1745530: PASS
-1617485727789	  /blast/blastdb/nt.27 / EndPoints:       Status for OID 1745531: PASS
-1617485727789	 /blast/blastdb/nt.28
-1617485727789	  /blast/blastdb/nt.28 / EndPoints: <testing 5 OIDs at each end>
-1617485727789	  /blast/blastdb/nt.28 / EndPoints:       Status for OID 973358: PASS
-1617485727789	  /blast/blastdb/nt.28 / EndPoints:       Status for OID 973359: PASS
-1617485727789	  /blast/blastdb/nt.28 / EndPoints:       Status for OID 973360: PASS
-1617485727789	  /blast/blastdb/nt.28 / EndPoints:       Status for OID 973361: PASS
-1617485727789	  /blast/blastdb/nt.28 / EndPoints:       Status for OID 973362: PASS
-1617485727789	 /blast/blastdb/nt.29
-1617485727790	  /blast/blastdb/nt.29 / EndPoints: <testing 5 OIDs at each end>
-1617485727800	  /blast/blastdb/nt.29 / EndPoints:       Status for OID 1401563: PASS
-1617485727800	  /blast/blastdb/nt.29 / EndPoints:       Status for OID 1401564: PASS
-1617485727800	  /blast/blastdb/nt.29 / EndPoints:       Status for OID 1401565: PASS
-1617485727801	  /blast/blastdb/nt.29 / EndPoints:       Status for OID 1401566: PASS
-1617485727801	  /blast/blastdb/nt.29 / EndPoints:       Status for OID 1401567: PASS
-1617485727801	 /blast/blastdb/nt.30
-1617485727802	  /blast/blastdb/nt.30 / EndPoints: <testing 5 OIDs at each end>
-1617485727809	  /blast/blastdb/nt.30 / EndPoints:       Status for OID 1443477: PASS
-1617485727846	  /blast/blastdb/nt.30 / EndPoints:       Status for OID 1443478: PASS
-1617485727896	  /blast/blastdb/nt.30 / EndPoints:       Status for OID 1443479: PASS
-1617485727896	  /blast/blastdb/nt.30 / EndPoints:       Status for OID 1443480: PASS
-1617485727945	  /blast/blastdb/nt.30 / EndPoints:       Status for OID 1443481: PASS
-1617485727947	 /blast/blastdb/nt.31
-1617485727947	  /blast/blastdb/nt.31 / EndPoints: <testing 5 OIDs at each end>
-1617485727980	  /blast/blastdb/nt.31 / EndPoints:       Status for OID 916782: PASS
-1617485727998	  /blast/blastdb/nt.31 / EndPoints:       Status for OID 916783: PASS
-1617485728014	  /blast/blastdb/nt.31 / EndPoints:       Status for OID 916784: PASS
-1617485728030	  /blast/blastdb/nt.31 / EndPoints:       Status for OID 916785: PASS
-1617485728046	  /blast/blastdb/nt.31 / EndPoints:       Status for OID 916786: PASS
-1617485728047	 /blast/blastdb/nt.32
-1617485728047	  /blast/blastdb/nt.32 / EndPoints: <testing 5 OIDs at each end>
-1617485728073	  /blast/blastdb/nt.32 / EndPoints:       Status for OID 1259836: PASS
-1617485728101	  /blast/blastdb/nt.32 / EndPoints:       Status for OID 1259837: PASS
-1617485728112	  /blast/blastdb/nt.32 / EndPoints:       Status for OID 1259838: PASS
-1617485728144	  /blast/blastdb/nt.32 / EndPoints:       Status for OID 1259839: PASS
-1617485728166	  /blast/blastdb/nt.32 / EndPoints:       Status for OID 1259840: PASS
-1617485728168	 /blast/blastdb/nt.33
-1617485728168	  /blast/blastdb/nt.33 / EndPoints: <testing 5 OIDs at each end>
-1617485728189	  /blast/blastdb/nt.33 / EndPoints:       Status for OID 1500853: PASS
-1617485728189	  /blast/blastdb/nt.33 / EndPoints:       Status for OID 1500854: PASS
-1617485728189	  /blast/blastdb/nt.33 / EndPoints:       Status for OID 1500855: PASS
-1617485728189	  /blast/blastdb/nt.33 / EndPoints:       Status for OID 1500856: PASS
-1617485728189	  /blast/blastdb/nt.33 / EndPoints:       Status for OID 1500857: PASS
-1617485728189	 /blast/blastdb/nt.34
-1617485728189	  /blast/blastdb/nt.34 / EndPoints: <testing 5 OIDs at each end>
-1617485728189	  /blast/blastdb/nt.34 / EndPoints:       Status for OID 1337985: PASS
-1617485728189	  /blast/blastdb/nt.34 / EndPoints:       Status for OID 1337986: PASS
-1617485728189	  /blast/blastdb/nt.34 / EndPoints:       Status for OID 1337987: PASS
-1617485728189	  /blast/blastdb/nt.34 / EndPoints:       Status for OID 1337988: PASS
-1617485728189	  /blast/blastdb/nt.34 / EndPoints:       Status for OID 1337989: PASS
-1617485728189	 Result=SUCCESS. No errors reported for 35 volume(s).
-1617485728189	Testing 1 alias(es).
-1617485728189	 /blast/blastdb/nt.nal
-1617485728190	 Result=SUCCESS. No errors reported for 1 alias(es).
-1617485728197	Start queries download
-1617485728978	End queries download
-1617485730571	           Files: 70
-1617485730571	     Directories: 0
-1617485730571	  Resident Pages: 23361439/25768124  89G/98G  90.7%
-1617485730571	         Elapsed: 1.5069 seconds
-1617485730574	time blastn -query batch_012.fa -db nt -num_threads 30 -out batch_012.out -outfmt 11
-1617485730574	Start blast search
-1617486072540	real\t5m41.963s
-1617486072540	user\t79m0.006s
-1617486072540	sys\t0m24.839s
-1617486072540	End blast search
-1617486072546	Blast4-archive ::= {
-1617486072546	  request {
-1617486072546	    ident "2.11.3+",
-1617486072546	    body queue-search {
-1617486072546	      program "blastn",
-1617486072546	      service "megablast",
-1617486072546	      queries bioseq-set {
-1617486072546	        seq-set {
-1617486072546	          seq {
-1617486072546	            id {
-1617486081215	Start copy results
-1617486082379	End copy results
-job	4aad4605-6735-4976-bc42-b1804c4b05a6	0	SUCCEEDED
-1617485699854	real\t6m54.295s
-1617485699854	user\t13m31.623s
-1617485699854	sys\t7m21.125s
-1617485699855	End database download
-1617485700147	Database: Nucleotide collection (nt)
-1617485700147	\t68,873,103 sequences; 415,101,534,957 total bases
-1617485700147	Date: Mar 29, 2021  8:27 AM\tLongest sequence: 99,791,824 bases
-1617485700147	BLASTDB Version: 5
-1617485700150	Volumes:
-1617485700150	\t/blast/blastdb/nt.00
-1617485700150	\t/blast/blastdb/nt.01
-1617485700150	\t/blast/blastdb/nt.02
-1617485700150	\t/blast/blastdb/nt.03
-1617485700150	\t/blast/blastdb/nt.04
-1617485700150	\t/blast/blastdb/nt.05
-1617485700150	\t/blast/blastdb/nt.06
-1617485700150	\t/blast/blastdb/nt.07
-1617485700150	\t/blast/blastdb/nt.08
-1617485700150	\t/blast/blastdb/nt.09
-1617485700150	\t/blast/blastdb/nt.10
-1617485700150	\t/blast/blastdb/nt.11
-1617485700150	\t/blast/blastdb/nt.12
-1617485700150	\t/blast/blastdb/nt.13
-1617485700150	\t/blast/blastdb/nt.14
-1617485700150	\t/blast/blastdb/nt.15
-1617485700150	\t/blast/blastdb/nt.16
-1617485700150	\t/blast/blastdb/nt.17
-1617485700150	\t/blast/blastdb/nt.18
-1617485700150	\t/blast/blastdb/nt.19
-1617485700150	\t/blast/blastdb/nt.20
-1617485700150	\t/blast/blastdb/nt.21
-1617485700150	\t/blast/blastdb/nt.22
-1617485700150	\t/blast/blastdb/nt.23
-1617485700150	\t/blast/blastdb/nt.24
-1617485700150	\t/blast/blastdb/nt.25
-1617485700150	\t/blast/blastdb/nt.26
-1617485700150	\t/blast/blastdb/nt.27
-1617485700150	\t/blast/blastdb/nt.28
-1617485700150	\t/blast/blastdb/nt.29
-1617485700150	\t/blast/blastdb/nt.30
-1617485700150	\t/blast/blastdb/nt.31
-1617485700150	\t/blast/blastdb/nt.32
-1617485700150	\t/blast/blastdb/nt.33
-1617485700150	\t/blast/blastdb/nt.34
-1617485700318	Writing messages to <stdout> at verbosity (Minutiae)
-1617485700318	ISAM testing is DISABLED.
-1617485700318	Legacy testing is DISABLED.
-1617485700318	TaxID testing is DISABLED.
-1617485700318	Testing first 5 and last 5 OIDs.
-1617485700319	Testing 35 volume(s).
-1617485700319	 /blast/blastdb/nt.00
-1617485700325	  /blast/blastdb/nt.00 / EndPoints: <testing 5 OIDs at each end>
-1617485700385	  /blast/blastdb/nt.00 / EndPoints:       Status for OID 0: PASS
-1617485700385	  /blast/blastdb/nt.00 / EndPoints:       Status for OID 1: PASS
-1617485700385	  /blast/blastdb/nt.00 / EndPoints:       Status for OID 2: PASS
-1617485700385	  /blast/blastdb/nt.00 / EndPoints:       Status for OID 3: PASS
-1617485700385	  /blast/blastdb/nt.00 / EndPoints:       Status for OID 4: PASS
-1617485700395	  /blast/blastdb/nt.00 / EndPoints:       Status for OID 2285133: PASS
-1617485700396	  /blast/blastdb/nt.00 / EndPoints:       Status for OID 2285134: PASS
-1617485700396	  /blast/blastdb/nt.00 / EndPoints:       Status for OID 2285135: PASS
-1617485700396	  /blast/blastdb/nt.00 / EndPoints:       Status for OID 2285136: PASS
-1617485700396	  /blast/blastdb/nt.00 / EndPoints:       Status for OID 2285137: PASS
-1617485700396	 /blast/blastdb/nt.01
-1617485700396	  /blast/blastdb/nt.01 / EndPoints: <testing 5 OIDs at each end>
-1617485700396	  /blast/blastdb/nt.01 / EndPoints:       Status for OID 4203722: PASS
-1617485700396	  /blast/blastdb/nt.01 / EndPoints:       Status for OID 4203723: PASS
-1617485700396	  /blast/blastdb/nt.01 / EndPoints:       Status for OID 4203724: PASS
-1617485700396	  /blast/blastdb/nt.01 / EndPoints:       Status for OID 4203725: PASS
-1617485700396	  /blast/blastdb/nt.01 / EndPoints:       Status for OID 4203726: PASS
-1617485700396	 /blast/blastdb/nt.02
-1617485700396	  /blast/blastdb/nt.02 / EndPoints: <testing 5 OIDs at each end>
-1617485700441	  /blast/blastdb/nt.02 / EndPoints:       Status for OID 4400292: PASS
-1617485700479	  /blast/blastdb/nt.02 / EndPoints:       Status for OID 4400293: PASS
-1617485700495	  /blast/blastdb/nt.02 / EndPoints:       Status for OID 4400294: PASS
-1617485700549	  /blast/blastdb/nt.02 / EndPoints:       Status for OID 4400295: PASS
-1617485700579	  /blast/blastdb/nt.02 / EndPoints:       Status for OID 4400296: PASS
-1617485700580	 /blast/blastdb/nt.03
-1617485700580	  /blast/blastdb/nt.03 / EndPoints: <testing 5 OIDs at each end>
-1617485700633	  /blast/blastdb/nt.03 / EndPoints:       Status for OID 695558: PASS
-1617485700633	  /blast/blastdb/nt.03 / EndPoints:       Status for OID 695559: PASS
-1617485700633	  /blast/blastdb/nt.03 / EndPoints:       Status for OID 695560: PASS
-1617485700633	  /blast/blastdb/nt.03 / EndPoints:       Status for OID 695561: PASS
-1617485700633	  /blast/blastdb/nt.03 / EndPoints:       Status for OID 695562: PASS
-1617485700633	 /blast/blastdb/nt.04
-1617485700634	  /blast/blastdb/nt.04 / EndPoints: <testing 5 OIDs at each end>
-1617485700634	  /blast/blastdb/nt.04 / EndPoints:       Status for OID 712952: PASS
-1617485700634	  /blast/blastdb/nt.04 / EndPoints:       Status for OID 712953: PASS
-1617485700635	  /blast/blastdb/nt.04 / EndPoints:       Status for OID 712954: PASS
-1617485700635	  /blast/blastdb/nt.04 / EndPoints:       Status for OID 712955: PASS
-1617485700636	  /blast/blastdb/nt.04 / EndPoints:       Status for OID 712956: PASS
-1617485700636	 /blast/blastdb/nt.05
-1617485700636	  /blast/blastdb/nt.05 / EndPoints: <testing 5 OIDs at each end>
-1617485700647	  /blast/blastdb/nt.05 / EndPoints:       Status for OID 1455648: PASS
-1617485700647	  /blast/blastdb/nt.05 / EndPoints:       Status for OID 1455649: PASS
-1617485700648	  /blast/blastdb/nt.05 / EndPoints:       Status for OID 1455650: PASS
-1617485700648	  /blast/blastdb/nt.05 / EndPoints:       Status for OID 1455651: PASS
-1617485700648	  /blast/blastdb/nt.05 / EndPoints:       Status for OID 1455652: PASS
-1617485700648	 /blast/blastdb/nt.06
-1617485700648	  /blast/blastdb/nt.06 / EndPoints: <testing 5 OIDs at each end>
-1617485700648	  /blast/blastdb/nt.06 / EndPoints:       Status for OID 2695411: PASS
-1617485700648	  /blast/blastdb/nt.06 / EndPoints:       Status for OID 2695412: PASS
-1617485700648	  /blast/blastdb/nt.06 / EndPoints:       Status for OID 2695413: PASS
-1617485700648	  /blast/blastdb/nt.06 / EndPoints:       Status for OID 2695414: PASS
-1617485700648	  /blast/blastdb/nt.06 / EndPoints:       Status for OID 2695415: PASS
-1617485700648	 /blast/blastdb/nt.07
-1617485700648	  /blast/blastdb/nt.07 / EndPoints: <testing 5 OIDs at each end>
-1617485700648	  /blast/blastdb/nt.07 / EndPoints:       Status for OID 2432046: PASS
-1617485700649	  /blast/blastdb/nt.07 / EndPoints:       Status for OID 2432047: PASS
-1617485700649	  /blast/blastdb/nt.07 / EndPoints:       Status for OID 2432048: PASS
-1617485700649	  /blast/blastdb/nt.07 / EndPoints:       Status for OID 2432049: PASS
-1617485700649	  /blast/blastdb/nt.07 / EndPoints:       Status for OID 2432050: PASS
-1617485700649	 /blast/blastdb/nt.08
-1617485700650	  /blast/blastdb/nt.08 / EndPoints: <testing 5 OIDs at each end>
-1617485700650	  /blast/blastdb/nt.08 / EndPoints:       Status for OID 2561134: PASS
-1617485700650	  /blast/blastdb/nt.08 / EndPoints:       Status for OID 2561135: PASS
-1617485700650	  /blast/blastdb/nt.08 / EndPoints:       Status for OID 2561136: PASS
-1617485700650	  /blast/blastdb/nt.08 / EndPoints:       Status for OID 2561137: PASS
-1617485700658	  /blast/blastdb/nt.08 / EndPoints:       Status for OID 2561138: PASS
-1617485700658	 /blast/blastdb/nt.09
-1617485700658	  /blast/blastdb/nt.09 / EndPoints: <testing 5 OIDs at each end>
-1617485700697	  /blast/blastdb/nt.09 / EndPoints:       Status for OID 1341117: PASS
-1617485700698	  /blast/blastdb/nt.09 / EndPoints:       Status for OID 1341118: PASS
-1617485700699	  /blast/blastdb/nt.09 / EndPoints:       Status for OID 1341119: PASS
-1617485700702	  /blast/blastdb/nt.09 / EndPoints:       Status for OID 1341120: PASS
-1617485700703	  /blast/blastdb/nt.09 / EndPoints:       Status for OID 1341121: PASS
-1617485700703	 /blast/blastdb/nt.10
-1617485700704	  /blast/blastdb/nt.10 / EndPoints: <testing 5 OIDs at each end>
-1617485700736	  /blast/blastdb/nt.10 / EndPoints:       Status for OID 901521: PASS
-1617485700737	  /blast/blastdb/nt.10 / EndPoints:       Status for OID 901522: PASS
-1617485700737	  /blast/blastdb/nt.10 / EndPoints:       Status for OID 901523: PASS
-1617485700738	  /blast/blastdb/nt.10 / EndPoints:       Status for OID 901524: PASS
-1617485700739	  /blast/blastdb/nt.10 / EndPoints:       Status for OID 901525: PASS
-1617485700739	 /blast/blastdb/nt.11
-1617485700739	  /blast/blastdb/nt.11 / EndPoints: <testing 5 OIDs at each end>
-1617485700757	  /blast/blastdb/nt.11 / EndPoints:       Status for OID 578824: PASS
-1617485700757	  /blast/blastdb/nt.11 / EndPoints:       Status for OID 578825: PASS
-1617485700822	  /blast/blastdb/nt.11 / EndPoints:       Status for OID 578826: PASS
-1617485700871	  /blast/blastdb/nt.11 / EndPoints:       Status for OID 578827: PASS
-1617485700912	  /blast/blastdb/nt.11 / EndPoints:       Status for OID 578828: PASS
-1617485700913	 /blast/blastdb/nt.12
-1617485700913	  /blast/blastdb/nt.12 / EndPoints: <testing 5 OIDs at each end>
-1617485700937	  /blast/blastdb/nt.12 / EndPoints:       Status for OID 719492: PASS
-1617485700954	  /blast/blastdb/nt.12 / EndPoints:       Status for OID 719493: PASS
-1617485700974	  /blast/blastdb/nt.12 / EndPoints:       Status for OID 719494: PASS
-1617485700995	  /blast/blastdb/nt.12 / EndPoints:       Status for OID 719495: PASS
-1617485701043	  /blast/blastdb/nt.12 / EndPoints:       Status for OID 719496: PASS
-1617485701045	 /blast/blastdb/nt.13
-1617485701045	  /blast/blastdb/nt.13 / EndPoints: <testing 5 OIDs at each end>
-1617485701054	  /blast/blastdb/nt.13 / EndPoints:       Status for OID 1217156: PASS
-1617485701054	  /blast/blastdb/nt.13 / EndPoints:       Status for OID 1217157: PASS
-1617485701054	  /blast/blastdb/nt.13 / EndPoints:       Status for OID 1217158: PASS
-1617485701054	  /blast/blastdb/nt.13 / EndPoints:       Status for OID 1217159: PASS
-1617485701054	  /blast/blastdb/nt.13 / EndPoints:       Status for OID 1217160: PASS
-1617485701054	 /blast/blastdb/nt.14
-1617485701054	  /blast/blastdb/nt.14 / EndPoints: <testing 5 OIDs at each end>
-1617485701071	  /blast/blastdb/nt.14 / EndPoints:       Status for OID 3270965: PASS
-1617485701071	  /blast/blastdb/nt.14 / EndPoints:       Status for OID 3270966: PASS
-1617485701072	  /blast/blastdb/nt.14 / EndPoints:       Status for OID 3270967: PASS
-1617485701073	  /blast/blastdb/nt.14 / EndPoints:       Status for OID 3270968: PASS
-1617485701073	  /blast/blastdb/nt.14 / EndPoints:       Status for OID 3270969: PASS
-1617485701074	 /blast/blastdb/nt.15
-1617485701074	  /blast/blastdb/nt.15 / EndPoints: <testing 5 OIDs at each end>
-1617485701074	  /blast/blastdb/nt.15 / EndPoints:       Status for OID 3837776: PASS
-1617485701077	  /blast/blastdb/nt.15 / EndPoints:       Status for OID 3837777: PASS
-1617485701078	  /blast/blastdb/nt.15 / EndPoints:       Status for OID 3837778: PASS
-1617485701079	  /blast/blastdb/nt.15 / EndPoints:       Status for OID 3837779: PASS
-1617485701080	  /blast/blastdb/nt.15 / EndPoints:       Status for OID 3837780: PASS
-1617485701080	 /blast/blastdb/nt.16
-1617485701080	  /blast/blastdb/nt.16 / EndPoints: <testing 5 OIDs at each end>
-1617485701081	  /blast/blastdb/nt.16 / EndPoints:       Status for OID 3100482: PASS
-1617485701081	  /blast/blastdb/nt.16 / EndPoints:       Status for OID 3100483: PASS
-1617485701081	  /blast/blastdb/nt.16 / EndPoints:       Status for OID 3100484: PASS
-1617485701081	  /blast/blastdb/nt.16 / EndPoints:       Status for OID 3100485: PASS
-1617485701081	  /blast/blastdb/nt.16 / EndPoints:       Status for OID 3100486: PASS
-1617485701081	 /blast/blastdb/nt.17
-1617485701081	  /blast/blastdb/nt.17 / EndPoints: <testing 5 OIDs at each end>
-1617485701081	  /blast/blastdb/nt.17 / EndPoints:       Status for OID 3294328: PASS
-1617485701081	  /blast/blastdb/nt.17 / EndPoints:       Status for OID 3294329: PASS
-1617485701081	  /blast/blastdb/nt.17 / EndPoints:       Status for OID 3294330: PASS
-1617485701081	  /blast/blastdb/nt.17 / EndPoints:       Status for OID 3294331: PASS
-1617485701081	  /blast/blastdb/nt.17 / EndPoints:       Status for OID 3294332: PASS
-1617485701081	 /blast/blastdb/nt.18
-1617485701081	  /blast/blastdb/nt.18 / EndPoints: <testing 5 OIDs at each end>
-1617485701081	  /blast/blastdb/nt.18 / EndPoints:       Status for OID 2614068: PASS
-1617485701081	  /blast/blastdb/nt.18 / EndPoints:       Status for OID 2614069: PASS
-1617485701081	  /blast/blastdb/nt.18 / EndPoints:       Status for OID 2614070: PASS
-1617485701081	  /blast/blastdb/nt.18 / EndPoints:       Status for OID 2614071: PASS
-1617485701081	  /blast/blastdb/nt.18 / EndPoints:       Status for OID 2614072: PASS
-1617485701081	 /blast/blastdb/nt.19
-1617485701082	  /blast/blastdb/nt.19 / EndPoints: <testing 5 OIDs at each end>
-1617485701082	  /blast/blastdb/nt.19 / EndPoints:       Status for OID 2487173: PASS
-1617485701083	  /blast/blastdb/nt.19 / EndPoints:       Status for OID 2487174: PASS
-1617485701083	  /blast/blastdb/nt.19 / EndPoints:       Status for OID 2487175: PASS
-1617485701083	  /blast/blastdb/nt.19 / EndPoints:       Status for OID 2487176: PASS
-1617485701084	  /blast/blastdb/nt.19 / EndPoints:       Status for OID 2487177: PASS
-1617485701084	 /blast/blastdb/nt.20
-1617485701084	  /blast/blastdb/nt.20 / EndPoints: <testing 5 OIDs at each end>
-1617485701084	  /blast/blastdb/nt.20 / EndPoints:       Status for OID 2274208: PASS
-1617485701084	  /blast/blastdb/nt.20 / EndPoints:       Status for OID 2274209: PASS
-1617485701084	  /blast/blastdb/nt.20 / EndPoints:       Status for OID 2274210: PASS
-1617485701085	  /blast/blastdb/nt.20 / EndPoints:       Status for OID 2274211: PASS
-1617485701085	  /blast/blastdb/nt.20 / EndPoints:       Status for OID 2274212: PASS
-1617485701085	 /blast/blastdb/nt.21
-1617485701086	  /blast/blastdb/nt.21 / EndPoints: <testing 5 OIDs at each end>
-1617485701100	  /blast/blastdb/nt.21 / EndPoints:       Status for OID 2195362: PASS
-1617485701100	  /blast/blastdb/nt.21 / EndPoints:       Status for OID 2195363: PASS
-1617485701100	  /blast/blastdb/nt.21 / EndPoints:       Status for OID 2195364: PASS
-1617485701112	  /blast/blastdb/nt.21 / EndPoints:       Status for OID 2195365: PASS
-1617485701119	  /blast/blastdb/nt.21 / EndPoints:       Status for OID 2195366: PASS
-1617485701120	 /blast/blastdb/nt.22
-1617485701120	  /blast/blastdb/nt.22 / EndPoints: <testing 5 OIDs at each end>
-1617485701134	  /blast/blastdb/nt.22 / EndPoints:       Status for OID 2232206: PASS
-1617485701140	  /blast/blastdb/nt.22 / EndPoints:       Status for OID 2232207: PASS
-1617485701140	  /blast/blastdb/nt.22 / EndPoints:       Status for OID 2232208: PASS
-1617485701140	  /blast/blastdb/nt.22 / EndPoints:       Status for OID 2232209: PASS
-1617485701140	  /blast/blastdb/nt.22 / EndPoints:       Status for OID 2232210: PASS
-1617485701140	 /blast/blastdb/nt.23
-1617485701140	  /blast/blastdb/nt.23 / EndPoints: <testing 5 OIDs at each end>
-1617485701140	  /blast/blastdb/nt.23 / EndPoints:       Status for OID 2579778: PASS
-1617485701140	  /blast/blastdb/nt.23 / EndPoints:       Status for OID 2579779: PASS
-1617485701140	  /blast/blastdb/nt.23 / EndPoints:       Status for OID 2579780: PASS
-1617485701140	  /blast/blastdb/nt.23 / EndPoints:       Status for OID 2579781: PASS
-1617485701140	  /blast/blastdb/nt.23 / EndPoints:       Status for OID 2579782: PASS
-1617485701140	 /blast/blastdb/nt.24
-1617485701140	  /blast/blastdb/nt.24 / EndPoints: <testing 5 OIDs at each end>
-1617485701147	  /blast/blastdb/nt.24 / EndPoints:       Status for OID 1591880: PASS
-1617485701161	  /blast/blastdb/nt.24 / EndPoints:       Status for OID 1591881: PASS
-1617485701173	  /blast/blastdb/nt.24 / EndPoints:       Status for OID 1591882: PASS
-1617485701186	  /blast/blastdb/nt.24 / EndPoints:       Status for OID 1591883: PASS
-1617485701200	  /blast/blastdb/nt.24 / EndPoints:       Status for OID 1591884: PASS
-1617485701200	 /blast/blastdb/nt.25
-1617485701201	  /blast/blastdb/nt.25 / EndPoints: <testing 5 OIDs at each end>
-1617485701219	  /blast/blastdb/nt.25 / EndPoints:       Status for OID 1799628: PASS
-1617485701233	  /blast/blastdb/nt.25 / EndPoints:       Status for OID 1799629: PASS
-1617485701243	  /blast/blastdb/nt.25 / EndPoints:       Status for OID 1799630: PASS
-1617485701255	  /blast/blastdb/nt.25 / EndPoints:       Status for OID 1799631: PASS
-1617485701268	  /blast/blastdb/nt.25 / EndPoints:       Status for OID 1799632: PASS
-1617485701269	 /blast/blastdb/nt.26
-1617485701269	  /blast/blastdb/nt.26 / EndPoints: <testing 5 OIDs at each end>
-1617485701284	  /blast/blastdb/nt.26 / EndPoints:       Status for OID 815687: PASS
-1617485701284	  /blast/blastdb/nt.26 / EndPoints:       Status for OID 815688: PASS
-1617485701284	  /blast/blastdb/nt.26 / EndPoints:       Status for OID 815689: PASS
-1617485701284	  /blast/blastdb/nt.26 / EndPoints:       Status for OID 815690: PASS
-1617485701284	  /blast/blastdb/nt.26 / EndPoints:       Status for OID 815691: PASS
-1617485701284	 /blast/blastdb/nt.27
-1617485701284	  /blast/blastdb/nt.27 / EndPoints: <testing 5 OIDs at each end>
-1617485701284	  /blast/blastdb/nt.27 / EndPoints:       Status for OID 1745527: PASS
-1617485701284	  /blast/blastdb/nt.27 / EndPoints:       Status for OID 1745528: PASS
-1617485701284	  /blast/blastdb/nt.27 / EndPoints:       Status for OID 1745529: PASS
-1617485701284	  /blast/blastdb/nt.27 / EndPoints:       Status for OID 1745530: PASS
-1617485701284	  /blast/blastdb/nt.27 / EndPoints:       Status for OID 1745531: PASS
-1617485701284	 /blast/blastdb/nt.28
-1617485701284	  /blast/blastdb/nt.28 / EndPoints: <testing 5 OIDs at each end>
-1617485701284	  /blast/blastdb/nt.28 / EndPoints:       Status for OID 973358: PASS
-1617485701285	  /blast/blastdb/nt.28 / EndPoints:       Status for OID 973359: PASS
-1617485701285	  /blast/blastdb/nt.28 / EndPoints:       Status for OID 973360: PASS
-1617485701285	  /blast/blastdb/nt.28 / EndPoints:       Status for OID 973361: PASS
-1617485701285	  /blast/blastdb/nt.28 / EndPoints:       Status for OID 973362: PASS
-1617485701285	 /blast/blastdb/nt.29
-1617485701285	  /blast/blastdb/nt.29 / EndPoints: <testing 5 OIDs at each end>
-1617485701300	  /blast/blastdb/nt.29 / EndPoints:       Status for OID 1401563: PASS
-1617485701300	  /blast/blastdb/nt.29 / EndPoints:       Status for OID 1401564: PASS
-1617485701300	  /blast/blastdb/nt.29 / EndPoints:       Status for OID 1401565: PASS
-1617485701300	  /blast/blastdb/nt.29 / EndPoints:       Status for OID 1401566: PASS
-1617485701301	  /blast/blastdb/nt.29 / EndPoints:       Status for OID 1401567: PASS
-1617485701301	 /blast/blastdb/nt.30
-1617485701301	  /blast/blastdb/nt.30 / EndPoints: <testing 5 OIDs at each end>
-1617485701319	  /blast/blastdb/nt.30 / EndPoints:       Status for OID 1443477: PASS
-1617485701354	  /blast/blastdb/nt.30 / EndPoints:       Status for OID 1443478: PASS
-1617485701402	  /blast/blastdb/nt.30 / EndPoints:       Status for OID 1443479: PASS
-1617485701402	  /blast/blastdb/nt.30 / EndPoints:       Status for OID 1443480: PASS
-1617485701449	  /blast/blastdb/nt.30 / EndPoints:       Status for OID 1443481: PASS
-1617485701450	 /blast/blastdb/nt.31
-1617485701450	  /blast/blastdb/nt.31 / EndPoints: <testing 5 OIDs at each end>
-1617485701490	  /blast/blastdb/nt.31 / EndPoints:       Status for OID 916782: PASS
-1617485701507	  /blast/blastdb/nt.31 / EndPoints:       Status for OID 916783: PASS
-1617485701522	  /blast/blastdb/nt.31 / EndPoints:       Status for OID 916784: PASS
-1617485701536	  /blast/blastdb/nt.31 / EndPoints:       Status for OID 916785: PASS
-1617485701551	  /blast/blastdb/nt.31 / EndPoints:       Status for OID 916786: PASS
-1617485701552	 /blast/blastdb/nt.32
-1617485701552	  /blast/blastdb/nt.32 / EndPoints: <testing 5 OIDs at each end>
-1617485701584	  /blast/blastdb/nt.32 / EndPoints:       Status for OID 1259836: PASS
-1617485701610	  /blast/blastdb/nt.32 / EndPoints:       Status for OID 1259837: PASS
-1617485701621	  /blast/blastdb/nt.32 / EndPoints:       Status for OID 1259838: PASS
-1617485701654	  /blast/blastdb/nt.32 / EndPoints:       Status for OID 1259839: PASS
-1617485701676	  /blast/blastdb/nt.32 / EndPoints:       Status for OID 1259840: PASS
-1617485701678	 /blast/blastdb/nt.33
-1617485701678	  /blast/blastdb/nt.33 / EndPoints: <testing 5 OIDs at each end>
-1617485701682	  /blast/blastdb/nt.33 / EndPoints:       Status for OID 1500853: PASS
-1617485701697	  /blast/blastdb/nt.33 / EndPoints:       Status for OID 1500854: PASS
-1617485701697	  /blast/blastdb/nt.33 / EndPoints:       Status for OID 1500855: PASS
-1617485701697	  /blast/blastdb/nt.33 / EndPoints:       Status for OID 1500856: PASS
-1617485701697	  /blast/blastdb/nt.33 / EndPoints:       Status for OID 1500857: PASS
-1617485701697	 /blast/blastdb/nt.34
-1617485701697	  /blast/blastdb/nt.34 / EndPoints: <testing 5 OIDs at each end>
-1617485701697	  /blast/blastdb/nt.34 / EndPoints:       Status for OID 1337985: PASS
-1617485701697	  /blast/blastdb/nt.34 / EndPoints:       Status for OID 1337986: PASS
-1617485701697	  /blast/blastdb/nt.34 / EndPoints:       Status for OID 1337987: PASS
-1617485701697	  /blast/blastdb/nt.34 / EndPoints:       Status for OID 1337988: PASS
-1617485701697	  /blast/blastdb/nt.34 / EndPoints:       Status for OID 1337989: PASS
-1617485701697	 Result=SUCCESS. No errors reported for 35 volume(s).
-1617485701697	Testing 1 alias(es).
-1617485701697	 /blast/blastdb/nt.nal
-1617485701697	 Result=SUCCESS. No errors reported for 1 alias(es).
-1617485701697	Start queries download
-1617485702531	End queries download
-1617485704104	           Files: 70
-1617485704104	     Directories: 0
-1617485704104	  Resident Pages: 23520076/25768124  89G/98G  91.3%
-1617485704104	         Elapsed: 1.4741 seconds
-1617485704107	time blastn -query batch_009.fa -db nt -num_threads 30 -out batch_009.out -outfmt 11
-1617485704107	Start blast search
-1617485994730	real\t4m50.620s
-1617485994730	user\t69m0.895s
-1617485994730	sys\t0m21.866s
-1617485994730	End blast search
-1617485994736	Blast4-archive ::= {
-1617485994736	  request {
-1617485994736	    ident "2.11.3+",
-1617485994736	    body queue-search {
-1617485994736	      program "blastn",
-1617485994736	      service "megablast",
-1617485994736	      queries bioseq-set {
-1617485994736	        seq-set {
-1617485994736	          seq {
-1617485994736	            id {
-1617486000423	Start copy results
-1617486001696	End copy results
-job	e6573a7d-ebd2-4e70-8312-eb6f7ff27f0c	0	SUCCEEDED
-1617486006744	DB: nt
-1617486006744	DB_PATH: None
-1617486006744	DB_SOURCE: AWS
-1617486006744	QUERY_BATCH: s3://elasticblast-joukovv/results/bash/hepa-16-node/query_batches/batch_018.fa
-1617486006744	ELB_NUM_CPUS: 30
-1617486006744	PROGRAM: blastn
-1617486006744	BUCKET: s3://elasticblast-joukovv/results/bash/hepa-16-node
-1617486006744	DB_MOL_TYPE: nucl
-1617486006744	TAXIDLIST:  
-1617486006744	BLAST_PARAMS:  -outfmt 11
-1617486006744	Start queries download
-1617486008517	End queries download
-1617486010246	           Files: 70
-1617486010246	     Directories: 0
-1617486010246	  Resident Pages: 25660351/25768124  97G/98G  99.6%
-1617486010246	         Elapsed: 1.5417 seconds
-1617486010249	time blastn -query batch_018.fa -db nt -num_threads 30 -out batch_018.out -outfmt 11
-1617486010249	Start blast search
-1617486194243	real\t3m3.992s
-1617486194243	user\t67m28.693s
-1617486194243	sys\t0m13.059s
-1617486194243	End blast search
-1617486194246	Blast4-archive ::= {
-1617486194246	  request {
-1617486194246	    ident "2.11.3+",
-1617486194246	    body queue-search {
-1617486194246	      program "blastn",
-1617486194246	      service "megablast",
-1617486194246	      queries bioseq-set {
-1617486194246	        seq-set {
-1617486194246	          seq {
-1617486194246	            id {
-1617486201219	Start copy results
-1617486202203	End copy results
+max_vcpus	32
+num_nodes	1
+job	f9426ce8-6132-4518-bb1e-dc138013d071	0	SUCCEEDED
+1624908665476	Start execution
+1624908665476	DB: pdbnt
+1624908665476	DB_PATH: None
+1624908665476	DB_SOURCE: AWS
+1624908665476	QUERY_BATCH: s3://elasticblast-joukovv/results/mane-vs-pdbnt/query_batches/batch_004.fa
+1624908665476	ELB_NUM_CPUS: 4
+1624908665476	PROGRAM: blastn
+1624908665476	BUCKET: s3://elasticblast-joukovv/results/mane-vs-pdbnt
+1624908665476	DB_MOL_TYPE: nucl
+1624908665476	BLAST_PARAMS: -outfmt 11
+1624908665481	INSTANCE_ID: i-00d8ba3d4a7522b7f
+1624908665482	INSTANCE_TYPE: m5.8xlarge
+1624908665484	PUBLIC_HOSTNAME: ec2-54-174-123-193.compute-1.amazonaws.com
+1624908667187	Start database vmtouch
+1624908667188	blastdb_path -dbtype nucl -db pdbnt -getvolumespath
+1624908667191	vmtouch -m5G /blast/blastdb/pdbnt.nin /blast/blastdb/pdbnt.nsq
+1624908667192	           Files: 2
+1624908667192	     Directories: 0
+1624908667192	  Resident Pages: 637/637  2M/2M  100%
+1624908667192	         Elapsed: 7.8e-05 seconds
+1624908667192	End database vmtouch
+1624908668746	Start query download
+1624908668746	aws s3 cp s3://elasticblast-joukovv/results/mane-vs-pdbnt/query_batches/batch_004.fa .
+1624908669524	End query download
+1624908669525	Start blast search
+1624908669525	time blastn -query batch_004.fa -db pdbnt -num_threads 4 -out batch_004-blastn-pdbnt.out -outfmt 11
+1624908670457	0.88user 0.11system 0:00.93elapsed 107%CPU (0avgtext+0avgdata 157432maxresident)k
+1624908670457	0inputs+12784outputs (0major+57914minor)pagefaults 0swaps
+1624908670457	End blast search
+1624908670457	Blast4-archive ::= {
+1624908670457	  request {
+1624908670457	    ident "2.11.4+",
+1624908670457	    body queue-search {
+1624908670457	      program "blastn",
+1624908670457	      service "megablast",
+1624908670457	      queries bioseq-set {
+1624908670457	        seq-set {
+1624908670457	          seq {
+1624908670457	            id {
+1624908670457	              local str "Query_1"
+1624908670457	gzip -f batch_004-blastn-pdbnt.out
+1624908670618	Start copy results
+1624908670618	aws s3 cp batch_004-blastn-pdbnt.out.gz s3://elasticblast-joukovv/results/mane-vs-pdbnt/
+1624908671386	End copy results
+1624908671386	End execution
+job	7f1cb848-0bdd-4f96-b871-5e2044fc7b4f	0	SUCCEEDED
+1624908665396	Start execution
+1624908665396	DB: pdbnt
+1624908665396	DB_PATH: None
+1624908665396	DB_SOURCE: AWS
+1624908665396	QUERY_BATCH: s3://elasticblast-joukovv/results/mane-vs-pdbnt/query_batches/batch_002.fa
+1624908665396	ELB_NUM_CPUS: 4
+1624908665396	PROGRAM: blastn
+1624908665396	BUCKET: s3://elasticblast-joukovv/results/mane-vs-pdbnt
+1624908665396	DB_MOL_TYPE: nucl
+1624908665396	BLAST_PARAMS: -outfmt 11
+1624908665401	INSTANCE_ID: i-00d8ba3d4a7522b7f
+1624908665403	INSTANCE_TYPE: m5.8xlarge
+1624908665404	PUBLIC_HOSTNAME: ec2-54-174-123-193.compute-1.amazonaws.com
+1624908665404	Start database download
+1624908665404	time update_blastdb.pl pdbnt --source AWS
+1624908667164	Connected to AWS
+1624908667164	8.72user 1.41system 0:01.75elapsed 577%CPU (0avgtext+0avgdata 73592maxresident)k
+1624908667164	0inputs+351376outputs (0major+308445minor)pagefaults 0swaps
+1624908667164	End database download
+1624908667164	Start database check
+1624908667164	blastdbcmd -info -db pdbnt -dbtype nucl
+1624908667169	Database: PDB nucleotide database
+1624908667169	\t37,674 sequences; 7,795,302 total bases
+1624908667169	Date: Jun 21, 2021  5:22 PM\tLongest sequence: 19,000 bases
+1624908667169	BLASTDB Version: 5
+1624908667169	Volumes:
+1624908667169	\t/blast/blastdb/pdbnt
+1624908667169	blastdbcheck -db pdbnt -dbtype nucl -no_isam -ends 5
+1624908667174	Writing messages to <stdout> at verbosity (Summary)
+1624908667174	ISAM testing is DISABLED.
+1624908667174	Legacy testing is DISABLED.
+1624908667174	TaxID testing is DISABLED.
+1624908667174	Testing first 5 and last 5 OIDs.
+1624908667174	Testing 1 volume(s).
+1624908667174	 Result=SUCCESS. No errors reported for 1 volume(s).
+1624908667174	Testing 0 alias(es).
+1624908667174	 Result=SUCCESS. No errors reported for 0 alias(es).
+1624908667174	End database check
+1624908667175	Start database vmtouch
+1624908667175	blastdb_path -dbtype nucl -db pdbnt -getvolumespath
+1624908667178	vmtouch -m5G /blast/blastdb/pdbnt.nin /blast/blastdb/pdbnt.nsq
+1624908667180	           Files: 2
+1624908667180	     Directories: 0
+1624908667180	  Resident Pages: 637/637  2M/2M  100%
+1624908667180	         Elapsed: 9.9e-05 seconds
+1624908667180	End database vmtouch
+1624908667180	Start query download
+1624908667180	aws s3 cp s3://elasticblast-joukovv/results/mane-vs-pdbnt/query_batches/batch_002.fa .
+1624908667950	End query download
+1624908667951	Start blast search
+1624908667951	time blastn -query batch_002.fa -db pdbnt -num_threads 4 -out batch_002-blastn-pdbnt.out -outfmt 11
+1624908668861	0.88user 0.09system 0:00.90elapsed 107%CPU (0avgtext+0avgdata 155816maxresident)k
+1624908668861	0inputs+12304outputs (0major+59209minor)pagefaults 0swaps
+1624908668861	End blast search
+1624908668861	Blast4-archive ::= {
+1624908668861	  request {
+1624908668861	    ident "2.11.4+",
+1624908668861	    body queue-search {
+1624908668861	      program "blastn",
+1624908668861	      service "megablast",
+1624908668861	      queries bioseq-set {
+1624908668861	        seq-set {
+1624908668861	          seq {
+1624908668861	            id {
+1624908668861	              local str "Query_1"
+1624908668861	gzip -f batch_002-blastn-pdbnt.out
+1624908669023	Start copy results
+1624908669023	aws s3 cp batch_002-blastn-pdbnt.out.gz s3://elasticblast-joukovv/results/mane-vs-pdbnt/
+1624908669733	End copy results
+1624908669734	End execution
+job	90f7ab3d-c5be-4f1a-bbc7-d9286fea4901	0	SUCCEEDED
+1624908665486	Start execution
+1624908665486	DB: pdbnt
+1624908665486	DB_PATH: None
+1624908665487	DB_SOURCE: AWS
+1624908665487	QUERY_BATCH: s3://elasticblast-joukovv/results/mane-vs-pdbnt/query_batches/batch_008.fa
+1624908665487	ELB_NUM_CPUS: 4
+1624908665487	PROGRAM: blastn
+1624908665487	BUCKET: s3://elasticblast-joukovv/results/mane-vs-pdbnt
+1624908665487	DB_MOL_TYPE: nucl
+1624908665487	BLAST_PARAMS: -outfmt 11
+1624908665491	INSTANCE_ID: i-00d8ba3d4a7522b7f
+1624908665493	INSTANCE_TYPE: m5.8xlarge
+1624908665494	PUBLIC_HOSTNAME: ec2-54-174-123-193.compute-1.amazonaws.com
+1624908667198	Start database vmtouch
+1624908667198	blastdb_path -dbtype nucl -db pdbnt -getvolumespath
+1624908667201	vmtouch -m5G /blast/blastdb/pdbnt.nin /blast/blastdb/pdbnt.nsq
+1624908667203	           Files: 2
+1624908667203	     Directories: 0
+1624908667203	  Resident Pages: 637/637  2M/2M  100%
+1624908667203	         Elapsed: 7.4e-05 seconds
+1624908667203	End database vmtouch
+1624908667954	Start query download
+1624908667954	aws s3 cp s3://elasticblast-joukovv/results/mane-vs-pdbnt/query_batches/batch_008.fa .
+1624908668744	End query download
+1624908668744	Start blast search
+1624908668744	time blastn -query batch_008.fa -db pdbnt -num_threads 4 -out batch_008-blastn-pdbnt.out -outfmt 11
+1624908669667	0.92user 0.07system 0:00.92elapsed 108%CPU (0avgtext+0avgdata 157032maxresident)k
+1624908669667	0inputs+12776outputs (0major+57750minor)pagefaults 0swaps
+1624908669667	End blast search
+1624908669667	Blast4-archive ::= {
+1624908669667	  request {
+1624908669667	    ident "2.11.4+",
+1624908669667	    body queue-search {
+1624908669667	      program "blastn",
+1624908669667	      service "megablast",
+1624908669667	      queries bioseq-set {
+1624908669667	        seq-set {
+1624908669667	          seq {
+1624908669667	            id {
+1624908669667	              local str "Query_1"
+1624908669667	gzip -f batch_008-blastn-pdbnt.out
+1624908669832	Start copy results
+1624908669832	aws s3 cp batch_008-blastn-pdbnt.out.gz s3://elasticblast-joukovv/results/mane-vs-pdbnt/
+1624908670584	End copy results
+1624908670585	End execution
+job	3e10bab6-3362-433c-8df8-e6715eaaf7a9	0	SUCCEEDED
+1624908665498	Start execution
+1624908665498	DB: pdbnt
+1624908665498	DB_PATH: None
+1624908665498	DB_SOURCE: AWS
+1624908665498	QUERY_BATCH: s3://elasticblast-joukovv/results/mane-vs-pdbnt/query_batches/batch_003.fa
+1624908665498	ELB_NUM_CPUS: 4
+1624908665498	PROGRAM: blastn
+1624908665498	BUCKET: s3://elasticblast-joukovv/results/mane-vs-pdbnt
+1624908665498	DB_MOL_TYPE: nucl
+1624908665498	BLAST_PARAMS: -outfmt 11
+1624908665502	INSTANCE_ID: i-00d8ba3d4a7522b7f
+1624908665504	INSTANCE_TYPE: m5.8xlarge
+1624908665505	PUBLIC_HOSTNAME: ec2-54-174-123-193.compute-1.amazonaws.com
+1624908667209	Start database vmtouch
+1624908667209	blastdb_path -dbtype nucl -db pdbnt -getvolumespath
+1624908667212	vmtouch -m5G /blast/blastdb/pdbnt.nin /blast/blastdb/pdbnt.nsq
+1624908667214	           Files: 2
+1624908667214	     Directories: 0
+1624908667214	  Resident Pages: 637/637  2M/2M  100%
+1624908667214	         Elapsed: 7.4e-05 seconds
+1624908667214	End database vmtouch
+1624908670420	Start query download
+1624908670420	aws s3 cp s3://elasticblast-joukovv/results/mane-vs-pdbnt/query_batches/batch_003.fa .
+1624908671283	End query download
+1624908671284	Start blast search
+1624908671284	time blastn -query batch_003.fa -db pdbnt -num_threads 4 -out batch_003-blastn-pdbnt.out -outfmt 11
+1624908672208	0.89user 0.09system 0:00.92elapsed 107%CPU (0avgtext+0avgdata 157444maxresident)k
+1624908672208	0inputs+12608outputs (0major+57669minor)pagefaults 0swaps
+1624908672208	End blast search
+1624908672208	Blast4-archive ::= {
+1624908672208	  request {
+1624908672208	    ident "2.11.4+",
+1624908672208	    body queue-search {
+1624908672208	      program "blastn",
+1624908672208	      service "megablast",
+1624908672208	      queries bioseq-set {
+1624908672208	        seq-set {
+1624908672208	          seq {
+1624908672208	            id {
+1624908672208	              local str "Query_1"
+1624908672208	gzip -f batch_003-blastn-pdbnt.out
+1624908672368	Start copy results
+1624908672368	aws s3 cp batch_003-blastn-pdbnt.out.gz s3://elasticblast-joukovv/results/mane-vs-pdbnt/
+1624908673210	End copy results
+1624908673211	End execution
+job	9bab0ef1-3219-4aef-bb1f-5501d82dbed8	0	SUCCEEDED
+1624908665472	Start execution
+1624908665472	DB: pdbnt
+1624908665472	DB_PATH: None
+1624908665472	DB_SOURCE: AWS
+1624908665472	QUERY_BATCH: s3://elasticblast-joukovv/results/mane-vs-pdbnt/query_batches/batch_000.fa
+1624908665472	ELB_NUM_CPUS: 4
+1624908665472	PROGRAM: blastn
+1624908665472	BUCKET: s3://elasticblast-joukovv/results/mane-vs-pdbnt
+1624908665472	DB_MOL_TYPE: nucl
+1624908665472	BLAST_PARAMS: -outfmt 11
+1624908665477	INSTANCE_ID: i-00d8ba3d4a7522b7f
+1624908665478	INSTANCE_TYPE: m5.8xlarge
+1624908665479	PUBLIC_HOSTNAME: ec2-54-174-123-193.compute-1.amazonaws.com
+1624908667184	Start database vmtouch
+1624908667184	blastdb_path -dbtype nucl -db pdbnt -getvolumespath
+1624908667187	vmtouch -m5G /blast/blastdb/pdbnt.nin /blast/blastdb/pdbnt.nsq
+1624908667189	           Files: 2
+1624908667189	     Directories: 0
+1624908667189	  Resident Pages: 637/637  2M/2M  100%
+1624908667189	         Elapsed: 7.6e-05 seconds
+1624908667189	End database vmtouch
+1624908672951	Start query download
+1624908672951	aws s3 cp s3://elasticblast-joukovv/results/mane-vs-pdbnt/query_batches/batch_000.fa .
+1624908673855	End query download
+1624908673855	Start blast search
+1624908673855	time blastn -query batch_000.fa -db pdbnt -num_threads 4 -out batch_000-blastn-pdbnt.out -outfmt 11
+1624908674742	0.84user 0.11system 0:00.88elapsed 108%CPU (0avgtext+0avgdata 158008maxresident)k
+1624908674742	0inputs+12664outputs (0major+57837minor)pagefaults 0swaps
+1624908674742	End blast search
+1624908674742	Blast4-archive ::= {
+1624908674742	  request {
+1624908674742	    ident "2.11.4+",
+1624908674742	    body queue-search {
+1624908674742	      program "blastn",
+1624908674742	      service "megablast",
+1624908674742	      queries bioseq-set {
+1624908674742	        seq-set {
+1624908674742	          seq {
+1624908674742	            id {
+1624908674742	              local str "Query_1"
+1624908674742	gzip -f batch_000-blastn-pdbnt.out
+1624908674901	Start copy results
+1624908674901	aws s3 cp batch_000-blastn-pdbnt.out.gz s3://elasticblast-joukovv/results/mane-vs-pdbnt/
+1624908675565	End copy results
+1624908675566	End execution
+job	6fa7a4cf-6284-4856-8f08-521fbf9941cb	0	SUCCEEDED
+1624908665413	Start execution
+1624908665413	DB: pdbnt
+1624908665413	DB_PATH: None
+1624908665413	DB_SOURCE: AWS
+1624908665413	QUERY_BATCH: s3://elasticblast-joukovv/results/mane-vs-pdbnt/query_batches/batch_005.fa
+1624908665413	ELB_NUM_CPUS: 4
+1624908665413	PROGRAM: blastn
+1624908665413	BUCKET: s3://elasticblast-joukovv/results/mane-vs-pdbnt
+1624908665413	DB_MOL_TYPE: nucl
+1624908665413	BLAST_PARAMS: -outfmt 11
+1624908665418	INSTANCE_ID: i-00d8ba3d4a7522b7f
+1624908665420	INSTANCE_TYPE: m5.8xlarge
+1624908665421	PUBLIC_HOSTNAME: ec2-54-174-123-193.compute-1.amazonaws.com
+1624908667175	Start database vmtouch
+1624908667175	blastdb_path -dbtype nucl -db pdbnt -getvolumespath
+1624908667179	vmtouch -m5G /blast/blastdb/pdbnt.nin /blast/blastdb/pdbnt.nsq
+1624908667181	           Files: 2
+1624908667181	     Directories: 0
+1624908667181	  Resident Pages: 637/637  2M/2M  100%
+1624908667181	         Elapsed: 7.8e-05 seconds
+1624908667181	End database vmtouch
+1624908672090	Start query download
+1624908672090	aws s3 cp s3://elasticblast-joukovv/results/mane-vs-pdbnt/query_batches/batch_005.fa .
+1624908672946	End query download
+1624908672947	Start blast search
+1624908672947	time blastn -query batch_005.fa -db pdbnt -num_threads 4 -out batch_005-blastn-pdbnt.out -outfmt 11
+1624908673836	0.84user 0.10system 0:00.88elapsed 107%CPU (0avgtext+0avgdata 156412maxresident)k
+1624908673836	0inputs+12376outputs (0major+57936minor)pagefaults 0swaps
+1624908673836	End blast search
+1624908673836	Blast4-archive ::= {
+1624908673836	  request {
+1624908673836	    ident "2.11.4+",
+1624908673836	    body queue-search {
+1624908673836	      program "blastn",
+1624908673836	      service "megablast",
+1624908673836	      queries bioseq-set {
+1624908673836	        seq-set {
+1624908673836	          seq {
+1624908673836	            id {
+1624908673836	              local str "Query_1"
+1624908673836	gzip -f batch_005-blastn-pdbnt.out
+1624908673997	Start copy results
+1624908673997	aws s3 cp batch_005-blastn-pdbnt.out.gz s3://elasticblast-joukovv/results/mane-vs-pdbnt/
+1624908674738	End copy results
+1624908674739	End execution
+job	bad799ba-9492-49a7-8b48-b0efbbfa1b94	0	SUCCEEDED
+1624908697358	Start execution
+1624908697358	DB: pdbnt
+1624908697358	DB_PATH: None
+1624908697358	DB_SOURCE: AWS
+1624908697358	QUERY_BATCH: s3://elasticblast-joukovv/results/mane-vs-pdbnt/query_batches/batch_010.fa
+1624908697358	ELB_NUM_CPUS: 4
+1624908697358	PROGRAM: blastn
+1624908697358	BUCKET: s3://elasticblast-joukovv/results/mane-vs-pdbnt
+1624908697358	DB_MOL_TYPE: nucl
+1624908697358	BLAST_PARAMS: -outfmt 11
+1624908697363	INSTANCE_ID: i-00d8ba3d4a7522b7f
+1624908697365	INSTANCE_TYPE: m5.8xlarge
+1624908697366	PUBLIC_HOSTNAME: ec2-54-174-123-193.compute-1.amazonaws.com
+1624908697366	Start database vmtouch
+1624908697366	blastdb_path -dbtype nucl -db pdbnt -getvolumespath
+1624908697370	vmtouch -m5G /blast/blastdb/pdbnt.nin /blast/blastdb/pdbnt.nsq
+1624908697371	           Files: 2
+1624908697371	     Directories: 0
+1624908697371	  Resident Pages: 637/637  2M/2M  100%
+1624908697371	         Elapsed: 7.6e-05 seconds
+1624908697371	End database vmtouch
+1624908697372	Start query download
+1624908697372	aws s3 cp s3://elasticblast-joukovv/results/mane-vs-pdbnt/query_batches/batch_010.fa .
+1624908698198	End query download
+1624908698199	Start blast search
+1624908698199	time blastn -query batch_010.fa -db pdbnt -num_threads 4 -out batch_010-blastn-pdbnt.out -outfmt 11
+1624908698844	0.61user 0.08system 0:00.64elapsed 108%CPU (0avgtext+0avgdata 137360maxresident)k
+1624908698844	0inputs+8816outputs (0major+60130minor)pagefaults 0swaps
+1624908698844	End blast search
+1624908698844	Blast4-archive ::= {
+1624908698844	  request {
+1624908698844	    ident "2.11.4+",
+1624908698844	    body queue-search {
+1624908698844	      program "blastn",
+1624908698844	      service "megablast",
+1624908698844	      queries bioseq-set {
+1624908698844	        seq-set {
+1624908698844	          seq {
+1624908698844	            id {
+1624908698844	              local str "Query_1"
+1624908698844	gzip -f batch_010-blastn-pdbnt.out
+1624908698954	Start copy results
+1624908698955	aws s3 cp batch_010-blastn-pdbnt.out.gz s3://elasticblast-joukovv/results/mane-vs-pdbnt/
+1624908699617	End copy results
+1624908699617	End execution
+job	609778a2-ae73-406f-9faf-64897bf43911	0	SUCCEEDED
+1624908665412	Start execution
+1624908665413	DB: pdbnt
+1624908665413	DB_PATH: None
+1624908665413	DB_SOURCE: AWS
+1624908665413	QUERY_BATCH: s3://elasticblast-joukovv/results/mane-vs-pdbnt/query_batches/batch_001.fa
+1624908665413	ELB_NUM_CPUS: 4
+1624908665413	PROGRAM: blastn
+1624908665413	BUCKET: s3://elasticblast-joukovv/results/mane-vs-pdbnt
+1624908665413	DB_MOL_TYPE: nucl
+1624908665413	BLAST_PARAMS: -outfmt 11
+1624908665418	INSTANCE_ID: i-00d8ba3d4a7522b7f
+1624908665419	INSTANCE_TYPE: m5.8xlarge
+1624908665421	PUBLIC_HOSTNAME: ec2-54-174-123-193.compute-1.amazonaws.com
+1624908667224	Start database vmtouch
+1624908667225	blastdb_path -dbtype nucl -db pdbnt -getvolumespath
+1624908667228	vmtouch -m5G /blast/blastdb/pdbnt.nin /blast/blastdb/pdbnt.nsq
+1624908667229	           Files: 2
+1624908667229	     Directories: 0
+1624908667229	  Resident Pages: 637/637  2M/2M  100%
+1624908667229	         Elapsed: 7.5e-05 seconds
+1624908667229	End database vmtouch
+1624908671287	Start query download
+1624908671287	aws s3 cp s3://elasticblast-joukovv/results/mane-vs-pdbnt/query_batches/batch_001.fa .
+1624908672079	End query download
+1624908672079	Start blast search
+1624908672079	time blastn -query batch_001.fa -db pdbnt -num_threads 4 -out batch_001-blastn-pdbnt.out -outfmt 11
+1624908672985	0.90user 0.09system 0:00.90elapsed 111%CPU (0avgtext+0avgdata 157180maxresident)k
+1624908672985	0inputs+14480outputs (0major+58625minor)pagefaults 0swaps
+1624908672985	End blast search
+1624908672985	Blast4-archive ::= {
+1624908672985	  request {
+1624908672985	    ident "2.11.4+",
+1624908672985	    body queue-search {
+1624908672985	      program "blastn",
+1624908672985	      service "megablast",
+1624908672985	      queries bioseq-set {
+1624908672985	        seq-set {
+1624908672985	          seq {
+1624908672985	            id {
+1624908672985	              local str "Query_1"
+1624908672985	gzip -f batch_001-blastn-pdbnt.out
+1624908673151	Start copy results
+1624908673151	aws s3 cp batch_001-blastn-pdbnt.out.gz s3://elasticblast-joukovv/results/mane-vs-pdbnt/
+1624908673858	End copy results
+1624908673859	End execution
+job	a4aaf8b1-15fa-4e09-8d93-00936a973498	0	SUCCEEDED
+1624908697358	Start execution
+1624908697358	DB: pdbnt
+1624908697358	DB_PATH: None
+1624908697358	DB_SOURCE: AWS
+1624908697358	QUERY_BATCH: s3://elasticblast-joukovv/results/mane-vs-pdbnt/query_batches/batch_006.fa
+1624908697358	ELB_NUM_CPUS: 4
+1624908697358	PROGRAM: blastn
+1624908697358	BUCKET: s3://elasticblast-joukovv/results/mane-vs-pdbnt
+1624908697358	DB_MOL_TYPE: nucl
+1624908697358	BLAST_PARAMS: -outfmt 11
+1624908697364	INSTANCE_ID: i-00d8ba3d4a7522b7f
+1624908697365	INSTANCE_TYPE: m5.8xlarge
+1624908697366	PUBLIC_HOSTNAME: ec2-54-174-123-193.compute-1.amazonaws.com
+1624908697366	Start database vmtouch
+1624908697366	blastdb_path -dbtype nucl -db pdbnt -getvolumespath
+1624908697370	vmtouch -m5G /blast/blastdb/pdbnt.nin /blast/blastdb/pdbnt.nsq
+1624908697372	           Files: 2
+1624908697372	     Directories: 0
+1624908697372	  Resident Pages: 637/637  2M/2M  100%
+1624908697372	         Elapsed: 7.8e-05 seconds
+1624908697372	End database vmtouch
+1624908698223	Start query download
+1624908698223	aws s3 cp s3://elasticblast-joukovv/results/mane-vs-pdbnt/query_batches/batch_006.fa .
+1624908699026	End query download
+1624908699026	Start blast search
+1624908699026	time blastn -query batch_006.fa -db pdbnt -num_threads 4 -out batch_006-blastn-pdbnt.out -outfmt 11
+1624908699927	0.86user 0.09system 0:00.89elapsed 107%CPU (0avgtext+0avgdata 156172maxresident)k
+1624908699927	0inputs+12336outputs (0major+64324minor)pagefaults 0swaps
+1624908699927	End blast search
+1624908699927	Blast4-archive ::= {
+1624908699927	  request {
+1624908699927	    ident "2.11.4+",
+1624908699927	    body queue-search {
+1624908699927	      program "blastn",
+1624908699927	      service "megablast",
+1624908699927	      queries bioseq-set {
+1624908699927	        seq-set {
+1624908699927	          seq {
+1624908699927	            id {
+1624908699927	              local str "Query_1"
+1624908699927	gzip -f batch_006-blastn-pdbnt.out
+1624908700087	Start copy results
+1624908700087	aws s3 cp batch_006-blastn-pdbnt.out.gz s3://elasticblast-joukovv/results/mane-vs-pdbnt/
+1624908700752	End copy results
+1624908700753	End execution
+job	464f3d48-2888-454f-a4bb-e246c0df7236	0	SUCCEEDED
+1624908697363	Start execution
+1624908697363	DB: pdbnt
+1624908697363	DB_PATH: None
+1624908697363	DB_SOURCE: AWS
+1624908697363	QUERY_BATCH: s3://elasticblast-joukovv/results/mane-vs-pdbnt/query_batches/batch_009.fa
+1624908697363	ELB_NUM_CPUS: 4
+1624908697363	PROGRAM: blastn
+1624908697363	BUCKET: s3://elasticblast-joukovv/results/mane-vs-pdbnt
+1624908697363	DB_MOL_TYPE: nucl
+1624908697363	BLAST_PARAMS: -outfmt 11
+1624908697368	INSTANCE_ID: i-00d8ba3d4a7522b7f
+1624908697369	INSTANCE_TYPE: m5.8xlarge
+1624908697370	PUBLIC_HOSTNAME: ec2-54-174-123-193.compute-1.amazonaws.com
+1624908697371	Start database vmtouch
+1624908697371	blastdb_path -dbtype nucl -db pdbnt -getvolumespath
+1624908697374	vmtouch -m5G /blast/blastdb/pdbnt.nin /blast/blastdb/pdbnt.nsq
+1624908697376	           Files: 2
+1624908697376	     Directories: 0
+1624908697376	  Resident Pages: 637/637  2M/2M  100%
+1624908697376	         Elapsed: 6.9e-05 seconds
+1624908697376	End database vmtouch
+1624908699029	Start query download
+1624908699029	aws s3 cp s3://elasticblast-joukovv/results/mane-vs-pdbnt/query_batches/batch_009.fa .
+1624908699824	End query download
+1624908699826	Start blast search
+1624908699826	time blastn -query batch_009.fa -db pdbnt -num_threads 4 -out batch_009-blastn-pdbnt.out -outfmt 11
+1624908700735	0.89user 0.10system 0:00.90elapsed 109%CPU (0avgtext+0avgdata 158644maxresident)k
+1624908700735	0inputs+13360outputs (0major+57630minor)pagefaults 0swaps
+1624908700735	End blast search
+1624908700735	Blast4-archive ::= {
+1624908700735	  request {
+1624908700735	    ident "2.11.4+",
+1624908700735	    body queue-search {
+1624908700735	      program "blastn",
+1624908700735	      service "megablast",
+1624908700735	      queries bioseq-set {
+1624908700735	        seq-set {
+1624908700735	          seq {
+1624908700735	            id {
+1624908700735	              local str "Query_1"
+1624908700735	gzip -f batch_009-blastn-pdbnt.out
+1624908700899	Start copy results
+1624908700899	aws s3 cp batch_009-blastn-pdbnt.out.gz s3://elasticblast-joukovv/results/mane-vs-pdbnt/
+1624908701623	End copy results
+1624908701624	End execution
+job	b717ae8a-4f6b-4cf6-a29d-4eaa49984c68	0	SUCCEEDED
+1624908665409	Start execution
+1624908665409	DB: pdbnt
+1624908665409	DB_PATH: None
+1624908665409	DB_SOURCE: AWS
+1624908665409	QUERY_BATCH: s3://elasticblast-joukovv/results/mane-vs-pdbnt/query_batches/batch_007.fa
+1624908665409	ELB_NUM_CPUS: 4
+1624908665409	PROGRAM: blastn
+1624908665409	BUCKET: s3://elasticblast-joukovv/results/mane-vs-pdbnt
+1624908665409	DB_MOL_TYPE: nucl
+1624908665409	BLAST_PARAMS: -outfmt 11
+1624908665415	INSTANCE_ID: i-00d8ba3d4a7522b7f
+1624908665417	INSTANCE_TYPE: m5.8xlarge
+1624908665418	PUBLIC_HOSTNAME: ec2-54-174-123-193.compute-1.amazonaws.com
+1624908667222	Start database vmtouch
+1624908667222	blastdb_path -dbtype nucl -db pdbnt -getvolumespath
+1624908667226	vmtouch -m5G /blast/blastdb/pdbnt.nin /blast/blastdb/pdbnt.nsq
+1624908667227	           Files: 2
+1624908667227	     Directories: 0
+1624908667227	  Resident Pages: 637/637  2M/2M  100%
+1624908667227	         Elapsed: 7.5e-05 seconds
+1624908667227	End database vmtouch
+1624908669532	Start query download
+1624908669532	aws s3 cp s3://elasticblast-joukovv/results/mane-vs-pdbnt/query_batches/batch_007.fa .
+1624908670405	End query download
+1624908670406	Start blast search
+1624908670406	time blastn -query batch_007.fa -db pdbnt -num_threads 4 -out batch_007-blastn-pdbnt.out -outfmt 11
+1624908671318	0.89user 0.09system 0:00.91elapsed 108%CPU (0avgtext+0avgdata 156748maxresident)k
+1624908671318	0inputs+12744outputs (0major+57629minor)pagefaults 0swaps
+1624908671318	End blast search
+1624908671318	Blast4-archive ::= {
+1624908671318	  request {
+1624908671318	    ident "2.11.4+",
+1624908671318	    body queue-search {
+1624908671318	      program "blastn",
+1624908671318	      service "megablast",
+1624908671318	      queries bioseq-set {
+1624908671318	        seq-set {
+1624908671318	          seq {
+1624908671318	            id {
+1624908671318	              local str "Query_1"
+1624908671318	gzip -f batch_007-blastn-pdbnt.out
+1624908671478	Start copy results
+1624908671478	aws s3 cp batch_007-blastn-pdbnt.out.gz s3://elasticblast-joukovv/results/mane-vs-pdbnt/
+1624908672192	End copy results
+1624908672193	End execution

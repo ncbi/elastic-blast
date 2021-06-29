@@ -28,12 +28,12 @@ import subprocess
 import os
 from argparse import Namespace
 import pytest  # type: ignore
-from elb import gcp
-from elb import kubernetes
-from elb import config
-from elb.constants import CLUSTER_ERROR, ElbCommand
-from elb.util import SafeExecError, UserReportError
-from elb.elb_config import ElasticBlastConfig
+from elastic_blast import gcp
+from elastic_blast import kubernetes
+from elastic_blast import config
+from elastic_blast.constants import CLUSTER_ERROR, ElbCommand
+from elastic_blast.util import SafeExecError, UserReportError
+from elastic_blast.elb_config import ElasticBlastConfig
 from tests.utils import MockedCompletedProcess
 from tests.utils import mocked_safe_exec, get_mocked_config
 from tests.utils import GCP_PROJECT, GCP_DISKS, GKE_PVS, GKE_CLUSTERS
@@ -66,7 +66,7 @@ def test_get_unset_gcp_project(mocker):
         # this is how gcloud reports unset project
         return MockedCompletedProcess('(unset)')
 
-    mocker.patch('elb.gcp.safe_exec',
+    mocker.patch('elastic_blast.gcp.safe_exec',
                  side_effect=subst_safe_exec_unset_project)
     project = gcp.get_gcp_project()
 
@@ -98,7 +98,7 @@ def test_get_disks_bad_output(mocker):
             raise ValueError(f'Bad gcloud command line: {cmd}')
         return MockedCompletedProcess('some-non-json-string')
 
-    mocker.patch('elb.gcp.safe_exec', side_effect=safe_exec_bad_gcloud)
+    mocker.patch('elastic_blast.gcp.safe_exec', side_effect=safe_exec_bad_gcloud)
     cfg = get_mocked_config()
     with pytest.raises(RuntimeError):
         gcp.get_disks(cfg)
@@ -151,7 +151,7 @@ def test_get_gke_clusters_empty(mocker):
         """Mocked safe_exec returning an emty JSON list"""
         return MockedCompletedProcess('[]')
 
-    mocker.patch('elb.gcp.safe_exec', side_effect=safe_exec_empty)
+    mocker.patch('elastic_blast.gcp.safe_exec', side_effect=safe_exec_empty)
     cfg = get_mocked_config()
     assert len(gcp.get_gke_clusters(cfg)) == 0
     gcp.safe_exec.assert_called()
@@ -195,10 +195,10 @@ def test_delete_cluster_with_cleanup_disk_left(gke_mock, mocker):
         # persistent disk to delete
         return [GCP_DISKS[0]]
 
-    mocker.patch('elb.gcp.get_disks', side_effect=mocked_get_disks)
-    mocker.patch('elb.gcp.delete_disk', side_effect=mocked_delete_disk)
-    mocker.patch('elb.gcp.delete_cluster', side_effect=mocked_delete_cluster)
-    mocker.patch('elb.kubernetes.get_persistent_disks',
+    mocker.patch('elastic_blast.gcp.get_disks', side_effect=mocked_get_disks)
+    mocker.patch('elastic_blast.gcp.delete_disk', side_effect=mocked_delete_disk)
+    mocker.patch('elastic_blast.gcp.delete_cluster', side_effect=mocked_delete_cluster)
+    mocker.patch('elastic_blast.kubernetes.get_persistent_disks',
                  side_effect=mocked_get_persistent_disks)
 
     cfg = get_mocked_config()
@@ -220,7 +220,7 @@ def test_delete_cluster_with_cleanup_failed_kubectl(gke_mock, mocker):
 
     # any kubectl call fails
     gke_mock.set_options(['kubectl-error'])
-    mocker.patch('elb.gcp.delete_cluster', side_effect=mocked_delete_cluster)
+    mocker.patch('elastic_blast.gcp.delete_cluster', side_effect=mocked_delete_cluster)
 
     cfg = get_mocked_config()
     gcp.delete_cluster_with_cleanup(cfg)
@@ -252,10 +252,10 @@ def test_delete_cluster_with_cleanup_failed_get_disks(gke_mock, mocker):
         """Mocked listing of GKE cluster persistent disks"""
         return [GCP_DISKS[0]]
 
-    mocker.patch('elb.gcp.get_disks', side_effect=mocked_get_disks)
-    mocker.patch('elb.gcp.delete_cluster', side_effect=mocked_delete_cluster)
-    mocker.patch('elb.gcp.delete_disk', side_effect=mocked_delete_disk)
-    mocker.patch('elb.kubernetes.get_persistent_disks',
+    mocker.patch('elastic_blast.gcp.get_disks', side_effect=mocked_get_disks)
+    mocker.patch('elastic_blast.gcp.delete_cluster', side_effect=mocked_delete_cluster)
+    mocker.patch('elastic_blast.gcp.delete_disk', side_effect=mocked_delete_disk)
+    mocker.patch('elastic_blast.kubernetes.get_persistent_disks',
                  side_effect=mocked_get_persistent_disks)
 
     cfg = get_mocked_config()
@@ -290,9 +290,9 @@ def test_delete_cluster_with_cleanup_cluster_provisioning(gke_mock, mocker):
         return cfg.cluster.name
 
     mocked_cluster = GKEStatusMock()
-    mocker.patch('elb.gcp.check_cluster',
+    mocker.patch('elastic_blast.gcp.check_cluster',
                  side_effect=mocked_cluster.mocked_check_cluster)
-    mocker.patch('elb.gcp.delete_cluster', side_effect=mocked_delete_cluster)
+    mocker.patch('elastic_blast.gcp.delete_cluster', side_effect=mocked_delete_cluster)
 
     cfg = get_mocked_config()
     gcp.delete_cluster_with_cleanup(cfg)
@@ -325,9 +325,9 @@ def test_delete_cluster_with_cleanup_cluster_reconciling(gke_mock, mocker):
         return cfg.cluster.name
 
     mocked_cluster = GKEStatusMock()
-    mocker.patch('elb.gcp.check_cluster',
+    mocker.patch('elastic_blast.gcp.check_cluster',
                  side_effect=mocked_cluster.mocked_check_cluster)
-    mocker.patch('elb.gcp.delete_cluster', side_effect=mocked_delete_cluster)
+    mocker.patch('elastic_blast.gcp.delete_cluster', side_effect=mocked_delete_cluster)
 
     cfg = get_mocked_config()
     gcp.delete_cluster_with_cleanup(cfg)
@@ -347,8 +347,8 @@ def test_delete_cluster_with_cleanup_cluster_error(gke_mock, mocker):
         """Mocked cluster deletion only to verify that it was called"""
         return cfg.cluster.name
 
-    mocker.patch('elb.gcp.check_cluster', side_effect=mocked_check_cluster)
-    mocker.patch('elb.gcp.delete_cluster', side_effect=mocked_delete_cluster)
+    mocker.patch('elastic_blast.gcp.check_cluster', side_effect=mocked_check_cluster)
+    mocker.patch('elastic_blast.gcp.delete_cluster', side_effect=mocked_delete_cluster)
     cfg = get_mocked_config()
     gcp.delete_cluster_with_cleanup(cfg)
     gcp.check_cluster.assert_called()
@@ -366,8 +366,8 @@ def test_delete_cluster_with_cleanup_cluster_status_unrecognized(gke_mock, mocke
         """Mocked cluster deletion only to verify that it was called"""
         return cfg.cluster.name
 
-    mocker.patch('elb.gcp.check_cluster', side_effect=mocked_check_cluster)
-    mocker.patch('elb.gcp.delete_cluster', side_effect=mocked_delete_cluster)
+    mocker.patch('elastic_blast.gcp.check_cluster', side_effect=mocked_check_cluster)
+    mocker.patch('elastic_blast.gcp.delete_cluster', side_effect=mocked_delete_cluster)
     cfg = get_mocked_config()
     gcp.delete_cluster_with_cleanup(cfg)
     gcp.check_cluster.assert_called()
@@ -382,7 +382,7 @@ def test_delete_cluster_with_cleanup_cluster_stopping(gke_mock, mocker):
         """Mocked check cluster status. STOPPING never changes to RUNNING."""
         return 'STOPPING'
 
-    mocker.patch('elb.gcp.check_cluster', side_effect=mocked_check_cluster)
+    mocker.patch('elastic_blast.gcp.check_cluster', side_effect=mocked_check_cluster)
     cfg = get_mocked_config()
     with pytest.raises(UserReportError) as errinfo:
         gcp.delete_cluster_with_cleanup(cfg)
@@ -407,9 +407,9 @@ def test_delete_cluster_with_cleanup_disk_known(gke_mock, mocker):
         """Mocked deletion of all kubernetes jobs and persistent disks"""
         raise RuntimeError('It should not have been called')
 
-    mocker.patch('elb.gcp.delete_cluster', side_effect=mocked_delete_cluster)
-    mocker.patch('elb.gcp.delete_disk', side_effect=mocked_delete_disk)
-    mocker.patch('elb.kubernetes.delete_all', side_effect=mocked_delete_all)
+    mocker.patch('elastic_blast.gcp.delete_cluster', side_effect=mocked_delete_cluster)
+    mocker.patch('elastic_blast.gcp.delete_disk', side_effect=mocked_delete_disk)
+    mocker.patch('elastic_blast.kubernetes.delete_all', side_effect=mocked_delete_all)
 
     cfg = get_mocked_config()
     cfg.appstate.disk_id = GCP_DISKS[0]
@@ -430,7 +430,7 @@ def test_remove_split_query(mocker):
             raise ValueError(f'Bad gsutil command line: {cmd}')
         return MockedCompletedProcess('')
 
-    mocker.patch('elb.gcp.safe_exec', side_effect=safe_exec_gsutil_rm)
+    mocker.patch('elastic_blast.gcp.safe_exec', side_effect=safe_exec_gsutil_rm)
     cfg = ElasticBlastConfig(gcp_project = 'test-gcp-project',
                              gcp_region = 'test-gcp-region',
                              gcp_zone = 'test-gcp-zone',

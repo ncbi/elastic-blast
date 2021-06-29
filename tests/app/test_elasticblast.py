@@ -32,8 +32,8 @@ import signal
 import time
 from typing import List
 from tempfile import TemporaryDirectory
-from elb import constants
-from elb.util import safe_exec
+from elastic_blast import constants
+from elastic_blast.util import safe_exec
 from tests.utils import gke_mock
 from tests.utils import MockedCompletedProcess
 
@@ -50,6 +50,7 @@ INI_INCOMPLETE_NUM_CPUS_OPTIMAL_MACHINE_TYPE_AWS = os.path.join(TEST_DATA_DIR, '
 INI_INVALID_MACHINE_TYPE_AWS = os.path.join(TEST_DATA_DIR, 'invalid-machine-type-aws.ini')
 INI_INVALID_MACHINE_TYPE_GCP = os.path.join(TEST_DATA_DIR, 'invalid-machine-type-gcp.ini')
 INI_INVALID_MEM_LIMIT = os.path.join(TEST_DATA_DIR, 'invalid-mem-req.ini')
+INI_BLAST_OPT_NO_CLOSING_QUOTE = os.path.join(TEST_DATA_DIR, 'invalid-blast-opt-no-closing-quote.ini')
 INI_VALID = os.path.join(TEST_DATA_DIR, 'good_conf.ini')
 ELB_EXENAME = 'elastic-blast.py'
 
@@ -205,15 +206,15 @@ def test_invalid_mem_limit(gke_mock):
     assert ' has an invalid value:' in msg
 
 
-def test_invalid_autoscaling_config(gke_mock):
-    """Test that providing an invalid autoscaling configuration produces a correct error
+def test_invalid_blast_option_no_closing_quote(gke_mock):
+    """Test that providing an invalid memory limit configuration produces a correct error
     message and exit code"""
-    p = run_elastic_blast(f'submit --cfg {INI_INVALID_AUTOSCALING}'.split())
-    assert p.returncode == constants.INPUT_ERROR
+    p = run_elastic_blast(f'submit --dry-run --cfg {INI_BLAST_OPT_NO_CLOSING_QUOTE}'.split())
     msg = p.stderr.decode()
+    assert p.returncode == constants.INPUT_ERROR
     assert 'Traceback' not in msg
     assert 'ERROR' in msg
-    assert 'Both min-nodes and max-nodes must be specified' in msg
+    assert 'Incorrect BLAST options: No closing quotation' in msg
 
 
 def test_non_existent_option(gke_mock):

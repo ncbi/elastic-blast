@@ -596,21 +596,25 @@ Resources:
         num-vcpus: 1
         bucket: !Join [-, [s3://elasticblast, !Ref Owner]]
         taxidlist: ' '
+        do-search: '--search'
       ContainerProperties:
         Image: !Ref Image
         Vcpus: 1
         Memory: 80000
-        Command: ["download_db_and_search",
+        Command: ["splitq_download_db_search",
                    "--db", "Ref::db",
                    "--db-path", "Ref::db-path",
                    "--source", "Ref::db-source",
                    "--db-mol-type", "Ref::db-mol-type",
                    "--query", "Ref::query-batch",
+                   "--split-part", "Ref::split-part",
+                   "--num-parts", "Ref::num-parts",
                    "--num-threads", "Ref::num-vcpus",
                    "--program", "Ref::blast-program",
                    "--params", "Ref::blast-options",
                    "--bucket", "Ref::bucket",
-                   "--taxidlist", "Ref::taxidlist"
+                   "--taxidlist", "Ref::taxidlist",
+                   "Ref::do-search"
         ]
         Environment:
         - Name: BLASTDB

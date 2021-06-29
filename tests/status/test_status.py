@@ -26,8 +26,8 @@ Author: Victor Joukov joukovv@ncbi.nlm.nih.gov
 
 import os, stat, subprocess, tempfile
 from collections import defaultdict
-from elb import kubernetes
-from elb.status import get_status
+from elastic_blast import kubernetes
+from elastic_blast.status import get_status
 from tests.utils import gke_mock
 from tests.utils import K8S_JOB_STATUS
 

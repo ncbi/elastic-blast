@@ -7,11 +7,11 @@ Author: Christiam Camacho (camacho@ncbi.nlm.nih.gov)
 Created: Mon 14 Sep 2020 09:58:36 AM EDT
 """
 import configparser
-import elb.config
-from elb.resources.quotas.quota_aws_ec2_cf import ResourceCheckAwsEc2CloudFormation
-from elb.resources.quotas.quota_aws_batch import ResourceCheckAwsBatch
-from elb.aws import create_aws_config
-from elb.elb_config import ElasticBlastConfig
+import elastic_blast.config
+from elastic_blast.resources.quotas.quota_aws_ec2_cf import ResourceCheckAwsEc2CloudFormation
+from elastic_blast.resources.quotas.quota_aws_batch import ResourceCheckAwsBatch
+from elastic_blast.aws import create_aws_config
+from elastic_blast.elb_config import ElasticBlastConfig
 from typing import Union
 
 def check_resource_quotas(cfg: ElasticBlastConfig) -> None:
@@ -24,11 +24,11 @@ def check_resource_quotas(cfg: ElasticBlastConfig) -> None:
     requested can be met, the function will return, otherwise an exception will
     be raised.
     """
-    if cfg.cloud_provider.cloud == elb.config.CSP.AWS:
+    if cfg.cloud_provider.cloud == elastic_blast.config.CSP.AWS:
         boto_cfg = create_aws_config(cfg.aws.region)
         ResourceCheckAwsEc2CloudFormation(boto_cfg)()
         ResourceCheckAwsBatch(boto_cfg)()
-    elif cfg.cloud_provider.cloud == elb.config.CSP.GCP:
+    elif cfg.cloud_provider.cloud == elastic_blast.config.CSP.GCP:
         raise NotImplementedError('Resource check for GCP is not implemented yet')
     else:
         raise NotImplementedError('Resource check for unknown cloud vendor')

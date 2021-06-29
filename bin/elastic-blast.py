@@ -31,18 +31,18 @@ import argparse
 import logging
 import pprint
 from typing import List
-from elb import VERSION
-from elb.commands.submit import submit as elb_submit
-from elb.commands.status import create_arg_parser as create_status_arg_parser
-from elb.commands.delete import delete as elb_delete
-from elb.commands.run_summary import create_arg_parser as create_run_summary_arg_parser
-from elb.util import check_positive_int, config_logging, UserReportError, SafeExecError
-from elb.util import ElbSupportedPrograms, clean_up
-from elb import constants
-from elb.gcp import check_prerequisites
-from elb.config import configure
-from elb.elb_config import ElasticBlastConfig
-from elb.constants import ElbCommand
+from elastic_blast import VERSION
+from elastic_blast.commands.submit import submit as elb_submit
+from elastic_blast.commands.status import create_arg_parser as create_status_arg_parser
+from elastic_blast.commands.delete import delete as elb_delete
+from elastic_blast.commands.run_summary import create_arg_parser as create_run_summary_arg_parser
+from elastic_blast.util import check_positive_int, config_logging, UserReportError, SafeExecError
+from elastic_blast.util import ElbSupportedPrograms, clean_up
+from elastic_blast import constants
+from elastic_blast.gcp import check_prerequisites
+from elastic_blast.config import configure
+from elastic_blast.elb_config import ElasticBlastConfig
+from elastic_blast.constants import ElbCommand
 
 
 DFLT_LOGFILE = 'elastic-blast.log'
@@ -72,13 +72,16 @@ def main():
         cfg = configure(args)
         logging.info(f"ElasticBLAST {args.subcommand} {VERSION}")
         task = ElbCommand(args.subcommand.lower())
-        cfg = ElasticBlastConfig(cfg, task=task)
+        cfg = ElasticBlastConfig(cfg, args.dry_run, task=task)
         logging.debug(pprint.pformat(cfg.asdict()))
         check_prerequisites(cfg)
         #TODO: use cfg only when args.wait, args.sync, and args.run_label are replicated in cfg
         return args.func(args, cfg, clean_up_stack)
     except (SafeExecError, UserReportError) as e:
         logging.error(e.message)
+        if 'ELB_DEBUG' in os.environ:
+            import traceback
+            traceback.print_exc(file=sys.stderr)
         # SafeExecError return code is the exit code from command line
         # application ran via subprocess
         if isinstance(e, SafeExecError):

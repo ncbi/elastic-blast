@@ -9,15 +9,23 @@
   },
   "runtime": {
     "wallClock": 1150.194,
-    "blastdbSetup": {
+    "blastDbSetup": {
+      "num": 1,
       "totalTime": 1144.772,
       "minTime": 1144.772,
       "maxTime": 1144.772
     },
-    "blast": {
-      "totalTime": 0.0,
-      "minTime": 0.0,
-      "maxTime": 0.0
+    "queryDownload": {
+      "num": 1,
+      "totalTime": 0.962,
+      "minTime": 0.962,
+      "maxTime": 0.962
+    },
+    "querySplit": {
+      "num": 1,
+      "totalTime": 1.971,
+      "minTime": 1.971,
+      "maxTime": 1.971
     }
   },
   "blastData": {

@@ -29,18 +29,18 @@ import unittest
 from unittest.mock import patch, MagicMock
 import re
 
-from elb import util
-from elb.constants import ELB_DFLT_GCP_MACHINE_TYPE
-from elb.constants import GCP_MAX_LABEL_LENGTH, AWS_MAX_TAG_LENGTH
-from elb.constants import ElbCommand
-from elb.util import get_query_batch_size
-from elb.util import convert_memory_to_mb, get_blastdb_size, sanitize_aws_batch_job_name
-from elb.util import safe_exec, SafeExecError, convert_disk_size_to_gb
-from elb.util import sanitize_gcp_labels, sanitize_for_k8s, sanitize_aws_tag
-from elb.util import validate_gcp_string, convert_labels_to_aws_tags
-from elb.gcp_traits import get_machine_properties
-from elb.elb_config import ElasticBlastConfig
-from elb.base import InstanceProperties
+from elastic_blast import util
+from elastic_blast.constants import ELB_DFLT_GCP_MACHINE_TYPE
+from elastic_blast.constants import GCP_MAX_LABEL_LENGTH, AWS_MAX_TAG_LENGTH
+from elastic_blast.constants import ElbCommand
+from elastic_blast.util import get_query_batch_size
+from elastic_blast.util import convert_memory_to_mb, get_blastdb_size, sanitize_aws_batch_job_name
+from elastic_blast.util import safe_exec, SafeExecError, convert_disk_size_to_gb
+from elastic_blast.util import sanitize_gcp_labels, sanitize_for_k8s, sanitize_aws_tag
+from elastic_blast.util import validate_gcp_string, convert_labels_to_aws_tags
+from elastic_blast.gcp_traits import get_machine_properties
+from elastic_blast.elb_config import ElasticBlastConfig
+from elastic_blast.base import InstanceProperties
 import pytest
 from tests.utils import MockedCompletedProcess
 
@@ -160,7 +160,7 @@ def test_safe_exec_run(mocker):
     subprocess.run.assert_called_with(cmd, check=True, stdout=-1, stderr=-1)
 
 
-@patch(target='elb.elb_config.aws_get_machine_properties', new=MagicMock(return_value=InstanceProperties(32, 120)))
+@patch(target='elastic_blast.elb_config.aws_get_machine_properties', new=MagicMock(return_value=InstanceProperties(32, 120)))
 def test_convert_labels_to_aws_tags():
     cfg = create_config_for_db('nt')
 
@@ -314,7 +314,7 @@ def test_get_blastdb_info(mocker):
             raise ValueError(f'Bad gsutil command line: "{cmd}"')
         return MockedCompletedProcess(response)
 
-    mocker.patch('elb.util.safe_exec', side_effect=safe_exec_gsutil_ls)
+    mocker.patch('elastic_blast.util.safe_exec', side_effect=safe_exec_gsutil_ls)
 
     # tar.gz file, db_path should explicitely mention it
     db, db_path, k8sdblabel = util.get_blastdb_info(DB)
@@ -345,6 +345,6 @@ def test_get_blastdb_info(mocker):
     def safe_exec_gsutil_ls_exception(cmd):
         """Mocked util.safe_exec function that simulates gsutil rm"""
         raise SafeExecError(1, 'CommandException: One or more URLs matched no objects.')
-    mocker.patch('elb.util.safe_exec', side_effect=safe_exec_gsutil_ls_exception)
+    mocker.patch('elastic_blast.util.safe_exec', side_effect=safe_exec_gsutil_ls_exception)
     with pytest.raises(ValueError):
         util.get_blastdb_info(DB)

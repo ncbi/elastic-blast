@@ -19,13 +19,13 @@
 # Please cite NCBI in any work or product based on this material.
 
 #
-# test_jobs.py - unit test for elb.jobs module
+# test_jobs.py - unit test for elastic_blast.jobs module
 #
 # Author: Victor Joukov joukovv@ncbi.nlm.nih.gov
 
 
 import os
-from elb.jobs import read_job_template, write_job_files
+from elastic_blast.jobs import read_job_template, write_job_files
 from tempfile import TemporaryDirectory
 import pytest  # type: ignore
 

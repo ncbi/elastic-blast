@@ -39,9 +39,9 @@ Author: Victor Joukov joukovv@ncbi.nlm.nih.gov
 import sys
 import argparse
 from tarfile import ReadError
-from elb.filehelper import open_for_read, open_for_write, copy_to_bucket
-from elb.split import FASTAReader
-from elb.jobs import write_job_files
+from elastic_blast.filehelper import open_for_read, open_for_write, copy_to_bucket
+from elastic_blast.split import FASTAReader
+from elastic_blast.jobs import write_job_files
 
 
 DEFAULT_BATCH_LEN    = 5000000

@@ -134,7 +134,7 @@ def get_mt_mode(program: str, options: str, db: DbData, query: SeqData) -> MTMod
 
     if '-taxids' in options or '-taxidlist' in options or \
            '-gilist' in options or '-seqidlist' in options or \
-           '-negative_taxidlist' in options:
+           '-negative_taxids' in options or '-negative_taxidlist' in options:
         return MTMode.ONE
 
     if (db.moltype == MolType.PROTEIN and db.length <= MAX_MT_ONE_DB_LENGTH_PROT) or \

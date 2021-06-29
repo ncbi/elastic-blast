@@ -2,31 +2,39 @@
   "version": "1.0",
   "clusterInfo": {
     "provider": "AWS",
-    "numMachines": 16,
+    "numMachines": 1,
     "numVCPUsPerMachine": 32,
     "RamPerMachine": 131072,
     "machineType": "m5.8xlarge"
   },
   "runtime": {
-    "wallClock": 799.16,
-    "blastdbSetup": {
-      "totalTime": 0.0,
-      "minTime": 0.0,
-      "maxTime": 0.0
+    "wallClock": 36.228,
+    "blastDbSetup": {
+      "num": 1,
+      "totalTime": 1.76,
+      "minTime": 1.76,
+      "maxTime": 1.76
     },
     "blast": {
-      "totalTime": 1754.364,
-      "minTime": 133.567,
-      "maxTime": 341.966
+      "num": 11,
+      "totalTime": 9.738,
+      "minTime": 0.645,
+      "maxTime": 0.932
+    },
+    "queryDownload": {
+      "num": 11,
+      "totalTime": 9.05,
+      "minTime": 0.77,
+      "maxTime": 0.904
     }
   },
   "blastData": {
-    "queryLength": 80502331,
-    "databaseNumSeq": 68873103,
-    "databaseLength": 415101534957
+    "queryLength": 53353969,
+    "databaseNumSeq": 37674,
+    "databaseLength": 7795302
   },
-  "lettersPerSecondPerCpu": 197,
-  "numJobs": 8,
+  "lettersPerSecondPerCpu": 46023,
+  "numJobs": 11,
   "numJobsFailed": 0,
   "exitCode": 0
 }

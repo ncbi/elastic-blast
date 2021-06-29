@@ -18,7 +18,7 @@
 #   
 # Please cite NCBI in any work or product based on this material.
 
-from elb.gcp import check_cluster, start_cluster, delete_cluster
+from elastic_blast.gcp import check_cluster, start_cluster, delete_cluster
 import time
 import os
 import pytest

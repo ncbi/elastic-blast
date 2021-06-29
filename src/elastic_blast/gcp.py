@@ -34,7 +34,7 @@ from .util import safe_exec, UserReportError, SafeExecError
 from . import kubernetes
 from .constants import CLUSTER_ERROR, GCP_APIS, ELB_METADATA_DIR
 from .constants import ELB_STATE_DISK_ID_FILE, CSP, DEPENDENCY_ERROR
-from .constants import ELB_QUERY_BATCH_DIR
+from .constants import ELB_QUERY_BATCH_DIR, ELB_DFLT_NUM_NODES, ELB_DFLT_MIN_NUM_NODES
 from .elb_config import ElasticBlastConfig
 from typing import Optional, List
 
@@ -351,18 +351,16 @@ def start_cluster(cfg: ElasticBlastConfig):
     actual_params.append(machine_type)
 
     actual_params.append('--num-nodes')
+    actual_params.append(str(ELB_DFLT_MIN_NUM_NODES))
+    # Autoscaling configuration
+    actual_params.append('--enable-autoscaling')
+    actual_params.append('--min-nodes')
+    actual_params.append(str(ELB_DFLT_MIN_NUM_NODES))
+    actual_params.append('--max-nodes')
     actual_params.append(str(num_nodes))
 
     if use_preemptible:
         actual_params.append('--preemptible')
-
-    # Autoscaling configuration
-    if cfg.cluster.min_nodes is not None and cfg.cluster.max_nodes is not None:
-        actual_params.append('--enable-autoscaling')
-        actual_params.append('--min-nodes')
-        actual_params.append(str(cfg.cluster.min_nodes))
-        actual_params.append('--max-nodes')
-        actual_params.append(str(cfg.cluster.max_nodes))
 
     # https://cloud.google.com/stackdriver/pricing
     if cfg.cluster.enable_stackdriver:

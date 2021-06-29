@@ -29,12 +29,12 @@ import unittest
 from unittest.mock import MagicMock, patch
 import configparser
 import pytest
-from elb.config import _set_sections
-from elb.constants import CSP
-from elb.resources.quotas.quota_check import check_resource_quotas
-from elb.base import InstanceProperties
-from elb.elb_config import ElasticBlastConfig
-from elb.constants import ElbCommand
+from elastic_blast.config import _set_sections
+from elastic_blast.constants import CSP
+from elastic_blast.resources.quotas.quota_check import check_resource_quotas
+from elastic_blast.base import InstanceProperties
+from elastic_blast.elb_config import ElasticBlastConfig
+from elastic_blast.constants import ElbCommand
 
 TEST_DATA_DIR = os.path.join(os.path.dirname(__file__), '..', '..', 'config', 'data')
 
@@ -52,7 +52,7 @@ class TestResourceQuotasAws(unittest.TestCase):
         cfg_aws.read(f"{TEST_DATA_DIR}/elb-aws-blastn-pdbnt.ini")
 
         self.cfg_gcp = ElasticBlastConfig(cfg_gcp, task = ElbCommand.SUBMIT)
-        with patch('elb.elb_config.aws_get_machine_properties', new=MagicMock(return_value=InstanceProperties(32, 120))):
+        with patch('elastic_blast.elb_config.aws_get_machine_properties', new=MagicMock(return_value=InstanceProperties(32, 120))):
             self.cfg_aws = ElasticBlastConfig(cfg_aws, task = ElbCommand.SUBMIT)
 
     @pytest.mark.skipif(os.getenv('TEAMCITY_VERSION') is not None, reason='AWS credentials not set in TC')

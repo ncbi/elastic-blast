@@ -20,6 +20,7 @@ timeout_minutes=${2:-5}
 logfile=${3:-elb.log}
 runsummary_output=${4:-elb-run-summary.json}
 logs=${5:-k8s.log}
+run_report=${6:-elb-run-report.csv}
 rm -f $logfile
 
 # if set to "false", the script will not download search results
@@ -70,39 +71,38 @@ if [ $TEST_RESULTS = false ] ; then
     exit 0
 fi
 
+export PATH=$PATH:$ROOT_DIR
+$ROOT_DIR/share/tools/run-report.py --cfg $CFG --results ${ELB_RESULTS} -f csv | tee $run_report
+
 if ! grep -qi aws $CFG; then
     make logs 2>&1 | tee $logs
     $ROOT_DIR/elastic-blast run-summary --cfg $CFG --loglevel DEBUG --logfile $logfile -o $runsummary_output $DRY_RUN
-    # Get intermediate results
+    # Get query batches
     gsutil -qm cp ${QUERY_BATCHES}/*.fa .
 
     # Get results
     gsutil -qm cp ${ELB_RESULTS}/*.out.gz .
     gsutil -qm cp ${ELB_RESULTS}/metadata/* .
 
-    $ROOT_DIR/elastic-blast delete --cfg $CFG --loglevel DEBUG --logfile $logfile $DRY_RUN
-
-    # Test results
-    find . -name "batch*.out.gz" -type f -print0 | \
-        xargs -0 -P $NTHREADS  -I{} gzip -t {}
-    if grep 'outfmt 11' $logfile; then
-        find . -name "batch*.out.gz" -type f -print0 | \
-            xargs -0 -P $NTHREADS -I{} \
-            bash -c "zcat {} | datatool -m /netopt/ncbi_tools64/c++.metastable/src/objects/blast/blast.asn -M /am/ncbiapdata/asn/asn.all -v - -e /dev/null"
-    fi
-    test $(ls -1 *fa | wc -l) -eq $(ls -1 *.out.gz | wc -l)
-    test $(du -a -b *.out.gz | sort -n | head -n 1 | cut -f 1) -gt 0
 else
     $ROOT_DIR/elastic-blast run-summary --cfg $CFG --loglevel DEBUG --logfile $logfile -o $runsummary_output --write-logs $logs --detailed $DRY_RUN
 
-    $ROOT_DIR/elastic-blast delete --cfg $CFG --loglevel DEBUG --logfile $logfile $DRY_RUN
     # Get query batches
     aws s3 cp ${QUERY_BATCHES}/ . --recursive --exclude '*' --include "*.fa" --exclude '*/*'
-    # As we have no logs yet we can't check ASN.1 integrity
     # Get results
     aws s3 cp ${ELB_RESULTS}/ . --recursive --exclude '*' --include "*.out.gz" --exclude '*/*'
-    # Test results
-    find . -name "batch*.out.gz" -type f -print0 | \
-        xargs -0 -P $NTHREADS  -I{} gzip -t {}
+
     test $(du -a -b *.out.gz | sort -n | head -n 1 | cut -f 1) -gt 0
 fi
+$ROOT_DIR/elastic-blast delete --cfg $CFG --loglevel DEBUG --logfile $logfile $DRY_RUN
+
+# Test results
+find . -name "batch*.out.gz" -type f -print0 | \
+    xargs -0 -P $NTHREADS  -I{} gzip -t {}
+if grep 'outfmt 11' $logfile; then
+    find . -name "batch*.out.gz" -type f -print0 | \
+        xargs -0 -P $NTHREADS -I{} \
+        bash -c "zcat {} | datatool -m /netopt/ncbi_tools64/c++.metastable/src/objects/blast/blast.asn -M /am/ncbiapdata/asn/asn.all -v - -e /dev/null"
+fi
+test $(ls -1 *fa | wc -l) -eq $(ls -1 *.out.gz | wc -l)
+test $(du -a -b *.out.gz | sort -n | head -n 1 | cut -f 1) -gt 0

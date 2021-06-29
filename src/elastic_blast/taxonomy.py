@@ -108,9 +108,21 @@ def get_species_taxids(user_taxids: List[int]) -> List[int]:
 
     return sorted(species_taxids)
 
+# Parse taxid options - -taxids, -taxidlist, -negative_taxids, and -negative_taxidlist
+# into triplets:
+# prefix - '' or 'negative_'
+# opt_type - taxids or taxidlist
+# opt_val  - value of the option, possibly empty
+re_taxid_parse = re.compile(f'-(negative_)?(taxid(?:list|s))(?:\\s+(\\S+))?')
 
 def setup_taxid_filtering(cfg: ElasticBlastConfig) -> None:
-    """Prepare taxonomy id list for taxonomy filtering"""
+    """ Prepare taxonomy id list for taxonomy filtering
+        Processes the following options in blast.options parameter:
+            -taxids, -taxidlist - for positive filtering,
+            -negative_taxids, -negative_taxidlist - for negative filtering
+        Only one of these options can be set at a time, as
+        they are mutually exclusive in BLAST+
+    """
     user_taxids = get_user_taxids(cfg.blast.options)
 
     if user_taxids:
@@ -126,11 +138,14 @@ def setup_taxid_filtering(cfg: ElasticBlastConfig) -> None:
         # update blast options
         cfg.blast.taxidlist = filename
         blast_opts = cfg.blast.options
+        # Here we can be sure taxid option happens only once,
+        # it was tested in get_user_taxids
+        matches = re_taxid_parse.findall(blast_opts)
+        neg_prefix, _, _ = matches[0]
         # replace user's -taxid or -taxidlist options with -taxidlist with the
         # newly created species level taxid list
-        blast_opts = re.sub(r'-taxids\s+\S+\s*', ' ', blast_opts)
-        blast_opts = re.sub(r'-taxidlist\s+\S+\s*', ' ', blast_opts)
-        blast_opts += f' -taxidlist {ELB_TAXIDLIST_FILE}'
+        blast_opts = re_taxid_parse.sub('', blast_opts)
+        blast_opts += f' -{neg_prefix}taxidlist {ELB_TAXIDLIST_FILE}'
         cfg.blast.options = blast_opts
     else:
         logging.debug('No taxonomic filtering configuration provided')
@@ -146,68 +161,58 @@ def get_user_taxids(blast_opts: str) -> List[int]:
     Returns:
         A list of taxonomy ids
     """
-    is_taxids = '-taxids' in blast_opts
-    is_taxidlist = '-taxidlist' in blast_opts
-
-    # return an empty list if no taxid options were used
-    if not (is_taxids or is_taxidlist):
+    matches = re_taxid_parse.findall(blast_opts)
+    if not matches:
         return []
-    
-    # -taxids and -taxidlist are mutually exclusive
-    if is_taxids and is_taxidlist:
-        raise UserReportError(returncode=INPUT_ERROR,
-                              message='BLAST -taxids and -taxidlist options are mutually exclusive, please use either one of them')
-
+    if len(matches) > 1:
+        raise UserReportError(
+            returncode=INPUT_ERROR,
+            message='BLAST -taxids, -taxidlist, -negative_taxids, and -negative_taxidlist options '
+                    'are mutually exclusive, please use only one of them')
     taxids: List[int] = []
-    # -taxids was used
-    if is_taxids:
-        matches = re.findall(r'-taxids\s+([\d,]+)', blast_opts)
-
-        if not matches:
-            raise UserReportError(returncode=INPUT_ERROR,
-                                  message='No taxonomy ids found for the -taxids BLAST option')
-
-        if len(matches) > 1:
-            raise UserReportError(returncode=INPUT_ERROR,
-                                  message=f'BLAST option -taxids given more than once in "{blast_opts}"')
-        
-        for val in matches[0].split(','):
+    neg_prefix, opt_type, opt_val = matches[0]
+    if opt_type == 'taxids':
+        # -taxids or -negative_taxids was used
+        if not opt_val:
+            raise UserReportError(
+                returncode=INPUT_ERROR,
+                message=f'No taxonomy ids found for the -{neg_prefix}taxids BLAST option')
+        for val in opt_val.split(','):
             try:
                 taxids.append(int(val))
             except ValueError:
-                raise UserReportError(returncode=INPUT_ERROR,
-                                      message=f'"{val}" in "-taxids {matches[0]}" is an incorrect taxonomy id. Taxonomy ids are numerical.')
-                
-        retval = taxids
+                raise UserReportError(
+                    returncode=INPUT_ERROR,
+                    message=f'"{val}" in "-{neg_prefix}taxids {opt_val}" is an incorrect taxonomy id. '
+                            'Taxonomy ids are positive integers.')
+            
     else:
-        # -taxidlist was used
-        matches = re.findall(r'-taxidlist\s+(\S+)', blast_opts)
-
-        if not matches:
-            raise UserReportError(returncode=INPUT_ERROR,
-                                  message='A taxonomy id list file is missing for the -taxidlist BLAST option')
-
-        if len(matches) > 1:
-            raise UserReportError(returncode=INPUT_ERROR,
-                                  message=f'BLAST option -taxidlist given more than once in "{blast_opts}"')
-        
-        filename = matches[0]
+        # -taxidlist or -negative_taxidlistwas used
+        filename = opt_val
+        if not filename:
+            raise UserReportError(
+                returncode=INPUT_ERROR,
+                message=f'A taxonomy id list file is missing for the -{neg_prefix}taxidlist BLAST option')
         try:
             with open(filename) as f:
                 for line in f:
+                    val = line.rstrip()
                     # skip empty lines
-                    if not line.rstrip():
+                    if not val:
                         continue
                     try:
-                        taxids.append(int(line.rstrip()))
+                        taxids.append(int(val))
                     except ValueError:
-                        raise UserReportError(returncode=INPUT_ERROR,
-                                              message=f'"{line.rstrip()}" is an incorrect taxonomy id. Taxonomy ids are positive integers.')
+                        raise UserReportError(
+                            returncode=INPUT_ERROR,
+                            message=f'"{val}" is an incorrect taxonomy id. '
+                                    'Taxonomy ids are positive integers.')
         except FileNotFoundError:
-            raise UserReportError(returncode=INPUT_ERROR,
-                                  message=f'File "{filename}" with tax id list was not found')
+            raise UserReportError(
+                returncode=INPUT_ERROR,
+                message=f'File "{filename}" with tax id list was not found')
         if not taxids:
-            raise UserReportError(returncode=INPUT_ERROR,
-                                  message=f'No taxonomy ids found in file "{filename}"')
-        retval = taxids
-    return retval
+            raise UserReportError(
+                returncode=INPUT_ERROR,
+                message=f'No taxonomy ids found in file "{filename}"')
+    return taxids
