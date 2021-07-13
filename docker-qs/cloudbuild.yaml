@@ -1,0 +1,16 @@
+steps:
+- name: 'gcr.io/cloud-builders/docker'
+  args: ['build', '--build-arg', 'version=${_VERSION}', '-t', 'gcr.io/$PROJECT_ID/${_IMG}:${_VERSION}', '.']
+- name: 'gcr.io/cloud-builders/docker'
+  args: ['tag', 'gcr.io/${PROJECT_ID}/${_IMG}:${_VERSION}', 'gcr.io/${PROJECT_ID}/${_IMG}:latest']
+
+substitutions:
+  _IMG:
+  _VERSION:
+
+images: 
+  - 'gcr.io/${PROJECT_ID}/${_IMG}:${_VERSION}'
+  - 'gcr.io/${PROJECT_ID}/${_IMG}:latest'
+
+tags:
+- '${_VERSION}'

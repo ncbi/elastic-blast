@@ -46,6 +46,7 @@ from .constants import ELB_DFLT_BLASTDB_SOURCE, INPUT_ERROR, CSP
 from .constants import ELB_DFLT_AWS_DISK_TYPE, ELB_DFLT_AWS_PD_SIZE, ELB_DFLT_AWS_PROVISIONED_IOPS
 from .constants import ELB_DFLT_AWS_SPOT_BID_PERCENTAGE
 from .constants import APP_STATE_RESULTS_MD5, SYSTEM_MEMORY_RESERVE
+from .constants import ELB_S3_PREFIX, ELB_GCS_PREFIX
 from .util import UserReportError
 from .filehelper import parse_bucket_name_key
 from typing import List
@@ -148,7 +149,7 @@ def configure(args: argparse.Namespace) -> configparser.ConfigParser:
     # of some functionality without credentials
     if hasattr(args, 'subcommand') and args.subcommand == 'run-summary' and hasattr(args, 'read_logs') and args.read_logs:
         retval[CFG_CLOUD_PROVIDER][CFG_CP_AWS_REGION] = 'us-east-1'
-        retval[CFG_BLAST][CFG_BLAST_RESULTS] = 's3://dummy'
+        retval[CFG_BLAST][CFG_BLAST_RESULTS] = os.path.join(ELB_S3_PREFIX, 'dummy')
 
     if hasattr(args, 'dry_run') and args.dry_run:
         retval[CFG_CLUSTER][CFG_CLUSTER_DRY_RUN] = 'yes'
@@ -196,7 +197,7 @@ def validate_cloud_storage_object_uri(uri: str) -> None:
     Only bucket name is checked, because object key can be almost anything."""
     # get bucket name
     bucket, _ = parse_bucket_name_key(uri)
-    if uri.startswith('s3://'):
+    if uri.startswith(ELB_S3_PREFIX):
         # S3 bucket name must contain only lowercase letters, numbers, dots,
         # and dashes, start and end with a letter or a number, and be between
         # 3 and 63 characters long;
@@ -205,11 +206,11 @@ def validate_cloud_storage_object_uri(uri: str) -> None:
         if re.fullmatch(r'^[a-z0-9][a-zA-Z0-9._-]{1,61}[a-z0-9]$|^arn:(aws).*:s3:[a-z-0-9]+:[0-9]{12}:accesspoint[/:][a-zA-Z0-9-]{1,63}$|^arn:(aws).*:s3-outposts:[a-z-0-9]+:[0-9]{12}:outpost[/:][a-zA-Z0-9-]{1,63}[/:]accesspoint[/:][a-zA-Z0-9-]{1,63}$', bucket) is None:
             raise ValueError('An S3 bucket name must contain only lowercase letters, numbers, dashes (-), and dots (.), must begin and end with a letter or a number, and must be between 3 and 63 characters long.')
     # separate test for object key
-    elif uri.startswith('gs://'):
+    elif uri.startswith(ELB_GCS_PREFIX):
         # GS bucket name must contain only lowercase letters, numbers, dashes,
         # and underscores, and start and end with a letter or a number
         # https://cloud.google.com/storage/docs/naming-buckets
         if re.fullmatch(r'^[a-z0-9][a-z0-9._-]+[a-z0-9]$', bucket) is None:
             raise ValueError('A GS bucket name must contain only lowercase letters, numbers, dashes (-), underscores (_), and dots (.)')
     else:
-        raise ValueError(f'An object URI must start with gs:// or s3://')
+        raise ValueError(f'An object URI must start with {ELB_GCS_PREFIX} or ${ELB_S3_PREFIX}')

@@ -70,6 +70,7 @@ from .constants import CFG_TIMEOUT_BLAST_K8S_JOB
 from .constants import INPUT_ERROR, ELB_NOT_INITIALIZED_MEM, ELB_NOT_INITIALIZED_NUM
 from .constants import GCP_MAX_LABEL_LENGTH, AWS_MAX_TAG_LENGTH
 from .constants import SYSTEM_MEMORY_RESERVE
+from .constants import ELB_S3_PREFIX, ELB_GCS_PREFIX
 from .util import validate_gcp_string, validate_aws_region
 from .util import validate_gke_cluster_name, ElbSupportedPrograms
 from .util import get_query_batch_size
@@ -280,7 +281,7 @@ class BlastConfig(ConfigParserToDataclassMapper):
             return
 
         for query_file in self.queries_arg.split():
-            if query_file.startswith('s3://') or query_file.startswith('gs://'):
+            if query_file.startswith(ELB_S3_PREFIX) or query_file.startswith(ELB_GCS_PREFIX):
                 try:
                     validate_cloud_storage_object_uri(query_file)
                 except ValueError as err:
@@ -624,11 +625,11 @@ class ElasticBlastConfig:
         self.cluster.validate(errors, task)
 
         if self.cloud_provider.cloud == CSP.GCP and \
-               not self.cluster.results.startswith('gs://'):
-            errors.append('Results bucket must start with "gs://"')
+               not self.cluster.results.startswith(ELB_GCS_PREFIX):
+            errors.append(f'Results bucket must start with "{ELB_GCS_PREFIX}"')
         elif self.cloud_provider.cloud == CSP.AWS and \
-             not self.cluster.results.startswith('s3://'):
-            errors.append('Results bucket must start with "s3://"')
+             not self.cluster.results.startswith(ELB_S3_PREFIX):
+            errors.append(f'Results bucket must start with "{ELB_S3_PREFIX}"')
 
         if task == ElbCommand.SUBMIT:
             # validate number of CPUs and memory limit for searching a batch

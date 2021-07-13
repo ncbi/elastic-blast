@@ -32,6 +32,8 @@ class CSP(Enum):
     """ Defines the supported Cloud Service Providers """
     GCP = auto()
     AWS = auto()
+    def __repr__(self):
+        return self.name
 
 
 class ElbCommand(Enum):
@@ -67,6 +69,11 @@ ELB_DFLT_AWS_MACHINE_TYPE = 'm5.8xlarge'
 ELB_DFLT_NUM_NODES = 1
 ELB_DFLT_MIN_NUM_NODES = 1
 
+ELB_S3_PREFIX = 's3://'
+ELB_GCS_PREFIX = 'gs://'
+ELB_HTTP_PREFIX = 'http'
+ELB_FTP_PREFIX = 'ftp://'
+
 ELB_UNKNOWN_NUMBER_OF_QUERY_SPLITS = -1
 
 # Ancillary ElasticBLAST "directories" and files in output bucket
@@ -75,6 +82,7 @@ ELB_METADATA_DIR = 'metadata'
 ELB_STATE_DISK_ID_FILE = 'disk-id.txt'
 ELB_LOG_DIR = 'logs'
 ELB_TAXIDLIST_FILE = 'taxidlist.txt'
+ELB_META_CONFIG_FILE = 'elastic-blast-config.ini'
 ELB_AWS_JOB_IDS = 'job-ids.json'
 ELB_AWS_QUERY_LENGTH = 'query_length.txt'
 
@@ -121,18 +129,37 @@ INTERRUPT_ERROR = 9
 NOT_READY_ERROR = 10
 UNKNOWN_ERROR = 255
 
-MOL_TYPE_UNKNOWN = 'unknown'
-MOL_TYPE_PROT = 'prot'
-MOL_TYPE_NUCL = 'nucl'
+class MolType(Enum):
+    """Sequence molecular type"""
+    PROTEIN = 'prot'
+    NUCLEOTIDE = 'nucl'
+    UNKNOWN = 'unknown'
 
+    @classmethod
+    def valid_choices(self):
+        """ Return a list of valid choices, suitable for the choices argument in argparse"""
+        return [str(self.PROTEIN), str(self.NUCLEOTIDE)]
+
+    def __str__(self):
+        """Convert value to a string"""
+        return self.value
+
+
+ELB_DFLT_GCP_REGION = 'us-east4'
 ELB_DFLT_AWS_REGION = 'us-east-1'
-ELB_DOCKER_IMAGE = 'ncbi/elb:0.0.27'
+
+ELB_DOCKER_IMAGE = 'ncbi/elb:0.0.28'
 ELB_DFLT_AWS_DISK_TYPE = 'gp2'
 # minimal size of gp2 disk which triggers fastest speed
 ELB_DFLT_AWS_PD_SIZE = '334G'
 # Only relevant if the disk-type is set to io2
 ELB_DFLT_AWS_PROVISIONED_IOPS = '2000'
 ELB_DFLT_AWS_SPOT_BID_PERCENTAGE = '100'
+
+# Work in progress
+ELB_QS_DOCKER_IMAGE_GCP = 'grc.io/ncbi-sandbox-blast/ncbi/elastic-blast-query-splitting:0.1.4'
+# FIXME: this is temporary until we upload it to AWS ECR
+ELB_QS_DOCKER_IMAGE_AWS = 'ncbi/elastic-blast-query-splitting:latest'
 
 # Config sections
 CFG_CLOUD_PROVIDER = 'cloud-provider'

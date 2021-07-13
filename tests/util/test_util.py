@@ -32,7 +32,7 @@ import re
 from elastic_blast import util
 from elastic_blast.constants import ELB_DFLT_GCP_MACHINE_TYPE
 from elastic_blast.constants import GCP_MAX_LABEL_LENGTH, AWS_MAX_TAG_LENGTH
-from elastic_blast.constants import ElbCommand
+from elastic_blast.constants import ElbCommand, MolType
 from elastic_blast.util import get_query_batch_size
 from elastic_blast.util import convert_memory_to_mb, get_blastdb_size, sanitize_aws_batch_job_name
 from elastic_blast.util import safe_exec, SafeExecError, convert_disk_size_to_gb
@@ -43,6 +43,13 @@ from elastic_blast.elb_config import ElasticBlastConfig
 from elastic_blast.base import InstanceProperties
 import pytest
 from tests.utils import MockedCompletedProcess
+
+
+def test_mol_type():
+    choices = MolType.valid_choices()
+    assert(len(choices) == 2)
+    assert('prot' in choices)
+    assert('nucl' in choices)
 
 
 class ElbLibTester(unittest.TestCase):

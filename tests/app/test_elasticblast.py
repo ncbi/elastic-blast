@@ -19,7 +19,7 @@
 # Please cite NCBI in any work or product based on this material.
 
 """
-Application tests for elastic-blast.py
+Application tests for elastic-blast
 
 Author: Greg Boratyn boratyng@ncbi.nlm.nih.gov
 """
@@ -52,7 +52,7 @@ INI_INVALID_MACHINE_TYPE_GCP = os.path.join(TEST_DATA_DIR, 'invalid-machine-type
 INI_INVALID_MEM_LIMIT = os.path.join(TEST_DATA_DIR, 'invalid-mem-req.ini')
 INI_BLAST_OPT_NO_CLOSING_QUOTE = os.path.join(TEST_DATA_DIR, 'invalid-blast-opt-no-closing-quote.ini')
 INI_VALID = os.path.join(TEST_DATA_DIR, 'good_conf.ini')
-ELB_EXENAME = 'elastic-blast.py'
+ELB_EXENAME = 'elastic-blast'
 
 
 def run_elastic_blast(cmd: List[str]) -> subprocess.CompletedProcess:
@@ -71,7 +71,7 @@ def run_elastic_blast(cmd: List[str]) -> subprocess.CompletedProcess:
 ## Mocked tests
 
 def test_no_cmd_params(gke_mock):
-    """Test that running elastic-blast.py with no parameters produces an error
+    """Test that running elastic-blast with no parameters produces an error
     message, appropriate exit code, and no python tracepack information"""
     p = run_elastic_blast([])
     msg = p.stderr.decode()
@@ -241,8 +241,9 @@ def test_wrong_input_query(gke_mock):
 
 def test_wrong_results_bucket(gke_mock):
     p = run_elastic_blast(['submit', '--query', os.path.join(TEST_DATA_DIR, 'query.fa'), '--db', 'nt', '--cfg', os.path.join(TEST_DATA_DIR, 'bad_bucket_conf.ini')])
-    assert p.returncode == constants.PERMISSIONS_ERROR
     msg = p.stderr.decode()
+    print(msg)
+    assert p.returncode == constants.PERMISSIONS_ERROR
     assert 'Traceback' not in msg
     assert 'Cannot write into bucket gs://blast-db' in msg
 
@@ -304,7 +305,7 @@ def test_interrupt_error():
 
 
 def test_dependency_error():
-    p = safe_exec('which elastic-blast.py')
+    p = safe_exec('which elastic-blast')
     exepath = p.stdout.decode()
     newpath = os.path.dirname(exepath)
     orig_exe_path = exepath
@@ -374,7 +375,7 @@ fi"""
 
         fn_config = os.path.join(TEST_DATA_DIR, 'cluster-error.ini')
 
-        # elastic-blast.py delete --cfg tests/app/data/cluster-error.ini --logfile stderr
+        # elastic-blast delete --cfg tests/app/data/cluster-error.ini --logfile stderr
         p = subprocess.run([ELB_EXENAME, 'delete',
             '--cfg', fn_config,
             '--logfile', 'stderr'],
@@ -386,7 +387,7 @@ fi"""
         assert 'ERROR' in msg
         assert 'is already being deleted' in msg
 
-        # elastic-blast.py submit --cfg tests/app/data/cluster-error.ini --logfile stderr
+        # elastic-blast submit --cfg tests/app/data/cluster-error.ini --logfile stderr
         p = subprocess.run([ELB_EXENAME, 'submit',
             '--cfg', fn_config,
             '--logfile', 'stderr'],
@@ -398,7 +399,7 @@ fi"""
         assert 'Previous instance of cluster' in msg
         assert 'is still STOPPING' in msg
 
-        # elastic-blast.py status --cfg tests/app/data/cluster-error.ini --loglevel DEBUG --logfile stderr
+        # elastic-blast status --cfg tests/app/data/cluster-error.ini --loglevel DEBUG --logfile stderr
         p = subprocess.run([ELB_EXENAME, 'status',
             '--cfg', fn_config,
             '--logfile', 'stderr'],

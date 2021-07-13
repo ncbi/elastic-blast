@@ -13,9 +13,10 @@ all:
 	bin/create-blastdb-metadata.py --version
 
 check: check_python
-	bin/create-blastdb-metadata.py --db tests/blastdb/testdb --dbtype prot --out testdb.json
-	cat testdb.json | jq -Mr '.' >/dev/null
-	rm testdb.json
+	${RM} -f testdb-prot-metadata.json
+	bin/create-blastdb-metadata.py --db tests/blastdb/testdb --dbtype prot
+	jq -Mr '.' testdb-prot-metadata.json
+	${RM} -f testdb-prot-metadata.json
 
 check_python:
 	python3 -m py_compile bin/create-blastdb-metadata.py
@@ -23,3 +24,4 @@ check_python:
 
 clean:
 	find . -name __pycache__ | xargs ${RM} -fr
+	${RM} -f testdb-prot-metadata.json

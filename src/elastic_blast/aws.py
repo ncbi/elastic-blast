@@ -49,11 +49,12 @@ from .util import get_usage_reporting
 from .util import UserReportError, sanitize_aws_batch_job_name
 from .constants import BLASTDB_ERROR, CLUSTER_ERROR, ELB_AWS_QUERY_LENGTH, ELB_UNKNOWN_NUMBER_OF_QUERY_SPLITS, PERMISSIONS_ERROR
 from .constants import ELB_QUERY_BATCH_DIR, ELB_METADATA_DIR, ELB_LOG_DIR
-from .constants import ELB_DOCKER_IMAGE, INPUT_ERROR
+from .constants import ELB_DOCKER_IMAGE, INPUT_ERROR, ELB_QS_DOCKER_IMAGE_AWS
 from .constants import DEPENDENCY_ERROR, TIMEOUT_ERROR
-from .constants import ELB_AWS_JOB_IDS
+from .constants import ELB_AWS_JOB_IDS, ELB_S3_PREFIX, ELB_GCS_PREFIX
 from .filehelper import parse_bucket_name_key
 from .aws_traits import get_machine_properties, create_aws_config, get_availability_zones_for
+from .object_storage_utils import write_to_s3
 from .base import DBSource
 from .elb_config import ElasticBlastConfig
 
@@ -62,6 +63,7 @@ CF_TEMPLATE = os.path.join(os.path.dirname(__file__), 'templates', 'elastic-blas
 # the order of job states reflects state transitions and is important for
 # ElasticBlastAws.get_job_ids method
 AWS_BATCH_JOB_STATES = ['SUBMITTED', 'PENDING', 'RUNNABLE', 'STARTING', 'RUNNING', 'SUCCEEDED', 'FAILED']
+SECONDS2SLEEP = 10
 
 def handle_aws_error(f):
     """ Defines decorator to consistently handle exceptions stemming from AWS API calls. """
@@ -136,6 +138,7 @@ class ElasticBlastAws:
         self._provide_subnets()
         self.cf_stack = None
         self.job_ids : List[str] = []
+        self.qs_job_id = None
 
         initialized = True
 
@@ -187,7 +190,8 @@ class ElasticBlastAws:
                 {'ParameterKey': 'MachineType', 'ParameterValue': instance_type},
                 {'ParameterKey': 'DiskType', 'ParameterValue': disk_type},
                 {'ParameterKey': 'DiskSize', 'ParameterValue': str(disk_size)},
-                {'ParameterKey': 'Image', 'ParameterValue': ELB_DOCKER_IMAGE},
+                {'ParameterKey': 'DockerImageBlast', 'ParameterValue': ELB_DOCKER_IMAGE},
+                {'ParameterKey': 'DockerImageQuerySplitting', 'ParameterValue': ELB_QS_DOCKER_IMAGE_AWS},
                 {'ParameterKey': 'RandomToken', 'ParameterValue': token}
             ]
             if self.vpc_id and self.vpc_id.lower() != 'none':
@@ -287,24 +291,32 @@ class ElasticBlastAws:
         # get job queue name and job definition name from cloudformation stack
         # outputs
         self.job_queue_name = None
-        self.job_definition_name = None
+        self.blast_job_definition_name = None
+        self.qs_job_definition_name = None
         if not self.dry_run and self.cf_stack and \
                self.cf_stack.stack_status == 'CREATE_COMPLETE':
             for output in self.cf_stack.outputs:
                 if output['OutputKey'] == 'JobQueueName':
                     self.job_queue_name = output['OutputValue']
-                elif output['OutputKey'] == 'JobDefinitionName':
-                    self.job_definition_name = output['OutputValue']
+                elif output['OutputKey'] == 'BlastJobDefinitionName':
+                    self.blast_job_definition_name = output['OutputValue']
+                elif output['OutputKey'] == 'QuerySplittingJobDefinitionName':
+                    self.qs_job_definition_name = output['OutputValue']
 
             if self.job_queue_name:
                 logging.debug(f'JobQueueName: {self.job_queue_name}')
             else:
                 raise UserReportError(returncode=DEPENDENCY_ERROR, message='JobQueueName could not be read from cloudformation stack')
 
-            if self.job_definition_name:
-                logging.debug(f'JobDefinitionName: {self.job_definition_name}')
+            if self.blast_job_definition_name:
+                logging.debug(f'BlastJobDefinitionName: {self.blast_job_definition_name}')
             else:
-                raise UserReportError(returncode=DEPENDENCY_ERROR, message='JobDefinitionName could not be read from cloudformation stack')
+                raise UserReportError(returncode=DEPENDENCY_ERROR, message='BlastJobDefinitionName could not be read from cloudformation stack')
+
+            if self.qs_job_definition_name:
+                logging.debug(f'QuerySplittingJobDefinitionName: {self.qs_job_definition_name}')
+            else:
+                raise UserReportError(returncode=DEPENDENCY_ERROR, message='QuerySplittingJobDefinitionName could not be read from cloudformation stack')
 
     def _provide_subnets(self):
         """ Read subnets from config file or if not set try to get them from default VPC """
@@ -491,7 +503,7 @@ class ElasticBlastAws:
         """
         db = self.cfg.blast.db
         db_path = 'None'
-        if db.startswith('s3://'):
+        if db.startswith(ELB_S3_PREFIX):
             #TODO: support tar.gz database
             bname, key = parse_bucket_name_key(db)
             if not self.dry_run:
@@ -504,18 +516,104 @@ class ElasticBlastAws:
                                           message=f'{db} is not a valid BLAST database')
             db_path = os.path.dirname(db)
             db = os.path.basename(db)
-        elif db.startswith('gs://'):
+        elif db.startswith(ELB_GCS_PREFIX):
             raise UserReportError(returncode=BLASTDB_ERROR,
                                   message=f'User database should be in the AWS S3 bucket')
 
         return db, db_path, sanitize_aws_batch_job_name(db)
 
+
     @handle_aws_error
-    def submit(self, query_batches: List[str], cloud_query_split: bool) -> None:
+    def split_query(self, query_files: List[str]) -> None:
+        """ Submit the query sequences for splitting to the cloud.
+            Parameters:
+                query_files     - list files containing query sequence data to split
+
+        Current implementation:
+        Submit AWS Batch query splitting job, wait for results, then submit
+        AWS Batch BLAST jobs. Downside: for long query splitting jobs, user
+        still waits for a long time while query splitting is happening
+
+        Ideas on how to improve this
+        1. Refactor AWS Batch BLAST job submission code so that it can live in
+           the same docker image as the query splitting code
+        2. After query split has completed, that same docker image
+           submits AWS Batch BLAST jobs, and
+           saves the job IDs on the results bucket
+
+        A more decoupled approach: elastic-blast submit creates 2 AWS Batch jobs:
+        1. After the query splitting job is started on the cloud
+        2. Start another job, that depends on the query splitting job
+           This job submits AWS Batch BLAST jobs on the cloud
+          (and in the future k8s jobs also) and saves the job IDs to the results bucket
+
+        """
+        overrides: Dict[str, Any] = {
+            'vcpus': self.cfg.cluster.num_cpus,
+            'memory': int(convert_memory_to_mb(self.cfg.blast.mem_limit))
+        }
+        # FIXME: handle multiple files by concatenating them?
+        parameters = {'input': query_files[0],
+                      'batchlen': str(self.cfg.blast.batch_len),
+                      'output': self.results_bucket}
+        logging.debug(f'Query splitting job definition container overrides {overrides}')
+        logging.debug(f"Query splitting job definition parameters {parameters}")
+        jname = f'elasticblast-{self.owner}-query-split'
+        if not self.dry_run:
+            logging.debug(f"Launching query splitting job named {jname}")
+            job = self.batch.submit_job(jobQueue=self.job_queue_name,
+                                        jobDefinition=self.qs_job_definition_name,
+                                        jobName=jname,
+                                        parameters=parameters,
+                                        containerOverrides=overrides)
+            self.qs_job_id = job['jobId']
+            logging.info(f"Submitted AWS Batch job {job['jobId']} to split query {query_files[0]}")
+            self.upload_job_ids()
+        else:
+            logging.debug(f'dry-run: would have submitted {jname}')
+
+
+    @handle_aws_error
+    def wait_for_cloud_query_split(self) -> None:
+        """ Interim implementation of query splitting on the cloud using a dual
+            AWS Batch job approach
+        """
+        if self.dry_run:
+            return
+        if not self.qs_job_id:
+            msg = 'Query splitting job was not submitted!'
+            logging.fatal(msg)
+            raise RuntimeError(msg)
+
+        while True:
+            job_batch = self.batch.describe_jobs(jobs=[self.qs_job_id])['jobs']
+            job_status = job_batch[0]['status']
+            logging.debug(f'Query splitting job status {job_status} for {self.qs_job_id}')
+            if job_status == 'SUCCEEDED':
+                break
+            if job_status == 'FAILED':
+                batch_of_jobs = self.batch.list_jobs(jobQueue=self.job_queue_name, jobStatus='FAILED')
+                job = batch_of_jobs['jobSummaryList'][0]
+                logging.debug(f'Failed query splitting job {pformat(job)}')
+                failure_details: str = ''
+                if 'container' in job:
+                    container = job['container']
+                    for k in ['exitCode', 'reason']:
+                        if k in container:
+                            failure_details += f'Container{k[0].upper()+k[1:]}: {container[k]} '
+                msg = f'Query splitting on the cloud failed (jobId={self.qs_job_id})'
+                if failure_details: msg += failure_details
+                logging.fatal(msg)
+                raise UserReportError(CLUSTER_ERROR, msg)
+            time.sleep(SECONDS2SLEEP)
+
+
+    @handle_aws_error
+    def submit(self, query_batches: List[str], one_stage_cloud_query_split: bool) -> None:
         """ Submit query batches to cluster, converts AWS exceptions to UserReportError
             Parameters:
                 query_batches     - list of bucket names of queries to submit
-                cloud_query_split - do the query split in the cloud """
+                one_stage_cloud_query_split - do the query split in the cloud """
         self.job_ids = []
 
         prog = self.cfg.blast.program
@@ -549,16 +647,14 @@ class ElasticBlastAws:
         logging.debug(f'Job definition container overrides {overrides}')
 
         num_parts = ELB_UNKNOWN_NUMBER_OF_QUERY_SPLITS
-        if cloud_query_split:
+        if one_stage_cloud_query_split:
             num_parts = len(query_batches)
             logging.debug(f'Performing one stage cloud query split into {num_parts} parts')
-        else:
-            logging.debug(f'Performing query split on the local host')
         parameters['num-parts'] = str(num_parts)
 
         # For testing purposes if there is no search requested
         # we can use limited number of jobs
-        if no_search and cloud_query_split:
+        if no_search and one_stage_cloud_query_split:
             query_batches = query_batches[:100]
         for i, q in enumerate(query_batches):
             parameters['query-batch'] = q
@@ -577,11 +673,19 @@ class ElasticBlastAws:
                 overrides['environment'] = [{'name': 'BLAST_USAGE_REPORT',
                                              'value': 'false'}]
             if not self.dry_run:
-                job = self.batch.submit_job(jobQueue=self.job_queue_name,
-                                            jobDefinition=self.job_definition_name,
-                                            jobName=jname,
-                                            parameters=parameters,
-                                            containerOverrides=overrides)
+                if self.qs_job_id:
+                    job = self.batch.submit_job(jobQueue=self.job_queue_name,
+                                                jobDefinition=self.blast_job_definition_name,
+                                                jobName=jname,
+                                                parameters=parameters,
+                                                containerOverrides=overrides,
+                                                dependsOn=[{'jobId': self.qs_job_id}])
+                else:
+                    job = self.batch.submit_job(jobQueue=self.job_queue_name,
+                                                jobDefinition=self.blast_job_definition_name,
+                                                jobName=jname,
+                                                parameters=parameters,
+                                                containerOverrides=overrides)
                 self.job_ids.append(job['jobId'])
                 logging.debug(f"Job definition parameters for job {job['jobId']} {parameters}")
                 logging.info(f"Submitted AWS Batch job {job['jobId']} with query {q}")
@@ -618,18 +722,19 @@ class ElasticBlastAws:
 
 
     def upload_job_ids(self) -> None:
-        """Save batch job ids in a metadata file in S3"""
+        """Save AWS Batch job ids in a metadata file in S3"""
         bucket_name, key = parse_bucket_name_key(f'{self.results_bucket}/{ELB_METADATA_DIR}/{ELB_AWS_JOB_IDS}')
         bucket = self.s3.Bucket(bucket_name)
-        bucket.put_object(Body=json.dumps(self.job_ids).encode(), Key=key)
+        if len(self.job_ids):
+            bucket.put_object(Body=json.dumps(self.job_ids).encode(), Key=key)
+        elif self.qs_job_id:
+            bucket.put_object(Body=json.dumps([self.qs_job_id]).encode(), Key=key)
 
 
     def upload_query_length(self, query_length: int) -> None:
         """Save query length in a metadata file in S3"""
-        if self.dry_run: return
-        bucket_name, key = parse_bucket_name_key(f'{self.results_bucket}/{ELB_METADATA_DIR}/{ELB_AWS_QUERY_LENGTH}')
-        bucket = self.s3.Bucket(bucket_name)
-        bucket.put_object(Body=str(query_length).encode(), Key=key)
+        if query_length <= 0: return
+        write_to_s3(os.path.join(self.results_bucket, ELB_METADATA_DIR, ELB_AWS_QUERY_LENGTH), str(query_length), self.boto_cfg)
 
 
     def check_status(self, extended=False) -> Tuple[Dict[str, int], str]:
@@ -770,7 +875,7 @@ class ElasticBlastAws:
                 ndone = status['succeeded'] + status['failed']
                 nrunning = status['running']
                 logging.debug(f'njobs={njobs} nrunning={nrunning} ndone={ndone}')
-                time.sleep(3)
+                time.sleep(SECONDS2SLEEP)
                 status = self.check_status()
 
 

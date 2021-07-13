@@ -3,6 +3,7 @@
   "clusterInfo": {
     "provider": "AWS",
     "numMachines": 1,
+    "name": "elasticblast-joukovv-d484acbac",
     "numVCPUsPerMachine": 32,
     "RamPerMachine": 131072,
     "machineType": "m5.8xlarge"

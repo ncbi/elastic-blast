@@ -39,7 +39,7 @@ from functools import reduce
 from collections import namedtuple
 from .gcp_traits import get_machine_properties
 from typing import List, Union, Callable
-from .constants import MOL_TYPE_PROT, MOL_TYPE_NUCL, MOL_TYPE_UNKNOWN, GCS_DFLT_BUCKET
+from .constants import MolType, GCS_DFLT_BUCKET
 from .constants import DEPENDENCY_ERROR, AWS_MAX_TAG_LENGTH, GCP_MAX_LABEL_LENGTH
 from .constants import CSP, AWS_MAX_JOBNAME_LENGTH
 from .base import DBSource
@@ -75,11 +75,11 @@ class ElbSupportedPrograms:
         if p not in self._programs:
             raise NotImplementedError(f'Invalid BLAST program "{program}"')
 
-        retval = MOL_TYPE_UNKNOWN
+        retval = str(MolType.UNKNOWN)
         if p == 'blastn' or p == 'megablast' or p == 'tblastn' or p == 'tblastx':
-            retval = MOL_TYPE_NUCL
+            retval = str(MolType.NUCLEOTIDE)
         elif re.search(r'^blast[px]$', p) or re.search(r'^(psi|rps)blast$', p) or p == 'rpstblastn':
-            retval = MOL_TYPE_PROT
+            retval = str(MolType.PROTEIN)
         else:
             raise NotImplementedError(f'Invalid BLAST program "{program}"')
         return retval
@@ -475,7 +475,7 @@ def clean_up(clean_up_stack: List[Callable]) -> List[str]:
     return messages
 
 
-def get_usage_reporting():
+def get_usage_reporting() -> bool:
     """ Use environment variable to get Usage Reporting status 
     as described in https://www.ncbi.nlm.nih.gov/books/NBK563686
     """

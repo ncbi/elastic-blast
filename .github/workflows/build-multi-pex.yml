@@ -21,7 +21,7 @@ jobs:
       - name: Build PEX file
         run: |
             pip3 install -r requirements/test.txt
-            pex --python-shebang='/usr/bin/env python3' --disable-cache . -r requirements/base.txt --python=python${{ matrix.python-version }} -c elastic-blast.py -o elastic-blast
+            pex --python-shebang='/usr/bin/env python3' --disable-cache . -r requirements/base.txt --python=python${{ matrix.python-version }} -c elastic-blast -o elastic-blast
             ./elastic-blast --version
             ls -l elastic-blast
             md5sum elastic-blast > elastic-blast.md5
@@ -53,7 +53,7 @@ jobs:
       - name: Build PEX file
         run: |
             pip3 install -r requirements/test.txt
-            pex --python-shebang='/usr/bin/env python3' --disable-cache . -r requirements/base.txt --python=python${{ matrix.python-version }} -c elastic-blast.py -o elastic-blast${{ matrix.python-version }}
+            pex --python-shebang='/usr/bin/env python3' --disable-cache . -r requirements/base.txt --python=python${{ matrix.python-version }} -c elastic-blast -o elastic-blast${{ matrix.python-version }}
             ./elastic-blast${{ matrix.python-version }} --version
             ls -l ./elastic-blast${{ matrix.python-version }}
             md5sum elastic-blast${{ matrix.python-version }} > elastic-blast${{ matrix.python-version }}.md5

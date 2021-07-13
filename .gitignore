@@ -27,12 +27,11 @@ total_count
 .tox/
 htmlcov/
 .coverage*
-elb-cost
-elb-run-summary
-blast-tuner
+/elb-cost
+/blast-tuner
 tags
 cscope.*
-elastic-blast
+/elastic-blast
 elastic-blast3.*
 kubeconfig.yaml
 creds.sh

@@ -37,11 +37,40 @@ import logging
 import urllib.request
 from string import digits
 from random import sample
-from typing import Dict, IO, Tuple, Iterable, Generator, TextIO
+from typing import Dict, IO, Tuple, Iterable, Generator, TextIO, List
 
 import boto3  # type: ignore
 from botocore.exceptions import ClientError  # type: ignore
+from botocore.config import Config  # type: ignore
+from .base import QuerySplittingResults
 from .util import safe_exec, SafeExecError
+from .constants import ELB_METADATA_DIR, ELB_AWS_QUERY_LENGTH, ELB_QUERY_BATCH_DIR
+from .constants import ELB_S3_PREFIX, ELB_GCS_PREFIX, ELB_FTP_PREFIX, ELB_HTTP_PREFIX
+
+
+def harvest_query_splitting_results(bucket_name: str, dry_run: bool = False, boto_cfg: Config = None) -> QuerySplittingResults:
+    """ Retrives the results for query splitting from bucket, used in 2-stage cloud
+    query splitting """
+    qlen = 0
+    query_batches : List[str] = []
+    if dry_run:
+        logging.debug(f'dry-run: would have retrieved query splitting results from {bucket_name}')
+        return QuerySplittingResults(query_length=qlen, query_batches=query_batches)
+
+    if bucket_name.startswith('s3://'):
+        qlen_file = os.path.join(bucket_name, ELB_METADATA_DIR, ELB_AWS_QUERY_LENGTH)
+        qbatches = os.path.join(bucket_name, ELB_QUERY_BATCH_DIR)
+        with open_for_read(qlen_file) as ql:
+            qlen = int(ql.read())
+        bucket, key = parse_bucket_name_key(bucket_name)
+        s3 = boto3.resource('s3') if boto_cfg == None else boto3.resource('s3', config=boto_cfg)
+        s3_bucket = s3.Bucket(bucket)
+        for obj in s3_bucket.objects.filter(Prefix=key):
+            query_batches.append(os.path.join(ELB_S3_PREFIX, s3_bucket.name, obj.key))
+    else:
+        raise NotImplementedError(f'Harvesting query splitting results from {bucket} not supported')
+
+    return QuerySplittingResults(query_length=qlen, query_batches=query_batches)
 
 
 def upload_file_to_gcs(filename: str, gcs_location: str, dry_run: bool = False) -> None:
@@ -69,14 +98,14 @@ def copy_to_bucket(dry_run: bool = False):
     for bucket_key in list(bucket_temp_dirs.keys()):
         tempdir = bucket_temp_dirs[bucket_key]
         # gsutil -mq cp tempdir/* bucket_key/
-        if bucket_key.startswith('gs:'):
+        if bucket_key.startswith(ELB_GCS_PREFIX):
             bucket_dir = bucket_key + ('/' if bucket_key[-1] != '/' else '')
             cmd = ['gsutil', '-mq', 'cp', '-r', "%s/*" % tempdir, bucket_dir]
             if dry_run:
                 logging.info(cmd)
             else:
                 safe_exec(cmd)
-        elif bucket_key.startswith('s3:'):
+        elif bucket_key.startswith(ELB_S3_PREFIX):
             if dry_run:
                 logging.info(f'Copy to bucket prefix {bucket_key}')
             else:
@@ -89,7 +118,7 @@ def copy_to_bucket(dry_run: bool = False):
                     else:
                         full_name = fn
                     perc_done = i / num_files * 100.
-                    logging.debug(f'Uploading {os.path.join(tempdir, fn)} to s3://{bucket_name}/{full_name} file # {i} of {num_files} {perc_done:.2f}% done')
+                    logging.debug(f'Uploading {os.path.join(tempdir, fn)} to {ELB_S3_PREFIX}{bucket_name}/{full_name} file # {i} of {num_files} {perc_done:.2f}% done')
                     bucket.upload_file(os.path.join(tempdir, fn), full_name)
         else:
             raise ValueError(f'Incorrect bucket prefix {bucket_key}')
@@ -124,7 +153,7 @@ def check_dir_for_write(dirname: str, dry_run=False) -> None:
         raises PermissionError if write is not possible
     """
     # GS
-    if dirname.startswith('gs:'):
+    if dirname.startswith(ELB_GCS_PREFIX):
         test_file_name = os.path.join(dirname, random_filename())
         if dry_run:
             logging.info(f'echo test|gsutil cp - {test_file_name}')
@@ -140,7 +169,7 @@ def check_dir_for_write(dirname: str, dry_run=False) -> None:
             raise PermissionError(e.returncode, e.message)
         return
     # AWS
-    elif dirname.startswith('s3:'):
+    elif dirname.startswith(ELB_S3_PREFIX):
         # TODO: implement the write test, see EB-491
         return
     # Local file system
@@ -155,12 +184,12 @@ def check_dir_for_write(dirname: str, dry_run=False) -> None:
 
 
 def open_for_write(fname):
-    """ Open file on either local (no prefix), GS (gs:// prefix), or AWS S3 (s3://)
+    """ Open file on either local (no prefix), GCS, or AWS S3
         filesystem for write in text mode. Postpones actual copy to buckets until
         copy_to_bucket is called.
     """
     global bucket_temp_dirs
-    if fname.startswith('gs:') or fname.startswith('s3:'):
+    if fname.startswith(ELB_GCS_PREFIX) or fname.startswith(ELB_S3_PREFIX):
         # for the same gs path open files in temp dir and put it into
         # bucket_temp_dirs dictionary, copy through to bucket in copy_to_bucket later
         last_slash = fname.rfind('/')
@@ -248,7 +277,7 @@ def check_for_read(fname: str, dry_run=False) -> None:
     """ Check that path on local, GS, AWS S3 or URL-available filesystem can be read from.
     raises FileNotFoundError if there is no such file
     """
-    if fname.startswith('gs:'):
+    if fname.startswith(ELB_GCS_PREFIX):
         cmd = f'gsutil -q stat {fname}'
         if dry_run:
             logging.info(cmd)
@@ -258,7 +287,7 @@ def check_for_read(fname: str, dry_run=False) -> None:
         except SafeExecError as e:
             raise FileNotFoundError(e.returncode, e.message)
         return
-    if fname.startswith('s3:'):
+    if fname.startswith(ELB_S3_PREFIX):
         if dry_run:
             logging.info(f'Open S3 file {fname}')
             return
@@ -270,7 +299,7 @@ def check_for_read(fname: str, dry_run=False) -> None:
         except ClientError as exn:
             raise FileNotFoundError(1, str(exn))
         return
-    if fname.startswith('http') or fname.startswith('ftp:'):
+    if fname.startswith(ELB_HTTP_PREFIX) or fname.startswith(ELB_FTP_PREFIX):
         if dry_run:
             logging.info(f'Open URL request for {fname}')
             return
@@ -285,11 +314,12 @@ def check_for_read(fname: str, dry_run=False) -> None:
         return
     open(fname, 'r')
 
+
 def get_length(fname: str, dry_run=False) -> int:
     """ Get length of a path on local, GS, AWS S3, or URL-available filesystem.
     raises FileNotFoundError if there is no such file
     """
-    if fname.startswith('gs:'):
+    if fname.startswith(ELB_GCS_PREFIX):
         cmd = f'gsutil stat {fname}'
         if dry_run:
             logging.info(cmd)
@@ -303,7 +333,7 @@ def get_length(fname: str, dry_run=False) -> int:
             raise FileNotFoundError(2, f'Length is not available for {fname}')
         except SafeExecError as e:
             raise FileNotFoundError(e.returncode, e.message)
-    if fname.startswith('s3:'):
+    if fname.startswith(ELB_S3_PREFIX):
         if dry_run:
             logging.info(f'Check length of S3 file {fname}')
             return 10000
@@ -315,7 +345,7 @@ def get_length(fname: str, dry_run=False) -> int:
             return obj.content_length
         except:
             raise FileNotFoundError(2, f'Length is not available for {fname}')
-    if fname.startswith('http') or fname.startswith('ftp:'):
+    if fname.startswith(ELB_HTTP_PREFIX) or fname.startswith(ELB_FTP_PREFIX):
         if dry_run:
             logging.info(f'Check length of URL {fname}')
             return 10000
@@ -338,7 +368,7 @@ def open_for_read(fname):
     tarred = re.match(r'^.*\.(tar(|\.gz|\.bz2)|tgz)$', fname)
     binary = gzipped or tarred
     mode = 'rb' if binary else 'rt'
-    if fname.startswith('gs:'):
+    if fname.startswith(ELB_GCS_PREFIX):
         proc = subprocess.Popen(['gsutil', 'cat', fname],
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
@@ -361,7 +391,7 @@ def open_for_read(fname):
         else:
             fileobj = io.TextIOWrapper(body)
         return fileobj
-    if fname.startswith('http') or fname.startswith('ftp:'):
+    if fname.startswith(ELB_HTTP_PREFIX) or fname.startswith(ELB_FTP_PREFIX):
         response = urllib.request.urlopen(fname)
         return unpack_stream(response, gzipped, tarred)
     # regular file
@@ -401,7 +431,7 @@ def parse_bucket_name_key(fname: str) -> Tuple[str, str]:
         for example above ('test-bucket', 'file_name.ext')
     """
     bare_name = fname
-    if fname.startswith('s3://') or fname.startswith('gs://'):
+    if fname.startswith(ELB_S3_PREFIX) or fname.startswith(ELB_GCS_PREFIX):
         bare_name = fname[5:]
     parts = bare_name.split('/')
     bucket = parts[0]

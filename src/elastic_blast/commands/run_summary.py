@@ -80,9 +80,9 @@ class Run:
             if var_present:
                 self.phase_names.append(phase)
 
-        vars = [ 'db_num_seq', 'db_length', 'query_length', 'instance_type',
-                'instance_vcpus', 'instance_ram', 'min_vcpus', 'max_vcpus',
-                'num_nodes']
+        vars = [ 'db_num_seq', 'db_length', 'query_length', 'cluster_name',
+                 'instance_type', 'instance_vcpus', 'instance_ram', 'min_vcpus',
+                 'max_vcpus', 'num_nodes']
         for var in vars:
             if hasattr(log_parser, var):
                 setattr(self, var, getattr(log_parser, var))
@@ -472,6 +472,7 @@ def _read_job_logs_aws(cfg, write_logs):
                     write_logs.write(f'num_nodes\t{aws_comp_env.num_nodes}\n')
             status = job['status']
             job_exit_code = JOB_EXIT_CODE_UNINITIALIZED
+            reason = ''
             if status == 'SUCCEEDED' or status == 'FAILED':
                 attempts = job['attempts']
                 if len(attempts) > 0:
@@ -485,11 +486,13 @@ def _read_job_logs_aws(cfg, write_logs):
                         parameters = job['parameters']
                     else:
                         job_exit_code = JOB_EXIT_CODE_FAILED_WITH_NO_EXIT_CODE
+                    if 'reason' in container:
+                        reason = '\t'+ container['reason']
                 else:
                     # Signal that job failed without attempts
                     job_exit_code = JOB_EXIT_CODE_FAILED_WITH_NO_ATTEMPT
             if write_logs:
-                write_logs.write(f'job\t{job_id}\t{job_exit_code}\t{status}\n')
+                write_logs.write(f'job\t{job_id}\t{job_exit_code}\t{status}{reason}\n')
             log_parser.init_job(job_exit_code)
             container = job['container']
             vcpus = container['vcpus']

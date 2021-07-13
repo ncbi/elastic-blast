@@ -43,6 +43,16 @@ class InstanceProperties:
     memory : float
 
 
+@dataclass(frozen=True)
+class QuerySplittingResults:
+    """ Results from query splitting operation """
+    query_length : int
+    query_batches : List[str]
+
+    def num_batches(self) -> int:
+        return len(self.query_batches)
+
+
 class PositiveInteger(int):
     """A subclass of int that only acceppts positive integers. The value is
     validated before object creation"""
@@ -115,14 +125,28 @@ class MemoryStr(str):
             mult *= 1024
         return float(self[:-1]) * mult
 
+    def asMB(self) -> float:
+        """Return the amount of memory in MB as float"""
+        mult = 1.0
+        if self[-1].upper() == 'K':
+            mult /= 1024
+        elif self[-1].upper() == 'G':
+            mult *= 1024
+        elif self[-1].upper() == 'T':
+            mult *= 1024 ** 2
+        return float(self[:-1]) * mult
+
 
 class DBSource(Enum):
     """Sources of a BLAST database supported by update_blastdb.pl from BLAST+ package"""
     GCP = auto()
     AWS = auto()
     NCBI = auto()
-
-
+    def __repr__(self):
+        return self.name
+    def __str__(self):
+        """Convert value to a string"""
+        return self.name
 
 
 class ParamInfo(NamedTuple):

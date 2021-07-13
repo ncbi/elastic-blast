@@ -42,7 +42,7 @@ TEST_CASES = [
 def test_from_logs():
     for logs, summary in TEST_CASES:
         proc = subprocess.run([
-            'elastic-blast.py', 'run-summary', '--read-logs', os.path.join(TEST_DIR, logs)
+            'elastic-blast', 'run-summary', '--read-logs', os.path.join(TEST_DIR, logs)
         ], stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         assert proc.stderr.decode() == ''
         output = proc.stdout.decode()

@@ -19,7 +19,7 @@
 # Please cite NCBI in any work or product based on this material.
 
 """
-elb/aws_traits.py - helper module for AWS machine info
+elastic_blast/aws_traits.py - helper module for AWS machine info
 
 """
 
@@ -27,9 +27,9 @@ from botocore.config import Config  # type: ignore
 import boto3 # type: ignore
 from botocore.exceptions import ClientError, NoCredentialsError # type: ignore
 import logging
-from typing import Optional, List
+from typing import Optional, List, Any
 from .util import UserReportError, validate_aws_region
-from .base import InstanceProperties
+from .base import InstanceProperties, PositiveInteger, MemoryStr
 from .constants import ELB_DFLT_AWS_REGION, INPUT_ERROR, PERMISSIONS_ERROR
 
 
@@ -76,3 +76,57 @@ def get_machine_properties(instance_type: str, boto_cfg: Config = None) -> Insta
         logging.debug(err)
         raise UserReportError(returncode=PERMISSIONS_ERROR, message=str(err))
     return InstanceProperties(ncpus, nram)
+
+
+def get_instance_type_offerings(region: str) -> List[str]:
+    """Get a list of instance types offered in an AWS region"""
+    ec2 = boto3.client('ec2')
+    try:
+        current = ec2.describe_instance_type_offerings(LocationType='region', Filters=[{'Name': 'location', 'Values': [region]}])
+        instance_types = current['InstanceTypeOfferings']
+        while 'NextToken' in current:
+            current = ec2.describe_instance_type_offerings(LocationType='regioon', Filters=[{'Name': 'location', 'Values': [region]}], NextToken=current['NextToken'])
+            instance_types += current['InstanceTypeOfferings']
+    except ClientError as err:
+        logging.debug(err)
+        raise UserReportError(returncode=INPUT_ERROR, message=f'Invalid AWS region "{region}"')
+    except NoCredentialsError as err:
+        logging.debug(err)
+        raise UserReportError(returncode=PERMISSIONS_ERROR, message=str(err))
+
+    return [it['InstanceType'] for it in instance_types]
+
+
+def get_suitable_instance_types(min_memory: MemoryStr,
+                                min_cpus: PositiveInteger,
+                                instance_types: List[str] = None) -> List[Any]:
+    """Get a list of instance type descriptions with at least min_memory and
+    number of CPUs
+
+    Arguments:
+        min_memory: Minimum memory required on the instance
+        min_cpus: Minimum number of CPUs required on the instance
+        instance_types: If not empty limit to these instance types
+
+    Returns:
+        A list of instance type descriptions for instance types that satisfy
+        the above constraints"""
+    ec2 = boto3.client('ec2')
+
+    # select only 64-bit CPUs
+    filters = [{'Name': 'processor-info.supported-architecture',
+                'Values': ['x86_64']}]
+
+    # get instance propeties
+    if instance_types:
+        inst_types = []
+        for i in range(0, len(instance_types), 100):
+            current = ec2.describe_instance_types(InstanceTypes=instance_types[i:(i+100)],
+                                                  Filters=filters)
+            inst_types += current['InstanceTypes']
+    else:
+        inst_types = ec2.describe_instance_types(InstanceTypes=[], Filters=filters)['InstanceTypes']
+
+    suitable_types = [it for it in inst_types if it['MemoryInfo']['SizeInMiB'] > min_memory.asMB() and it['VCpuInfo']['DefaultVCpus'] >= min_cpus]
+
+    return suitable_types

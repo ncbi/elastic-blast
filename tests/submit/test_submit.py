@@ -30,6 +30,7 @@ import tempfile
 import shutil
 from unittest.mock import patch, MagicMock
 from elastic_blast.commands.submit import submit, assemble_query_file_list
+from elastic_blast.commands.submit import are_files_on_localhost
 from elastic_blast.util import UserReportError
 from elastic_blast import constants
 from elastic_blast import gcp
@@ -44,6 +45,17 @@ import pytest
 DATA_DIR = os.path.join(os.path.dirname(__file__), 'data')
 INI_NO_BLASTDB = os.path.join(DATA_DIR, 'blastdb-notfound.ini')
 
+
+def test_to_determine_whether_queries_are_local():
+    assert are_files_on_localhost([INI_NO_BLASTDB])
+    assert not are_files_on_localhost(['s3://foo-bar', INI_NO_BLASTDB])
+    assert not are_files_on_localhost([INI_NO_BLASTDB, 'gs://foo-bar'])
+    assert not are_files_on_localhost(['http://foo-bar'])
+    assert not are_files_on_localhost(['https://foo-bar'])
+    assert not are_files_on_localhost(['ftp://foo-bar'])
+    assert are_files_on_localhost(['this-file-does-not-exist'])
+    assert are_files_on_localhost(['/tmp/this-file-does-not-existsftp'])
+    assert are_files_on_localhost(['/tmp/this-file-does-not-existss3://'])
 
 ## Mocked tests
 

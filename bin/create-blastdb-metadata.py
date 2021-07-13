@@ -20,7 +20,8 @@ from pathlib import Path
 import tempfile
 from dataclasses import dataclass, field
 from enum import Enum, auto
-from typing import List
+from typing import List, Optional
+from tempfile import NamedTemporaryFile
 
 
 DFLT_LOGFILE = 'create-blastdb-metadata.log'
@@ -58,6 +59,11 @@ class DbType(Enum):
     """Database molecule type"""
     PROTEIN = 'prot'
     NUCLEOTIDE = 'nucl'
+
+    @classmethod
+    def choices(self):
+        return [self.PROTEIN.value, self.NUCLEOTIDE.value]
+
 
     def __str__(self):
         """Convert value to a string"""
@@ -117,7 +123,8 @@ class BlastDbMetadataEncoder(json.JSONEncoder):
             return json.JSONEncoder.default(self, obj)
 
 
-def get_database_info(oneDBJson: BlastDbMetadata, db: Path, dbtype: DbType) -> None:
+def get_database_info(oneDBJson: BlastDbMetadata, db: Path, dbtype: DbType,
+                      file_prefix: Optional[str] = None) -> None:
     """
     Initialize database metadata
 
@@ -125,6 +132,7 @@ def get_database_info(oneDBJson: BlastDbMetadata, db: Path, dbtype: DbType) -> N
         oneDBJson: object that holds metadata
         db: path plus database name
         dbtype: database molecule type
+        file_prefix: if not None, path prefix for database files in metadata
     """
     # get number of volumes
     # this is called first to verify that we are dealing with a proper BLAST
@@ -194,9 +202,9 @@ def get_database_info(oneDBJson: BlastDbMetadata, db: Path, dbtype: DbType) -> N
         raise UserReportError(returncode=ERROR_DATABASE_INFO,
                               message=f'Database "{db}" was not found. Please, provide path to the database.')
 
-    populate_db_info(oneDBJson, db, DataCollection.UNCOMPRESSED_FILES)
+    populate_db_info(oneDBJson, db, DataCollection.UNCOMPRESSED_FILES, file_prefix)
     try:
-        populate_db_info(oneDBJson, db, DataCollection.CACHED_FILES)
+        populate_db_info(oneDBJson, db, DataCollection.CACHED_FILES, file_prefix)
     except FileNotFoundError as err:
         # if blastdbcmd above worked and database files are missing we are
         # very likely dealing with an alias database
@@ -206,7 +214,8 @@ def get_database_info(oneDBJson: BlastDbMetadata, db: Path, dbtype: DbType) -> N
 
     
 def populate_db_info(oneDBJson: BlastDbMetadata, db: Path,
-                     data2collect: DataCollection) -> None:
+                     data2collect: DataCollection,
+                     file_prefix: Optional[str]) -> None:
     """
     Get and populate database information from the filesystem.
 
@@ -214,6 +223,7 @@ def populate_db_info(oneDBJson: BlastDbMetadata, db: Path,
         oneDBJson: object holding database metadata
         db: database path plus name
         data2collect: type of information to gather
+        file_prefix: if not None, path prefix for database files in metadata
     """
     dbtype = oneDBJson.dbtype[0].lower()
     if data2collect == DataCollection.UNCOMPRESSED_FILES:
@@ -232,7 +242,10 @@ def populate_db_info(oneDBJson: BlastDbMetadata, db: Path,
                 filename_parts = os.path.splitext(f)
                 if filename_parts[1] == ".md5" or filename_parts[1] == ".gz":
                     continue
-                oneDBJson.files.append(os.path.basename(f))
+                db_file = os.path.basename(f)
+                if file_prefix:
+                    db_file = os.path.join(file_prefix, db_file)
+                oneDBJson.files.append(db_file)
             else:
                 oneDBJson.bytes_to_cache += os.stat(f).st_size
             fileFound = True
@@ -243,14 +256,17 @@ def populate_db_info(oneDBJson: BlastDbMetadata, db: Path,
     # include additional CDD files
     # CSeqDB does not know about these files, so their size is not
     # reported by blastdbcmd -list
-    for f in db.parent.glob(db.name + '.*'):
+    for ff in db.parent.glob(db.name + '.*'):
         if data2collect == DataCollection.UNCOMPRESSED_FILES:
-            if f.suffix in ['.aux', '.loo', '.rps', '.freq']:
-                oneDBJson.files.append(f.name)
-                oneDBJson.bytes_total += f.stat().st_size
+            if ff.suffix in ['.aux', '.loo', '.rps', '.freq']:
+                db_file = ff.name
+                if file_prefix:
+                    db_file = os.path.join(file_prefix, ff.name)
+                oneDBJson.files.append(db_file)
+                oneDBJson.bytes_total += ff.stat().st_size
         else:
-            if f.suffix in ['.loo', '.rps', '.freq']:
-                oneDBJson.bytes_to_cache += f.stat().st_size
+            if ff.suffix in ['.loo', '.rps', '.freq']:
+                oneDBJson.bytes_to_cache += ff.stat().st_size
 
 
 def convert_date_to_iso8601(date: str) -> str:
@@ -306,9 +322,13 @@ def main():
     db = Path(args.db)
     dbtype = DbType(args.dbtype.lower())
     oneDBJson = BlastDbMetadata(db.name)
-    get_database_info(oneDBJson, db, dbtype)
-    print(oneDBJson.to_json(args.pretty), file=args.out)
-    logging.debug(f'Metadata printed to {args.out.name}')
+    get_database_info(oneDBJson, db, dbtype, args.output_prefix)
+    output_file_name = f'{db.name}-{dbtype}-metadata.json'
+    if args.out:
+        output_file_name = args.out
+    with open(output_file_name, 'wt') as output_file:
+        print(oneDBJson.to_json(args.pretty), file=output_file)
+    logging.debug(f'Metadata printed to {output_file_name}')
 
     return 0
 
@@ -320,12 +340,12 @@ def create_arg_parser():
     required = parser.add_argument_group('required arguments')
     optional = parser.add_argument_group('optional arguments')
 
-    required.add_argument("--db", metavar='DB', type=str, help="A BLAST database", required=True)
-    required.add_argument("--dbtype", metavar="MOL", type=str,
-                        help="Database molecule type", choices=["prot", "nucl"],
+    required.add_argument("--db", metavar='DBNAME', type=str, help="A BLAST database", required=True)
+    required.add_argument("--dbtype", type=str,
+                        help="Database molecule type", choices=DbType.choices(),
                         required=True)
-    optional.add_argument('--out', metavar='FILE', type=argparse.FileType(mode='w'),
-                        help='Output file. Default: stdout', default='-')
+    optional.add_argument('--out', metavar='FILENAME', help='Output file name. Default: ${db}-${dbtype}-metadata.json')
+    optional.add_argument('--output-prefix', metavar='PATH', type=str, help='Path prefix for location of database files in metadata')
     optional.add_argument("--pretty", action='store_true', help="Pretty-print JSON output")
     optional.add_argument("--logfile", default=DFLT_LOGFILE,help="Default: " + DFLT_LOGFILE)
     optional.add_argument("--loglevel", default='INFO',choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"])
@@ -429,30 +449,42 @@ class TestCreateDbMetadata(unittest.TestCase):
 
     def test_run(self):
         """Test main function with a sample database"""
-        # stdout will go here
-        strio = io.StringIO()
-        # this field is used to log output filename, but is not present in
-        # io.StringIO
-        strio.name = 'StringIO'
         # path test database
         db = str(Path(__file__).parent.parent / 'tests/blastdb/testdb')
 
-        with patch.object(argparse.ArgumentParser, 'parse_args', return_value=argparse.Namespace(db=db, dbtype='prot', out=strio, logfile='stderr', loglevel='ERROR', pretty=None)):
-            main()
-        output = strio.getvalue()
-        result = json.loads(output)
-        self.assertEqual(result['version'], BLASTDB_METADATA_VERSION)
-        self.assertEqual(result['dbname'], 'testdb')
-        self.assertEqual(result['dbtype'], 'Protein')
-        self.assertEqual(result['description'], 'Test database: the first four sequences for swissprot')
-        self.assertEqual(result['number-of-letters'], 875)
-        self.assertEqual(result['number-of-sequences'], 3)
-        self.assertEqual(result['last-updated'], '2021-06-17')
-        self.assertEqual(result['bytes-total'], 50956)
-        self.assertEqual(result['bytes-to-cache'], 1039)
-        self.assertEqual(result['number-of-volumes'], 1)
-        self.assertEqual(len(result['files']), 9)
-        self.assertEqual(len([s for s in result['files'] if s.startswith('testdb.')]), len(result['files']))
+        with NamedTemporaryFile() as output_file:
+            with patch.object(argparse.ArgumentParser, 'parse_args', return_value=argparse.Namespace(db=db, dbtype='prot', out=output_file.name, logfile='stderr', loglevel='ERROR', pretty=None, output_prefix=None)):
+                main()
+            with open(output_file.name, 'rt') as metadata:
+                output = metadata.read()
+            result = json.loads(output)
+            self.assertEqual(result['version'], BLASTDB_METADATA_VERSION)
+            self.assertEqual(result['dbname'], 'testdb')
+            self.assertEqual(result['dbtype'], 'Protein')
+            self.assertEqual(result['description'], 'Test database: the first four sequences for swissprot')
+            self.assertEqual(result['number-of-letters'], 875)
+            self.assertEqual(result['number-of-sequences'], 3)
+            self.assertEqual(result['last-updated'], '2021-06-17')
+            self.assertEqual(result['bytes-total'], 50956)
+            self.assertEqual(result['bytes-to-cache'], 1039)
+            self.assertEqual(result['number-of-volumes'], 1)
+            self.assertEqual(len(result['files']), 9)
+            self.assertEqual(len([s for s in result['files'] if s.startswith('testdb.')]), len(result['files']))
+
+
+    def test_output_prefix(self):
+        """Test main function with a sample database and --output-prefix option"""
+        # path to test database
+        db = str(Path(__file__).parent.parent / 'tests/blastdb/testdb')
+        PREFIX = 'gs://some-bucket/some-dir'
+
+        with NamedTemporaryFile() as output_file:
+            with patch.object(argparse.ArgumentParser, 'parse_args', return_value=argparse.Namespace(db=db, dbtype='prot', out=output_file.name, logfile='stderr', loglevel='ERROR', pretty=None, output_prefix=PREFIX)):
+                main()
+            with open(output_file.name, 'rt') as metadata:
+                output = metadata.read()
+            result = json.loads(output)
+            self.assertEqual(len([s for s in result['files'] if s.startswith(PREFIX)]), len(result['files']))
 
 
     def test_concert_date_to_iso8601(self):

@@ -1,9 +1,14 @@
 ---
+AWSTemplateFormatVersion: '2010-09-09'
 Description: Cloudformation template that sets up AWS Batch to run ElasticBLAST
 
 Parameters:
-  Image:
-    Description: Docker image for Elastic-BLAST
+  DockerImageBlast:
+    Description: Docker image for ElasticBLAST BLAST module
+    Type: String
+
+  DockerImageQuerySplitting:
+    Description: Docker image for ElasticBLAST query splitting module
     Type: String
 
   Owner:
@@ -584,6 +589,42 @@ Resources:
             - Key: billingcode
               Value: elastic-blast
 
+  QuerySplittingJobDefinition:
+    Type: AWS::Batch::JobDefinition
+    Properties:
+      Type: container
+      JobDefinitionName: !Join [-, [elasticblast-query-split, !Ref Owner, !Ref RandomToken]]
+      ContainerProperties:
+        Image: !Ref DockerImageQuerySplitting
+        Vcpus: 1
+        Memory: 80000
+        Command:
+          - "run.sh"
+          - "-i"
+          - "Ref::input"
+          - "-o"
+          - "Ref::output"
+          - "-b"
+          - "Ref::batchlen"
+        JobRoleArn: !If
+          - CreateJobRole
+          - !GetAtt CreatedBatchJobRole.Arn
+          - !Ref JobRole
+      RetryStrategy:
+        Attempts: 3
+        EvaluateOnExit:
+        # retry on everything except out of memory errors
+        - OnReason: OutOfMemoryError*
+          Action: EXIT
+        - OnReason: "*"
+          Action: RETRY
+      PropagateTags: true
+      Tags:
+        Project: BLAST
+        billingcode: elastic-blast
+        Owner: !Ref Owner
+        Name: !Join [-, [elasticblast, !Ref Owner, !Ref RandomToken]]
+
   BlastSearchJobDefinition:
     Type: AWS::Batch::JobDefinition
     Properties:
@@ -598,7 +639,7 @@ Resources:
         taxidlist: ' '
         do-search: '--search'
       ContainerProperties:
-        Image: !Ref Image
+        Image: !Ref DockerImageBlast
         Vcpus: 1
         Memory: 80000
         Command: ["splitq_download_db_search",
@@ -637,19 +678,12 @@ Resources:
       RetryStrategy:
         Attempts: 3
         EvaluateOnExit:
-        # retry on infrastructure problems (including terminated spot instance)
-        - OnStatusReason: Host EC2*
-          Action: RETRY
-        # retry on database-related errors
-        - OnExitCode: "2"
-          Action: RETRY
-        # These may occur if burst credits on EBS are exhausted
-        - OnReason: DockerTimeoutError*
-          Action: RETRY
-        - OnReason: CannotInspectContainer*
-          Action: RETRY
-        - OnReason: "*"
+        # retry on everything except out of memory errors
+        - OnReason: OutOfMemoryError*
           Action: EXIT
+        - OnReason: "*"
+          Action: RETRY
+      PropagateTags: true
       Tags:
          Project: BLAST
          billingcode: elastic-blast
@@ -773,8 +807,11 @@ Resources:
 
 Outputs:
   JobQueueName:
-    Description: Elastic-BLAST job queue
+    Description: ElasticBLAST job queue
     Value: !Ref JobQueue
-  JobDefinitionName:
-    Description: Elastic-BLAST job definition
+  BlastJobDefinitionName:
+    Description: ElasticBLAST job definition to run BLAST
     Value: !Ref BlastSearchJobDefinition
+  QuerySplittingJobDefinitionName:
+    Description: ElasticBLAST job definition to split queries
+    Value: !Ref QuerySplittingJobDefinition

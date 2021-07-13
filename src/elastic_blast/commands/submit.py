@@ -24,21 +24,24 @@ elb/commands/submit.py - Command to submit ElasticBLAST searches
 Author: Christiam Camacho (camacho@ncbi.nlm.nih.gov)
 Created: Wed 22 Apr 2020 06:31:30 AM EDT
 """
-import os
+import os, re
 import logging
 import math
-from tempfile import TemporaryDirectory
+from tempfile import TemporaryDirectory, NamedTemporaryFile
 from pathlib import Path
 from timeit import default_timer as timer
 import uuid
 from typing import List, Tuple
+from pprint import pformat
 
 from elastic_blast.resources.quotas.quota_check import check_resource_quotas
 from elastic_blast.aws import ElasticBlastAws
 from elastic_blast.aws import check_cluster as aws_check_cluster
 from elastic_blast.filehelper import open_for_read, open_for_read_iter, copy_to_bucket
 from elastic_blast.filehelper import check_for_read, check_dir_for_write, cleanup_temp_bucket_dirs
-from elastic_blast.filehelper import get_length
+from elastic_blast.filehelper import get_length, harvest_query_splitting_results
+from elastic_blast.filehelper import upload_file_to_gcs
+from elastic_blast.object_storage_utils import write_to_s3
 from elastic_blast.split import FASTAReader
 from elastic_blast.jobs import read_job_template, write_job_files
 from elastic_blast.gcp import get_gke_credentials, delete_cluster_with_cleanup
@@ -57,7 +60,8 @@ from elastic_blast.constants import K8S_JOB_IMPORT_QUERY_BATCHES, K8S_JOB_LOAD_B
 from elastic_blast.constants import ELB_QUERY_BATCH_DIR, BLASTDB_ERROR, INPUT_ERROR
 from elastic_blast.constants import PERMISSIONS_ERROR, CLUSTER_ERROR, CSP
 from elastic_blast.constants import ELB_DOCKER_IMAGE, QUERY_LIST_EXT
-from elastic_blast.constants import ElbCommand
+from elastic_blast.constants import ElbCommand, ELB_METADATA_DIR, ELB_META_CONFIG_FILE
+from elastic_blast.constants import ELB_S3_PREFIX, ELB_GCS_PREFIX
 from elastic_blast.taxonomy import setup_taxid_filtering
 from elastic_blast.config import validate_cloud_storage_object_uri
 from elastic_blast.elb_config import ElasticBlastConfig
@@ -88,28 +92,61 @@ def submit(args, cfg, clean_up_stack):
 
     query_files = assemble_query_file_list(cfg)
     check_submit_data(query_files, cfg)
+    if not dry_run:
+        # FIXME: refactor this code into object_storage_utils
+        cfg_text = pformat(cfg.asdict())
+        dst = os.path.join(cfg.cluster.results, ELB_METADATA_DIR, ELB_META_CONFIG_FILE)
+        if cfg.cloud_provider.cloud == CSP.AWS:
+            write_to_s3(dst, cfg_text)
+        else:
+            with NamedTemporaryFile('wt') as tmpcfg:
+                tmpcfg.write(cfg_text)
+                tmpcfg.flush()
+                upload_file_to_gcs(tmpcfg.name, dst)
 
     #mode_str = "synchronous" if args.sync else "asynchronous"
     #logging.info(f'Running ElasticBLAST on {cfg.cloud_provider.cloud.name} in {mode_str} mode')
 
-    cluster_name = cfg.cluster.name
+    queries = None
+    query_length = 0
 
-    use_1_stage_cloud_split = 'ELB_USE_1_STAGE_CLOUD_SPLIT' in os.environ
+    ########################################################################
+    # BEGIN: Experimental query splitting code for AWS
+
     # Case for cloud split on AWS: one file on S3
-    cloud_split = False
-    if use_1_stage_cloud_split and cfg.cloud_provider.cloud == CSP.AWS \
-      and len(query_files) == 1 and query_files[0].startswith('s3://'):
-        cloud_split = True
-        query_file = query_files[0]
-        # Get file length as approximation of sequence length
-        query_length = get_length(query_file)
-        if query_file.endswith('.gz'):
-            query_length = query_length * 4 # approximation again
-        batch_len = cfg.blast.batch_len
-        nbatch = math.ceil(query_length/batch_len)
-        queries = nbatch * [query_file]
-    else:
-        # split FASTA query into batches
+    eligible_for_cloud_query_split = False
+    if cfg.cloud_provider.cloud == CSP.AWS and len(query_files) == 1 and \
+       query_files[0].startswith(ELB_S3_PREFIX):
+        eligible_for_cloud_query_split = True
+
+    use_1_stage_cloud_split = False
+    use_2_stage_cloud_split = False
+
+    if eligible_for_cloud_query_split:
+        if 'ELB_USE_1_STAGE_CLOUD_SPLIT' in os.environ:
+            use_1_stage_cloud_split = True
+            query_file = query_files[0]
+            # Get file length as approximation of sequence length
+            query_length = get_length(query_file)
+            if query_file.endswith('.gz'):
+                query_length = query_length * 4 # approximation again
+            batch_len = cfg.blast.batch_len
+            nbatch = math.ceil(query_length/batch_len)
+            queries = nbatch * [query_file]
+        if 'ELB_USE_2_STAGE_CLOUD_SPLIT' in os.environ:
+            use_2_stage_cloud_split = True
+
+    if use_1_stage_cloud_split and use_2_stage_cloud_split:
+        err = 'Cannot configure both 1- and 2-stage cloud query splitting'
+        raise UserReportError(returncode=INPUT_ERROR, message=str(err))
+
+    # END: Experimental query splitting code for AWS
+    ########################################################################
+
+    # Query splitting is done locally for GCP or when all queries are on the
+    # local file system
+    if are_files_on_localhost(query_files) or cfg.cloud_provider.cloud == CSP.GCP or \
+            (use_1_stage_cloud_split == False and use_2_stage_cloud_split == False):
         clean_up_stack.append(cleanup_temp_bucket_dirs)
         queries, query_length = split_query(query_files, cfg)
 
@@ -119,9 +156,14 @@ def submit(args, cfg, clean_up_stack):
     # FIXME: this is a temporary code arrangement
     if cfg.cloud_provider.cloud == CSP.AWS:
         elastic_blast = ElasticBlastAws(cfg, create=True)
+        if use_2_stage_cloud_split:
+            elastic_blast.split_query(query_files)
+            elastic_blast.wait_for_cloud_query_split()
+            qs_res = harvest_query_splitting_results(cfg.cluster.results, dry_run)
+            queries = qs_res.query_batches
         upload_split_query_to_bucket(cfg, clean_up_stack, dry_run)
         elastic_blast.upload_query_length(query_length)
-        elastic_blast.submit(queries, cloud_split)
+        elastic_blast.submit(queries, use_1_stage_cloud_split)
         return 0
 
 
@@ -271,6 +313,18 @@ def initialize_cluster(cfg: ElasticBlastConfig, db: str, db_path: str, clean_up_
     clean_up_stack.append(lambda: logging.debug('After initializing storage'))
 
 
+def are_files_on_localhost(query_files: List[str]) -> bool:
+    """ Return true if all files refer to a local file, otherwise false.
+        Does not check for file existence, as this is checked in
+        check_submit_data->check_for_read
+    """
+    pattern = re.compile(r'^(gs://|s3://|ftp://|https://|http://)')
+    for query_file in query_files:
+        if pattern.match(query_file):
+            return False
+    return True
+
+
 def check_submit_data(query_files: List[str], cfg: ElasticBlastConfig) -> None:
     """ Check that the query files are present and readable and that results bucket is writeable
         Parameters:
@@ -354,8 +408,7 @@ def collect_k8s_logs(cfg: ElasticBlastConfig):
 def assemble_query_file_list(cfg: ElasticBlastConfig) -> List[str]:
     """Assemble a list of query files. cfg.blast.queries_arg is a list of
     space-separated files. if a file has extension constants.QUERY_LIST_EXT, it
-    is considered a list of files, otherwise it is a FASTA file with queries.
-    This function initializes global variable config.query_files."""
+    is considered a list of files, otherwise it is a FASTA file with queries."""
     msg = []
     query_files = []
     for query_file in cfg.blast.queries_arg.split():
@@ -365,8 +418,8 @@ def assemble_query_file_list(cfg: ElasticBlastConfig) -> List[str]:
                     if len(line.rstrip()) == 0:
                         continue
                     query_file_from_list = line.rstrip()
-                    if query_file_from_list.startswith('gs://') or \
-                           query_file_from_list.startswith('s3://'):
+                    if query_file_from_list.startswith(ELB_GCS_PREFIX) or \
+                           query_file_from_list.startswith(ELB_S3_PREFIX):
                         try:
                             validate_cloud_storage_object_uri(query_file_from_list)
                         except ValueError as err:

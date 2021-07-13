@@ -1,0 +1,16 @@
+steps:
+- name: 'gcr.io/${PROJECT_ID}/${_IMG}:${_TAG}'
+  args: ['aws', '--version']
+- name: 'gcr.io/${PROJECT_ID}/${_IMG}:${_TAG}'
+  args: ['aws', 's3', '--no-sign-request', 'ls', 's3://ncbi-blast-databases/']
+- name: 'gcr.io/${PROJECT_ID}/${_IMG}:${_TAG}'
+  args: ['fasta_split.py', '--help']
+- name: 'gcr.io/${PROJECT_ID}/${_IMG}:${_TAG}'
+  args: ['run.sh', '-h']
+# This doesn't work due to lack of credentials
+#- name: 'gcr.io/${PROJECT_ID}/${_IMG}:${_TAG}'
+#  args: ['run.sh', '-i', 's3://elasticblast-test/queries/hepatitis.fsa.gz', '-o', 's3://elasticblast-test/']
+
+substitutions:
+  _IMG:
+  _TAG:

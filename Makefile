@@ -38,19 +38,19 @@ blast-tuner: ${PYTHON_SRC} ${VENV}
 	-./$@ --version
 
 elastic-blast: ${PYTHON_SRC} ${YAML_TEMPLATES} ${VENV} validate-cf-templates
-	source ${VENV}/bin/activate && pex --python-shebang='/usr/bin/env python3' --disable-cache . -r requirements/base.txt --python=python${PYTHON_VERSION} -c $@.py -o $@
+	source ${VENV}/bin/activate && pex --python-shebang='/usr/bin/env python3' --disable-cache . -r requirements/base.txt --python=python${PYTHON_VERSION} -c $@ -o $@
 	-./$@ --version
 
 elastic-blast3.9: ${PYTHON_SRC} ${YAML_TEMPLATES} ${VENV} validate-cf-templates
-	source ${VENV}/bin/activate && pex --disable-cache . -r requirements/base.txt --python=python3.9 -c elastic-blast.py -o $@
+	source ${VENV}/bin/activate && pex --disable-cache . -r requirements/base.txt --python=python3.9 -c elastic-blast -o $@
 	-./$@ --version
 
 elastic-blast3.8: ${PYTHON_SRC} ${YAML_TEMPLATES} ${VENV} validate-cf-templates
-	source ${VENV}/bin/activate && pex --disable-cache . -r requirements/base.txt --python=python3.8 -c elastic-blast.py -o $@
+	source ${VENV}/bin/activate && pex --disable-cache . -r requirements/base.txt --python=python3.8 -c elastic-blast -o $@
 	-./$@ --version
 
 elastic-blast3.7: ${PYTHON_SRC} ${YAML_TEMPLATES} ${VENV} validate-cf-templates
-	source ${VENV}/bin/activate && pex --disable-cache . -r requirements/base.txt --python=python3.7 -c elastic-blast.py -o $@
+	source ${VENV}/bin/activate && pex --disable-cache . -r requirements/base.txt --python=python3.7 -c elastic-blast -o $@
 	-./$@ --version
 
 %.md5: %

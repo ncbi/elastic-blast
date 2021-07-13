@@ -25,12 +25,15 @@ Unit tests for tuner module
 
 import json
 import os
+from unittest.mock import MagicMock, patch
 from elastic_blast.tuner import get_db_data, MolType, DbData, SeqData, get_mt_mode
 from elastic_blast.tuner import MTMode, get_num_cpus, get_batch_length
+from elastic_blast.tuner import get_mem_limit, get_machine_type
 from elastic_blast.filehelper import open_for_read
 from elastic_blast.base import DBSource
 from elastic_blast.constants import ELB_BLASTDB_MEMORY_MARGIN
 from elastic_blast.util import UserReportError, get_query_batch_size
+from elastic_blast.base import MemoryStr
 import pytest
 
 
@@ -64,7 +67,7 @@ def mocked_db_metadata(mocker):
 
 def test_get_db_data(mocked_db_metadata):
     """Test getting blast database memory requirements"""
-    db = get_db_data('nr', DBSource.AWS)
+    db = get_db_data('nr', MolType.PROTEIN, DBSource.AWS)
     with open(mocked_db_metadata) as f:
         db_metadata = json.load(f)
     assert db.length == int(db_metadata['number-of-letters'])
@@ -73,7 +76,7 @@ def test_get_db_data(mocked_db_metadata):
 
 def test_get_db_data_user_db(mocked_db_metadata):
     """Test getting blast database memory requirements"""
-    db = get_db_data('s3://some-bucket/userdb', DBSource.AWS)
+    db = get_db_data('s3://some-bucket/userdb', MolType.PROTEIN, DBSource.AWS)
     with open(mocked_db_metadata) as f:
         db_metadata = json.load(f)
     assert db.length == int(db_metadata['number-of-letters'])
@@ -83,10 +86,10 @@ def test_get_db_data_user_db(mocked_db_metadata):
 def test_get_db_data_missing_db():
     """Test get_blastdb_mem_requirements with a non-exstient database"""
     with pytest.raises(UserReportError):
-        get_db_data('s3://some-bucket/non-existent-db', DBSource.AWS)
+        get_db_data('s3://some-bucket/non-existent-db', MolType.NUCLEOTIDE, DBSource.AWS)
 
     with pytest.raises(UserReportError):
-        get_db_data('this-db-does-not-exist', DBSource.GCP)
+        get_db_data('this-db-does-not-exist', MolType.PROTEIN, DBSource.GCP)
         
 def test_get_mt_mode():
     """Test computing BLAST search MT mode"""
@@ -135,3 +138,59 @@ def test_get_batch_length():
 
     assert get_batch_length(program = 'blastp', mt_mode = MTMode.ONE,
                             num_cpus = NUM_CPUS) == get_query_batch_size(PROGRAM) * NUM_CPUS
+
+def test_get_mem_limit():
+    """Test getting search job memory limit"""
+    CONST_MEM_LIMIT = MemoryStr('20G')
+    db = DbData(length=20000, moltype=MolType.PROTEIN, bytes_to_cache_gb=60)
+
+    # when db_factor == 0.0 and with_optimal is False, const_limit is returned
+    assert get_mem_limit(db=db, const_limit=CONST_MEM_LIMIT, db_factor=0.0, with_optimal=False).asGB() == CONST_MEM_LIMIT.asGB()
+
+    # when db_factor > 0.0 and with_optimal is False,
+    # db.bytes_to_cache * db_factor is returned
+    DB_FACTOR = 1.2
+    assert abs(get_mem_limit(db=db, const_limit=CONST_MEM_LIMIT, db_factor=DB_FACTOR, with_optimal=False).asGB() - db.bytes_to_cache_gb * DB_FACTOR) < 1
+
+    # when with_optimal is True 60G is returned if db.bytes_to_cache >= 60G,
+    # otherwise db.bytes_to_cache_gb + 2G
+    db.bytes_to_cache_gb = 60
+    assert get_mem_limit(db=db, const_limit=CONST_MEM_LIMIT, db_factor=0.0, with_optimal=True) == MemoryStr('60G')
+
+    db.bytes_to_cache_gb = 20
+    assert get_mem_limit(db=db, const_limit=CONST_MEM_LIMIT, db_factor=0.0, with_optimal=True) == MemoryStr('22G')
+
+
+class MockedEc2Client:
+    """Mocked boto3 ec2 client"""
+    def describe_instance_type_offerings(LocationType, Filters):
+        """Mocked function to to get AWS instance type offerings"""
+        return {'InstanceTypeOfferings': [{'InstanceType': 'm5.8xlarge'},
+                                          {'InstanceType': 'm5.4xlarge'},
+                                          {'InstanceType': 'r5.4xlarge'}]}
+
+    def describe_instance_types(InstanceTypes, Filters):
+        """Mocked function to get description of AWS instance types"""
+        return {'InstanceTypes': [{'InstanceType': 'm5.8xlarge',
+                                   'MemoryInfo': {'SizeInMiB': 131072},
+                                   'VCpuInfo': {'DefaultVCpus': 32}
+                                  },
+                                  {'InstanceType': 'm5.4xlarge',
+                                   'MemoryInfo': {'SizeInMiB': 65536},
+                                   'VCpuInfo': {'DefaultVCpus': 16}
+                                  },
+                                  {'InstanceType': 'r5.4xlarge',
+                                   'MemoryInfo': {'SizeInMiB': 131072},
+                                   'VCpuInfo': {'DefaultVCpus': 16}
+                                  }]}
+
+
+@patch(target='boto3.client', new=MagicMock(return_value=MockedEc2Client))
+def test_get_machine_type():
+    """Test selecting machine type"""
+    MIN_CPUS = 8
+    db = DbData(length=500, moltype=MolType.PROTEIN, bytes_to_cache_gb=70)
+    result = get_machine_type(db=db, num_cpus=MIN_CPUS, region='us-east-1')
+    # r5.4xlarge should be selected here because it has the fewest CPUs out of
+    # instance types that satisfy the memory requirement
+    assert result == 'r5.4xlarge'
