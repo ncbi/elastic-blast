@@ -47,6 +47,7 @@ from .constants import ELB_DFLT_AWS_DISK_TYPE, ELB_DFLT_AWS_PD_SIZE, ELB_DFLT_AW
 from .constants import ELB_DFLT_AWS_SPOT_BID_PERCENTAGE
 from .constants import APP_STATE_RESULTS_MD5, SYSTEM_MEMORY_RESERVE
 from .constants import ELB_S3_PREFIX, ELB_GCS_PREFIX
+from .constants import ELB_DFLT_AWS_REGION, ELB_DFLT_GCP_REGION
 from .util import UserReportError
 from .filehelper import parse_bucket_name_key
 from typing import List
@@ -64,14 +65,6 @@ def _set_sections(cfg: configparser.ConfigParser) -> None:
         cfg.add_section(CFG_TIMEOUTS)
     if not cfg.has_section(APP_STATE):
         cfg.add_section(APP_STATE)
-
-
-def _set_csp(cfg: configparser.ConfigParser) -> None:
-    """ Set the Cloud Service Provider """
-    if sum([i.startswith('aws') for i in cfg[CFG_CLOUD_PROVIDER]]) > 0:
-        cfg[CFG_CLOUD_PROVIDER][CFG_CP_NAME] = CSP.AWS.name
-    else:
-        cfg[CFG_CLOUD_PROVIDER][CFG_CP_NAME] = CSP.GCP.name
 
 
 def _load_config_from_environment(cfg: configparser.ConfigParser) -> None:
@@ -103,7 +96,7 @@ def configure(args: argparse.Namespace) -> configparser.ConfigParser:
     3. Environment variables (ELB_*)
     4. Command line parameters
     """
-    retval = configparser.ConfigParser()
+    retval = configparser.ConfigParser(empty_lines_in_values=False)
     _set_sections(retval)
     if hasattr(args, 'cfg') and args.cfg:
         if not os.path.isfile(args.cfg):
@@ -144,11 +137,21 @@ def configure(args: argparse.Namespace) -> configparser.ConfigParser:
         retval[CFG_CLOUD_PROVIDER][CFG_CP_GCP_REGION] = args.gcp_region
     if hasattr(args, 'gcp_zone') and args.gcp_zone:
         retval[CFG_CLOUD_PROVIDER][CFG_CP_GCP_ZONE] = args.gcp_zone
+
+    # If results bucket was provided, set the default region in the
+    # corresponding cloud service provider if it wasn't specified by the user
+    if CFG_BLAST_RESULTS in retval[CFG_BLAST]:
+        if retval[CFG_BLAST][CFG_BLAST_RESULTS].startswith(ELB_S3_PREFIX):
+            if CFG_CP_AWS_REGION not in retval[CFG_CLOUD_PROVIDER]:
+                retval[CFG_CLOUD_PROVIDER][CFG_CP_AWS_REGION] = ELB_DFLT_AWS_REGION
+        elif retval[CFG_BLAST][CFG_BLAST_RESULTS].startswith(ELB_GCS_PREFIX):
+            if CFG_CP_GCP_REGION not in retval[CFG_CLOUD_PROVIDER]:
+                retval[CFG_CLOUD_PROVIDER][CFG_CP_GCP_REGION] = ELB_DFLT_GCP_REGION
     
     # Exception to prevent unnecessary API calls and ensure testability
     # of some functionality without credentials
     if hasattr(args, 'subcommand') and args.subcommand == 'run-summary' and hasattr(args, 'read_logs') and args.read_logs:
-        retval[CFG_CLOUD_PROVIDER][CFG_CP_AWS_REGION] = 'us-east-1'
+        retval[CFG_CLOUD_PROVIDER][CFG_CP_AWS_REGION] = ELB_DFLT_AWS_REGION
         retval[CFG_BLAST][CFG_BLAST_RESULTS] = os.path.join(ELB_S3_PREFIX, 'dummy')
 
     if hasattr(args, 'dry_run') and args.dry_run:

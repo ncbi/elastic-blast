@@ -535,7 +535,13 @@ def test_report_cloudformation_create_errors(batch, s3, iam, ec2, mocker):
             return ec2
         return None
 
+    def mocked_get_machine_properties(cloud_provider, machine_type):
+        """Mocked getting instance properties that always reports the same value"""
+        return InstanceProperties(32, 128)
+
     mocker.patch('boto3.resource', side_effect=mocked_resource)
+    mocker.patch('elastic_blast.elb_config.aws_get_machine_properties',
+                 side_effect=mocked_get_machine_properties)
 
     cfg = initialize_cfg()
     with pytest.raises(UserReportError) as err:

@@ -30,12 +30,20 @@ import tempfile
 import configparser
 import signal
 import time
+import io
+import re
 from typing import List
-from tempfile import TemporaryDirectory
+from tempfile import TemporaryDirectory, NamedTemporaryFile
+from unittest.mock import patch, MagicMock
+import contextlib
+import argparse
 from elastic_blast import constants
-from elastic_blast.util import safe_exec
+from elastic_blast.util import safe_exec, UserReportError
+from elastic_blast.base import InstanceProperties
 from tests.utils import gke_mock
 from tests.utils import MockedCompletedProcess
+# TODO: refactor bin/elastic-blast to a sub-module inside the elastic_blast module
+from .elastic_blast_app import main
 
 import pytest
 
@@ -46,7 +54,7 @@ INI_NO_BLASTDB = os.path.join(TEST_DATA_DIR, 'blastdb-notfound.ini')
 INI_TOO_MANY_K8S_JOBS = os.path.join(TEST_DATA_DIR, 'too-many-k8s-jobs.ini')
 INI_INVALID_AUTOSCALING = os.path.join(TEST_DATA_DIR, 'invalid-autoscaling-conf.ini')
 INI_INCOMPLETE_MEM_LIMIT_OPTIMAL_MACHINE_TYPE_AWS = os.path.join(TEST_DATA_DIR, 'incomplete-mem-limit-optimal-aws-machine-type.ini')
-INI_INCOMPLETE_NUM_CPUS_OPTIMAL_MACHINE_TYPE_AWS = os.path.join(TEST_DATA_DIR, 'incomplete-num-cpus-optimal-aws-machine-type.ini')
+INI_NO_NUM_CPUS_OPTIMAL_MACHINE_TYPE_AWS = os.path.join(TEST_DATA_DIR, 'no-num-cpus-optimal-aws-machine-type.ini')
 INI_INVALID_MACHINE_TYPE_AWS = os.path.join(TEST_DATA_DIR, 'invalid-machine-type-aws.ini')
 INI_INVALID_MACHINE_TYPE_GCP = os.path.join(TEST_DATA_DIR, 'invalid-machine-type-gcp.ini')
 INI_INVALID_MEM_LIMIT = os.path.join(TEST_DATA_DIR, 'invalid-mem-req.ini')
@@ -173,7 +181,7 @@ def test_invalid_machine_type_aws(gke_mock):
 
 @pytest.mark.skipif(os.getenv('TEAMCITY_VERSION') is not None, reason='No credentials in TC unit tests')
 def test_invalid_optimal_machine_type_aws_incomplete_mem_limit(gke_mock):
-    """Test that providing a machine type 'optiomal' with incomplete
+    """Test that providing a machine type 'optimal' with incomplete
     configuration produces a correct error message and exit code"""
     p = run_elastic_blast(f'submit --cfg {INI_INCOMPLETE_MEM_LIMIT_OPTIMAL_MACHINE_TYPE_AWS}'.split())
     assert p.returncode == constants.INPUT_ERROR
@@ -184,15 +192,13 @@ def test_invalid_optimal_machine_type_aws_incomplete_mem_limit(gke_mock):
 
 
 @pytest.mark.skipif(os.getenv('TEAMCITY_VERSION') is not None, reason='No credentials in TC unit tests')
-def test_invalid_optimal_machine_type_aws_incomplete_num_cpus(gke_mock):
-    """Test that providing a machine type 'optiomal' with incomplete
-    configuration produces a correct error message and exit code"""
-    p = run_elastic_blast(f'submit --cfg {INI_INCOMPLETE_NUM_CPUS_OPTIMAL_MACHINE_TYPE_AWS}'.split())
-    assert p.returncode == constants.INPUT_ERROR
+def test_optimal_machine_type_aws_no_num_cpus(gke_mock):
+    """Test that providing a machine type 'optimal' without num-cpus works fine"""
+    p = run_elastic_blast(f'submit --cfg {INI_NO_NUM_CPUS_OPTIMAL_MACHINE_TYPE_AWS}'.split())
     msg = p.stderr.decode()
     assert 'Traceback' not in msg
-    assert 'ERROR' in msg
-    assert 'requires configuring cluster.num-cpus' in msg
+    assert 'ERROR' not in msg
+    assert p.returncode == 0
 
 
 def test_invalid_mem_limit(gke_mock):
@@ -437,3 +443,104 @@ def test_blast_timeout_error():
     msg = p.stderr.decode()
     print(msg)
     assert 'Traceback' not in msg
+
+
+@patch(target='elastic_blast.elb_config.aws_get_machine_properties', new=MagicMock(return_value=InstanceProperties(4, 32)))
+def test_memory_limit_too_large():
+    """Test that selecting memory limit that exceeds memory available on a
+    selected instance type results in the appropriate error code and message."""
+
+    conf = """[cloud-provider]
+aws-region = us-east-1
+
+[cluster]
+machine-type = m5.large
+
+[blast]
+program = blastp
+db = some-db
+queries = some-queries
+mem-limit = 900G
+results = s3://some-bucket
+"""
+
+    with NamedTemporaryFile() as f:
+        f.write(conf.encode())
+        f.flush()
+        f.seek(0)
+        
+        # mock AgrumentParser.parse_args() to create an argparse.Namespace
+        # object that fakes command line parameters
+        with patch.object(argparse.ArgumentParser, 'parse_args',
+                          return_value=argparse.Namespace(subcommand='submit',
+                                                          cfg=f.name,
+                                                          aws_region=None,
+                                                          gcp_project=None,
+                                                          gcp_region=None,
+                                                          gcp_zone=None,
+                                                          blast_opts=[],
+                                                          db=None,
+                                                          dry_run=False,
+                                                          logfile='stderr',
+                                                          loglevel='ERROR',
+                                                          num_nodes=None,
+                                                          program=None,
+                                                          query=None,
+                                                          results=None,
+                                                          run_label=None)):
+            with contextlib.redirect_stderr(io.StringIO()) as stderr:
+                returncode = main()
+            assert returncode == constants.INPUT_ERROR
+            assert re.search(r'Memory limit [\w"]* exceeds memory available on the selected machine type', stderr.getvalue())
+
+
+@patch(target='elastic_blast.elb_config.aws_get_machine_properties', new=MagicMock(return_value=InstanceProperties(4, 32)))
+def test_misplaced_config_parameter():
+    """Test that using a config parameter in a wrong section results in an
+    appropriate error code and message"""
+
+    # num-cpus should be in [cluster]
+    conf = """[cloud-provider]
+aws-region = us-east-1
+
+[cluster]
+machine-type = m5.large
+
+[blast]
+num-cpus = 8
+program = blastp
+db = some-db
+queries = some-queries
+mem-limit = 900G
+results = s3://some-bucket
+"""
+
+    with NamedTemporaryFile() as f:
+        f.write(conf.encode())
+        f.flush()
+        f.seek(0)
+
+        # mock ArgumentParser.parse_args() to create an argparse.Namespace
+        # object that fakes command line parameters
+        with patch.object(argparse.ArgumentParser, 'parse_args',
+                          return_value=argparse.Namespace(subcommand='submit',
+                                                          cfg=f.name,
+                                                          aws_region=None,
+                                                          gcp_project=None,
+                                                          gcp_region=None,
+                                                          gcp_zone=None,
+                                                          blast_opts=[],
+                                                          db=None,
+                                                          dry_run=False,
+                                                          logfile='stderr',
+                                                          loglevel='ERROR',
+                                                          num_nodes=None,
+                                                          program=None,
+                                                          query=None,
+                                                          results=None,
+                                                          run_label=None)):
+            with contextlib.redirect_stderr(io.StringIO()) as stderr:
+                returncode = main()
+            print(stderr.getvalue())
+            assert returncode == constants.INPUT_ERROR
+            assert re.search(r'Unrecognized configuration parameter [\w"-]* in section [\w"-]*', stderr.getvalue())

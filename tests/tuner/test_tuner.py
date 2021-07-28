@@ -28,7 +28,8 @@ import os
 from unittest.mock import MagicMock, patch
 from elastic_blast.tuner import get_db_data, MolType, DbData, SeqData, get_mt_mode
 from elastic_blast.tuner import MTMode, get_num_cpus, get_batch_length
-from elastic_blast.tuner import get_mem_limit, get_machine_type
+from elastic_blast.tuner import aws_get_mem_limit, gcp_get_mem_limit
+from elastic_blast.tuner import aws_get_machine_type, gcp_get_machine_type
 from elastic_blast.filehelper import open_for_read
 from elastic_blast.base import DBSource
 from elastic_blast.constants import ELB_BLASTDB_MEMORY_MARGIN
@@ -139,27 +140,33 @@ def test_get_batch_length():
     assert get_batch_length(program = 'blastp', mt_mode = MTMode.ONE,
                             num_cpus = NUM_CPUS) == get_query_batch_size(PROGRAM) * NUM_CPUS
 
-def test_get_mem_limit():
-    """Test getting search job memory limit"""
+def test_aws_get_mem_limit():
+    """Test getting search job memory limit for AWS"""
     CONST_MEM_LIMIT = MemoryStr('20G')
     db = DbData(length=20000, moltype=MolType.PROTEIN, bytes_to_cache_gb=60)
 
     # when db_factor == 0.0 and with_optimal is False, const_limit is returned
-    assert get_mem_limit(db=db, const_limit=CONST_MEM_LIMIT, db_factor=0.0, with_optimal=False).asGB() == CONST_MEM_LIMIT.asGB()
+    assert aws_get_mem_limit(db=db, const_limit=CONST_MEM_LIMIT, db_factor=0.0, with_optimal=False).asGB() == CONST_MEM_LIMIT.asGB()
 
     # when db_factor > 0.0 and with_optimal is False,
     # db.bytes_to_cache * db_factor is returned
     DB_FACTOR = 1.2
-    assert abs(get_mem_limit(db=db, const_limit=CONST_MEM_LIMIT, db_factor=DB_FACTOR, with_optimal=False).asGB() - db.bytes_to_cache_gb * DB_FACTOR) < 1
+    assert abs(aws_get_mem_limit(db=db, const_limit=CONST_MEM_LIMIT, db_factor=DB_FACTOR, with_optimal=False).asGB() - db.bytes_to_cache_gb * DB_FACTOR) < 1
 
     # when with_optimal is True 60G is returned if db.bytes_to_cache >= 60G,
     # otherwise db.bytes_to_cache_gb + 2G
     db.bytes_to_cache_gb = 60
-    assert get_mem_limit(db=db, const_limit=CONST_MEM_LIMIT, db_factor=0.0, with_optimal=True) == MemoryStr('60G')
+    assert aws_get_mem_limit(db=db, const_limit=CONST_MEM_LIMIT, db_factor=0.0, with_optimal=True) == MemoryStr('60G')
 
     db.bytes_to_cache_gb = 20
-    assert get_mem_limit(db=db, const_limit=CONST_MEM_LIMIT, db_factor=0.0, with_optimal=True) == MemoryStr('22G')
+    assert aws_get_mem_limit(db=db, const_limit=CONST_MEM_LIMIT, db_factor=0.0, with_optimal=True) == MemoryStr('22G')
 
+
+def test_gcp_get_mem_limit():
+    """Test getting search job memory limit for GCP"""
+    db = DbData(length=20000, moltype=MolType.PROTEIN, bytes_to_cache_gb=60)
+    DB_FACTOR = 1.2
+    assert abs(gcp_get_mem_limit(db, DB_FACTOR).asGB() - db.bytes_to_cache_gb * DB_FACTOR) < 1
 
 class MockedEc2Client:
     """Mocked boto3 ec2 client"""
@@ -186,11 +193,34 @@ class MockedEc2Client:
 
 
 @patch(target='boto3.client', new=MagicMock(return_value=MockedEc2Client))
-def test_get_machine_type():
-    """Test selecting machine type"""
+def test_aws_get_machine_type():
+    """Test selecting machine type for AWS"""
     MIN_CPUS = 8
     db = DbData(length=500, moltype=MolType.PROTEIN, bytes_to_cache_gb=70)
-    result = get_machine_type(db=db, num_cpus=MIN_CPUS, region='us-east-1')
+    result = aws_get_machine_type(db=db, num_cpus=MIN_CPUS, region='us-east-1')
     # r5.4xlarge should be selected here because it has the fewest CPUs out of
     # instance types that satisfy the memory requirement
     assert result == 'r5.4xlarge'
+
+
+def test_gcp_get_machine_type():
+    """Test selecting machine type for GCP"""
+    NUM_CPUS = 14
+    MEM_LIMIT = MemoryStr('120G')
+    result = gcp_get_machine_type(mem_limit=MEM_LIMIT, num_cpus=NUM_CPUS)
+    assert result == 'n1-standard-32'
+
+    NUM_CPUS = 14
+    MEM_LIMIT = MemoryStr('40G')
+    result = gcp_get_machine_type(mem_limit=MEM_LIMIT, num_cpus=NUM_CPUS)
+    assert result == 'e2-standard-16'
+
+    NUM_CPUS = 256
+    MEM_LIMIT = MemoryStr('40G')
+    with pytest.raises(UserReportError):
+        gcp_get_machine_type(mem_limit=MEM_LIMIT, num_cpus=NUM_CPUS)
+
+    NUM_CPUS = 32
+    MEM_LIMIT = MemoryStr('1024G')
+    with pytest.raises(UserReportError):
+        gcp_get_machine_type(mem_limit=MEM_LIMIT, num_cpus=NUM_CPUS)

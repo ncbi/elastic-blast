@@ -66,6 +66,9 @@ ELB_DFLT_GCP_PD_SIZE = '3000G'
 ELB_DFLT_GCP_MACHINE_TYPE = 'n1-standard-32'
 ELB_DFLT_AWS_MACHINE_TYPE = 'm5.8xlarge'
 
+ELB_DFLT_GCP_NUM_CPUS = 15
+ELB_DFLT_AWS_NUM_CPUS = 16
+
 ELB_DFLT_NUM_NODES = 1
 ELB_DFLT_MIN_NUM_NODES = 1
 
@@ -102,7 +105,11 @@ GCS_DFLT_BUCKET = 'gs://blast-db'
 
 GCP_APIS = ['container', 'storage-api', 'storage-component']
 # https://cloud.google.com/kubernetes-engine/docs/how-to/creating-managing-labels#requirements
+GCP_MAX_NUM_LABELS = 64
+# https://cloud.google.com/kubernetes-engine/docs/how-to/creating-managing-labels#requirements
 GCP_MAX_LABEL_LENGTH = 63 
+# https://docs.aws.amazon.com/acm/latest/userguide/tags-restrictions.html
+AWS_MAX_NUM_LABELS = 50
 # https://docs.aws.amazon.com/acm/latest/userguide/tags-restrictions.html
 AWS_MAX_TAG_LENGTH = 255
 # https://docs.aws.amazon.com/batch/latest/APIReference/API_SubmitJob.html#API_SubmitJob_RequestSyntax
@@ -148,18 +155,17 @@ class MolType(Enum):
 ELB_DFLT_GCP_REGION = 'us-east4'
 ELB_DFLT_AWS_REGION = 'us-east-1'
 
-ELB_DOCKER_IMAGE = 'ncbi/elb:0.0.28'
-ELB_DFLT_AWS_DISK_TYPE = 'gp2'
-# minimal size of gp2 disk which triggers fastest speed
-ELB_DFLT_AWS_PD_SIZE = '334G'
+ELB_DOCKER_IMAGE_GCP = 'gcr.io/ncbi-sandbox-blast/ncbi/elb:0.0.29'
+ELB_DOCKER_IMAGE_AWS = 'public.ecr.aws/i6v3i0i9/elasticblast-elb:0.0.29'
+ELB_DFLT_AWS_DISK_TYPE = 'gp3'
+ELB_DFLT_AWS_PD_SIZE = '1000G'
 # Only relevant if the disk-type is set to io2
 ELB_DFLT_AWS_PROVISIONED_IOPS = '2000'
 ELB_DFLT_AWS_SPOT_BID_PERCENTAGE = '100'
 
 # Work in progress
-ELB_QS_DOCKER_IMAGE_GCP = 'grc.io/ncbi-sandbox-blast/ncbi/elastic-blast-query-splitting:0.1.4'
-# FIXME: this is temporary until we upload it to AWS ECR
-ELB_QS_DOCKER_IMAGE_AWS = 'ncbi/elastic-blast-query-splitting:latest'
+ELB_QS_DOCKER_IMAGE_GCP = 'grc.io/ncbi-sandbox-blast/ncbi/elastic-blast-query-splitting:0.0.1'
+ELB_QS_DOCKER_IMAGE_AWS = 'public.ecr.aws/i6v3i0i9/elasticblast-query-split:0.0.1'
 
 # Config sections
 CFG_CLOUD_PROVIDER = 'cloud-provider'

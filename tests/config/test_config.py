@@ -49,6 +49,7 @@ from elastic_blast.constants import CFG_CLUSTER_NUM_CPUS, CFG_CLUSTER_NUM_NODES,
 from elastic_blast.constants import CFG_CLUSTER_PROVISIONED_IOPS, CFG_CLUSTER_USE_PREEMPTIBLE
 from elastic_blast.constants import CFG_CP_NAME, CSP, INPUT_ERROR, SYSTEM_MEMORY_RESERVE
 from elastic_blast.constants import ELB_DFLT_AWS_MACHINE_TYPE, ELB_DFLT_OUTFMT, ElbCommand
+from elastic_blast.constants import MolType
 from elastic_blast import constants
 from elastic_blast.util import ElbSupportedPrograms
 from elastic_blast.gcp_traits import get_machine_properties
@@ -262,18 +263,31 @@ class ElbConfigLibTester(unittest.TestCase):
         # NB - options are treated as single entity and command line overwrites them all, not merge, not overwrites selectively
         self.assertTrue(cfg.blast.options.strip().find('-task blastp-fast') < 0)
 
-    def test_mol_type(self):
+    def test_db_mol_type(self):
         sp = ElbSupportedPrograms()
         for p in ['BLASTp', 'blastx', 'PSIBLAST', 'rpsBLAST', 'rpstblastn']:
-            self.assertEqual(sp.get_molecule_type(p), 'prot')
+            self.assertEqual(sp.get_db_mol_type(p), MolType.PROTEIN)
         for p in ['blastn', 'megablast', 'tBLASTn', 'TBLASTX']:
-            self.assertEqual(sp.get_molecule_type(p), 'nucl')
+            self.assertEqual(sp.get_db_mol_type(p), MolType.NUCLEOTIDE)
 
-    def test_invalid_mol_type(self):
+    def test_invalid_db_mol_type(self):
         sp = ElbSupportedPrograms()
         for p in ['psi-blast', 'dummy', 'rps-blast']:
             with self.assertRaises(NotImplementedError):
-                sp.get_molecule_type(p)
+                sp.get_db_mol_type(p)
+
+    def test_query_mol_type(self):
+        sp = ElbSupportedPrograms()
+        for p in ['BLASTp', 'tblastn', 'PSIBLAST', 'rpsBLAST']:
+            self.assertEqual(sp.get_query_mol_type(p), MolType.PROTEIN)
+        for p in ['blastn', 'megablast', 'BLASTx', 'TBLASTX', 'rpstblastn']:
+            self.assertEqual(sp.get_query_mol_type(p), MolType.NUCLEOTIDE)
+
+    def test_invalid_query_mol_type(self):
+        sp = ElbSupportedPrograms()
+        for p in ['psi-blast', 'dummy', 'rps-blast']:
+            with self.assertRaises(NotImplementedError):
+                sp.get_query_mol_type(p)
 
     def test_two_cloud_providers(self):
         self.cfg.read(f"{TEST_DATA_DIR}/correct-cfg-file.ini")

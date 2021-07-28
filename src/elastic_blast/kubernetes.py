@@ -36,7 +36,7 @@ from typing import List, Optional
 
 from .util import safe_exec, gcp_get_blastdb_latest_path, ElbSupportedPrograms, SafeExecError
 from .subst import substitute_params
-from .constants import ELB_PAUSE_AFTER_INIT_PV, ELB_DOCKER_IMAGE
+from .constants import ELB_PAUSE_AFTER_INIT_PV, ELB_DOCKER_IMAGE_GCP
 from .constants import K8S_JOB_BLAST, K8S_JOB_GET_BLASTDB
 from .constants import K8S_JOB_IMPORT_QUERY_BATCHES, K8S_JOB_LOAD_BLASTDB_INTO_RAM, K8S_JOB_RESULTS_EXPORT
 from .constants import ELB_K8S_JOB_SUBMISSION_MAX_WAIT
@@ -300,10 +300,10 @@ def initialize_local_ssd(cfg: ElasticBlastConfig, db: str, db_path: str = '') ->
         'ELB_DB': db,
         'ELB_DB_PATH': db_path,
         'ELB_TAX_DB_PATH': taxdb_path,
-        'ELB_DB_MOL_TYPE': ElbSupportedPrograms().get_molecule_type(program),
+        'ELB_DB_MOL_TYPE': str(ElbSupportedPrograms().get_db_mol_type(program)),
         'ELB_BLASTDB_SRC': cfg.blast.db_source.name,
         'NODE_ORDINAL': '0',
-        'ELB_DOCKER_IMAGE': ELB_DOCKER_IMAGE,
+        'ELB_DOCKER_IMAGE': ELB_DOCKER_IMAGE_GCP,
         'K8S_JOB_GET_BLASTDB' : K8S_JOB_GET_BLASTDB,
         'K8S_JOB_LOAD_BLASTDB_INTO_RAM' : K8S_JOB_LOAD_BLASTDB_INTO_RAM,
         'K8S_JOB_IMPORT_QUERY_BATCHES' : K8S_JOB_IMPORT_QUERY_BATCHES,
@@ -400,10 +400,10 @@ def initialize_persistent_disk(cfg: ElasticBlastConfig, db: str, db_path: str = 
         'ELB_DB': db,
         'ELB_DB_PATH': db_path,
         'ELB_TAX_DB_PATH': taxdb_path,
-        'ELB_DB_MOL_TYPE': ElbSupportedPrograms().get_molecule_type(program),
+        'ELB_DB_MOL_TYPE': str(ElbSupportedPrograms().get_db_mol_type(program)),
         'ELB_BLASTDB_SRC': cfg.blast.db_source.name,
         'BUCKET': results_bucket,
-        'ELB_DOCKER_IMAGE': ELB_DOCKER_IMAGE,
+        'ELB_DOCKER_IMAGE': ELB_DOCKER_IMAGE_GCP,
         'ELB_TAXIDLIST'     : cfg.blast.taxidlist if cfg.blast.taxidlist is not None else '',
         'K8S_JOB_GET_BLASTDB' : K8S_JOB_GET_BLASTDB,
         'K8S_JOB_LOAD_BLASTDB_INTO_RAM' : K8S_JOB_LOAD_BLASTDB_INTO_RAM,
@@ -446,14 +446,18 @@ def initialize_persistent_disk(cfg: ElasticBlastConfig, db: str, db_path: str = 
         logging.debug(f'RUNTIME init-pv {end-start} seconds')
 
         # save persistent disk id so that it can be deleted on clean up
-        disk = get_persistent_disks(dry_run)
-        if disk:
-            cfg.appstate.disk_id = disk[0]
+        disks = get_persistent_disks(dry_run)
+        if disks:
+            logging.debug(f'GCP disk IDs {disks}')
+            cfg.appstate.disk_id = disks[0]
             disk_id_file = os.path.join(d, ELB_STATE_DISK_ID_FILE)
             with open(disk_id_file, 'w') as f:
-                print(cfg.appstate.disk_id, file=f)
+                for d in disks:
+                    print(d, file=f)
             dest = os.path.join(cfg.cluster.results, ELB_METADATA_DIR, ELB_STATE_DISK_ID_FILE)
             upload_file_to_gcs(disk_id_file, dest, dry_run)
+        else:
+            logging.error('Failed to get disk ID')
 
         if not 'ELB_DONT_DELETE_SETUP_JOBS' in os.environ:
             cmd = f"kubectl delete -f {job_init_pv}"

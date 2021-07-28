@@ -59,7 +59,7 @@ from elastic_blast.constants import ELB_AWS_JOB_IDS, ELB_METADATA_DIR, ELB_STATE
 from elastic_blast.constants import K8S_JOB_IMPORT_QUERY_BATCHES, K8S_JOB_LOAD_BLASTDB_INTO_RAM
 from elastic_blast.constants import ELB_QUERY_BATCH_DIR, BLASTDB_ERROR, INPUT_ERROR
 from elastic_blast.constants import PERMISSIONS_ERROR, CLUSTER_ERROR, CSP
-from elastic_blast.constants import ELB_DOCKER_IMAGE, QUERY_LIST_EXT
+from elastic_blast.constants import ELB_DOCKER_IMAGE_GCP, QUERY_LIST_EXT
 from elastic_blast.constants import ElbCommand, ELB_METADATA_DIR, ELB_META_CONFIG_FILE
 from elastic_blast.constants import ELB_S3_PREFIX, ELB_GCS_PREFIX
 from elastic_blast.taxonomy import setup_taxid_filtering
@@ -159,6 +159,7 @@ def submit(args, cfg, clean_up_stack):
         if use_2_stage_cloud_split:
             elastic_blast.split_query(query_files)
             elastic_blast.wait_for_cloud_query_split()
+            if 'ELB_NO_SEARCH' in os.environ: return 0
             qs_res = harvest_query_splitting_results(cfg.cluster.results, dry_run)
             queries = qs_res.query_batches
         upload_split_query_to_bucket(cfg, clean_up_stack, dry_run)
@@ -198,8 +199,8 @@ def submit(args, cfg, clean_up_stack):
         'ELB_BLAST_TIMEOUT': str(cfg.timeouts.blast_k8s * 60),
         'BUCKET': cfg.cluster.results,
         'ELB_NUM_CPUS': str(cfg.cluster.num_cpus),
-        'ELB_DB_MOL_TYPE': ElbSupportedPrograms().get_molecule_type(program),
-        'ELB_DOCKER_IMAGE': ELB_DOCKER_IMAGE,
+        'ELB_DB_MOL_TYPE': str(ElbSupportedPrograms().get_db_mol_type(program)),
+        'ELB_DOCKER_IMAGE': ELB_DOCKER_IMAGE_GCP,
         'ELB_TIMEFMT': '%s%N',  # timestamp in nanoseconds
         'BLAST_ELB_JOB_ID': uuid.uuid4().hex,
         'BLAST_USAGE_REPORT': str(usage_reporting).lower(),

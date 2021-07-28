@@ -134,6 +134,7 @@ def _get_pd_id(cfg: ElasticBlastConfig) -> List[str]:
     retval = list()
     if cfg.appstate.disk_id is not None:
         retval = [cfg.appstate.disk_id]
+        logging.debug(f'GCP disk ID {retval[0]}')
 
     disk_id_on_gcs = os.path.join(cfg.cluster.results, ELB_METADATA_DIR, ELB_STATE_DISK_ID_FILE)
     cmd = f'gsutil -q stat {disk_id_on_gcs}'
@@ -153,6 +154,7 @@ def _get_pd_id(cfg: ElasticBlastConfig) -> List[str]:
     except Exception as e:
         logging.error(f'Unable to read {disk_id_on_gcs}: {e}')
 
+    logging.debug(f'Fetched disk IDs {retval}')
     return retval
 
 
@@ -316,6 +318,9 @@ def check_cluster(cfg: ElasticBlastConfig):
 def start_cluster(cfg: ElasticBlastConfig):
     """ Starts cluster as specified by configuration.
     All possible exceptions will be passed to upper level.
+
+    Per https://cloud.google.com/kubernetes-engine/docs/how-to/creating-a-regional-cluster#create-regional-single-zone-nodepool
+    this function creates a (standard GKE) regional cluster with a single-zone node pool
     """
 
     cluster_name = ''

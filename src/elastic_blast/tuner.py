@@ -27,6 +27,7 @@ Created: Fri 14 May 2021 05:10:18 PM EDT
 import json, logging, os
 from enum import Enum
 from dataclasses import dataclass
+from bisect import bisect_left
 from .filehelper import open_for_read
 from .constants import BLASTDB_ERROR, INPUT_ERROR, ELB_BLASTDB_MEMORY_MARGIN
 from .constants import UNKNOWN_ERROR, MolType
@@ -34,6 +35,7 @@ from .constants import ELB_S3_PREFIX, ELB_GCS_PREFIX
 from .base import DBSource, PositiveInteger, MemoryStr
 from .util import UserReportError, get_query_batch_size
 from .aws_traits import get_instance_type_offerings, get_suitable_instance_types
+from .gcp_traits import GCP_MACHINES
 
 @dataclass
 class SeqData:
@@ -174,9 +176,9 @@ def get_batch_length(program: str, mt_mode: MTMode, num_cpus: int) -> int:
     return batch_len
 
 
-def get_mem_limit(db: DbData, const_limit: MemoryStr, db_factor: float,
+def aws_get_mem_limit(db: DbData, const_limit: MemoryStr, db_factor: float,
                   with_optimal: bool) -> MemoryStr:
-    """Get memory limit for searching a single query batch
+    """Get memory limit for searching a single query batch for AWS
 
     Arguments:
         db: Database information
@@ -198,8 +200,22 @@ def get_mem_limit(db: DbData, const_limit: MemoryStr, db_factor: float,
             return const_limit
 
 
-def get_machine_type(db: DbData, num_cpus: PositiveInteger, region: str) -> str:
-    """Select a machine type that can acomodate the database and and has
+def gcp_get_mem_limit(db: DbData, db_factor: float) -> MemoryStr:
+    """Get memory limit for searching a single query batch for GCP. One job
+    per instance is assumed.
+
+    Arguments:
+        db: Database information
+        db_factor: If larger than 0, memory limit will be computed as database
+                   bytes-to-cache times db_factor
+
+    Returns:
+        A search job memory limit as MemoryStr"""
+    return MemoryStr(f'{round(db.bytes_to_cache_gb * db_factor, 1)}G')
+
+
+def aws_get_machine_type(db: DbData, num_cpus: PositiveInteger, region: str) -> str:
+    """Select an AWS machine type that can accommodate the database and has
     enough VCPUs. The machine type is selected from a set of machines supported
     by AWS Batch and offered in a specific region.
 
@@ -211,28 +227,15 @@ def get_machine_type(db: DbData, num_cpus: PositiveInteger, region: str) -> str:
     Returns:
         Instance type with at least as much memory as db.bytes_to_cache_gb and
         required number of CPUs"""
-
-    AWS_BATCH_SUPPORTED_INSTANCE_TYPES = ['m6g.xlarge', 'r5d.24xlarge', 
-          'm3.xlarge', 'r4.16xlarge', 'r5a.2xlarge', 'c6g.4xlarge',
-          'm6gd.xlarge', 'm5.xlarge', 'c5a.2xlarge', 'r6g.4xlarge',
-          'r6g.16xlarge', 'i3.4xlarge', 'z1d.3xlarge', 'm5n.24xlarge',
-          'a1.medium', 'd3en.2xlarge', 'c6gd.12xlarge', 'r5b.16xlarge',
-          'm5.large', 'c5d.large', 'm6g.2xlarge', 'm5dn.2xlarge', 'c5.large',
-          'g4dn.2xlarge', 'c5.metal', 'i3en.6xlarge', 'inf1.2xlarge',
-          'd3.4xlarge', 'r6gd.4xlarge', 'm5.2xlarge', 'r6g.xlarge',
-          'm5dn.8xlarge', 'r5n.16xlarge', 'm6g.8xlarge', 'm6gd.12xlarge',
-          'c5a.8xlarge', 'i2.xlarge', 'm5d.12xlarge', 'm5.metal', 'c5d.metal',
-          'm4.4xlarge', 'm5.12xlarge', 'm6g.12xlarge', 'r5n.4xlarge',
-          'm6gd.4xlarge', 'd3en.8xlarge', 'c4.large', 'c5d.2xlarge',
-          'r5d.2xlarge', 'r5.xlarge', 'r5b.24xlarge', 'c4.4xlarge', 'c4.xlarge',
-          'c6g.large', 'c6gd.medium', 'r6gd.12xlarge', 'r4.8xlarge',
-          'm5d.xlarge', 'c6gd.2xlarge', 'm5.8xlarge', 'c5.2xlarge',
-          'g3.8xlarge', 'c5n.9xlarge']
+    M5_FAMILY = ['m5.large'] + [f'm5.{i}xlarge' for i in [2, 4, 8, 12, 16, 24]]
+    C5_FAMILY = ['c5.large'] + [f'c5.{i}xlarge' for i in [2, 4, 9, 12, 18, 24]]
+    R5_FAMILY = ['r5.large'] + [f'r5.{i}xlarge' for i in [2, 4, 8, 12, 16, 24]]
+    SUPPORTED_INSTANCE_TYPES = M5_FAMILY + C5_FAMILY + R5_FAMILY
 
     # get a list of instance types offered in the region
     offerings = get_instance_type_offerings(region)
 
-    supported_offerings = [tp for tp in offerings if tp in AWS_BATCH_SUPPORTED_INSTANCE_TYPES]
+    supported_offerings = [tp for tp in offerings if tp in SUPPORTED_INSTANCE_TYPES]
 
     # get properties of suitable instances
     suitable_props = get_suitable_instance_types(min_memory=MemoryStr(f'{db.bytes_to_cache_gb * ELB_BLASTDB_MEMORY_MARGIN}G'),
@@ -241,3 +244,52 @@ def get_machine_type(db: DbData, num_cpus: PositiveInteger, region: str) -> str:
 
     return sorted(suitable_props, key=lambda x: x['VCpuInfo']['DefaultVCpus'])[0]['InstanceType']
 
+
+def gcp_get_machine_type(mem_limit: MemoryStr, num_cpus: PositiveInteger) -> str:
+    """Select a GCP machine type that can accommodate the database and has
+    enough VCPUs. The instance type is selected from E2 and N1 instance
+    families. One job per instance is assumed.
+
+    Arguments:
+        mem_limit: Search job memort limit
+        num_cpus: Required number of CPUs
+
+    Returns:
+        Instance type with at least as much memory as mem_limit and
+        required number of CPUs"""
+    # machine type families ranked by memory to CPU ratio (order matters)
+    FAMILIES_N1 = ['n1-highcpu',
+                   'n1-standard',
+                   'n1-highmem']
+
+    FAMILIES_E2 = ['e2-standard', 'e2-highmem']
+
+    # numbers of CPUs in GCP instance types
+    CPUS = [1, 2, 4, 8, 16, 32, 64, 96]
+
+    idx = bisect_left(CPUS, num_cpus)
+    if idx >= len(CPUS):
+        raise UserReportError(returncode=UNKNOWN_ERROR,
+                              message=f'GCP machine type with {num_cpus} CPUs could not be found')
+
+    # E2 machine types are usually the cheapest, but have at most 128GB memory
+    machine_type_families = FAMILIES_E2 if mem_limit.asGB() < 120 and num_cpus <= 32 else FAMILIES_N1
+
+    machine_cpus = CPUS[idx]
+    mem_cpu_ratio = mem_limit.asGB() / machine_cpus
+    family = None
+    while idx < len(CPUS) and not family:
+        machine_cpus = CPUS[idx]
+        mem_cpu_ratio = mem_limit.asGB() / machine_cpus
+        for fam in machine_type_families:
+            if mem_cpu_ratio <= GCP_MACHINES[fam]:
+                family = fam
+                break
+        if not family:
+            idx += 1
+
+    if not family:
+        raise UserReportError(returncode=UNKNOWN_ERROR,
+                              message=f'GCP machine type for memory limit {mem_limit.asGB()}GB and {num_cpus} CPUs could not be found')
+
+    return f'{family}-{machine_cpus}'

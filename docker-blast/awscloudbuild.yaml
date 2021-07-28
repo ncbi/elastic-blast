@@ -1,0 +1,9 @@
+steps:
+- name: 'docker'
+  args: [ 'build', '-t', '${_IMG}:$TAG_NAME', '-t', '${_IMG}:latest', '.' ]
+- name: 'docker'
+  args: [ 'login', '-u', 'AWS', '-p', '${_AWS_ECR_PASSWD}', '${_SERVER}' ]
+- name: 'docker'
+  args: [ 'push', '${_IMG}:$TAG_NAME' ]
+- name: 'docker'
+  args: [ 'push', '${_IMG}:latest' ]

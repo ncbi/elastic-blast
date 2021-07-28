@@ -62,7 +62,7 @@ def harvest_query_splitting_results(bucket_name: str, dry_run: bool = False, bot
         qbatches = os.path.join(bucket_name, ELB_QUERY_BATCH_DIR)
         with open_for_read(qlen_file) as ql:
             qlen = int(ql.read())
-        bucket, key = parse_bucket_name_key(bucket_name)
+        bucket, key = parse_bucket_name_key(qbatches)
         s3 = boto3.resource('s3') if boto_cfg == None else boto3.resource('s3', config=boto_cfg)
         s3_bucket = s3.Bucket(bucket)
         for obj in s3_bucket.objects.filter(Prefix=key):

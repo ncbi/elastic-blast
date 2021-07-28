@@ -187,10 +187,10 @@ def test_convert_labels_to_aws_tags():
     for i in tags:
         k, v = i.values()
         t[k] = v
-    assert('Project' in t.keys())
+    assert('project' in t.keys())
     assert('billingcode' in t.keys())
-    assert('Name' in t.keys())
-    assert('Owner' in t.keys())
+    assert('name' in t.keys())
+    assert('owner' in t.keys())
     assert('results' in t.keys())
     assert(t['results'] == 's3://some.bucket.with_s0me-interesting-name-end')
 

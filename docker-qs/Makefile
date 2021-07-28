@@ -27,9 +27,11 @@ SHELL=/bin/bash
 .PHONY: all pre-check check clean build publish gcp-build gcp-check gcp-clean
 
 IMG?=ncbi/elastic-blast-query-splitting
-VERSION?=$(shell git describe --abbrev=0 --tags)
+VERSION?=0.0.1
 GCP_PROJECT?=$(shell gcloud config get-value project 2>/dev/null)
 AWS_REGION?=us-east-1
+AWS_SERVER?=public.ecr.aws/i6v3i0i9
+AWS_IMG?=${AWS_SERVER}/elasticblast-query-split
 
 all: gcp-build gcp-check
 
@@ -65,6 +67,10 @@ gcp-check:
 gcp-list-tagless-images:
 	gcloud container images list-tags gcr.io/${GCP_PROJECT}/${IMG} \
 		--filter='-tags:*' --format="get(digest)"
+
+.PHONY: aws-build
+aws-build:
+	gcloud builds submit --config=awscloudbuild.yaml --substitutions=TAG_NAME="${VERSION}",_IMG="${AWS_IMG}",_SERVER="${AWS_SERVER}",_AWS_ECR_PASSWD="`aws ecr-public get-login-password --region us-east-1`" .
 
 # This command needs to be run on an instance with docker installed. First build the image using "make build"
 ECR_REPO=?65123123.dkr.ecr.us-east-1.amazonaws.com

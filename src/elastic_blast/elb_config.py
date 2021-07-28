@@ -35,6 +35,7 @@ import time
 import socket
 import logging
 import shlex
+from collections import defaultdict
 from typing import Optional, List
 from typing import cast
 from .constants import CSP, ElbCommand
@@ -69,7 +70,9 @@ from .constants import CFG_TIMEOUTS, CFG_TIMEOUT_INIT_PV
 from .constants import CFG_TIMEOUT_BLAST_K8S_JOB
 from .constants import INPUT_ERROR, ELB_NOT_INITIALIZED_MEM, ELB_NOT_INITIALIZED_NUM
 from .constants import GCP_MAX_LABEL_LENGTH, AWS_MAX_TAG_LENGTH
+from .constants import GCP_MAX_NUM_LABELS, AWS_MAX_NUM_LABELS
 from .constants import SYSTEM_MEMORY_RESERVE
+from .constants import ELB_DFLT_AWS_NUM_CPUS, ELB_DFLT_GCP_NUM_CPUS
 from .constants import ELB_S3_PREFIX, ELB_GCS_PREFIX
 from .util import validate_gcp_string, validate_aws_region
 from .util import validate_gke_cluster_name, ElbSupportedPrograms
@@ -346,22 +349,20 @@ class ClusterConfig(ConfigParserToDataclassMapper):
                 self.pd_size = ELB_DFLT_AWS_PD_SIZE
 
         # default number of CPUs
-        if self.machine_type != 'optimal' and self.num_cpus == ELB_NOT_INITIALIZED_NUM:
-            instance_props = get_instance_props(cloud_provider,
-                                                self.machine_type)
-
-            if cloud_provider.cloud == CSP.AWS and instance_props.ncpus < 1 or\
-               cloud_provider.cloud == CSP.GCP and instance_props.ncpus < 2:
-                raise ValueError(f'The selected instance type "{self.machine_type}" has too few CPUs to run the search. Please select an instance with more CPUs.')
-
-            if cloud_provider.cloud == CSP.AWS:
-                self.num_cpus = PositiveInteger(instance_props.ncpus)
+        if self.num_cpus == ELB_NOT_INITIALIZED_NUM:
+            if cloud_provider.cloud == CSP.GCP:
+                self.num_cpus = PositiveInteger(ELB_DFLT_GCP_NUM_CPUS)
             else:
-                self.num_cpus = PositiveInteger(instance_props.ncpus - 1)
-        else:
-            if self.num_cpus == ELB_NOT_INITIALIZED_NUM:
-                msg = 'You specified "optimal" cluster.machine-type, which requires configuring cluster.num-cpus. Please provide that configuration parameter or change cluster.machine-type.'
-                raise UserReportError(returncode=INPUT_ERROR, message=msg)
+                self.num_cpus = PositiveInteger(ELB_DFLT_AWS_NUM_CPUS)
+
+        # Sanity check for the instance type and num CPUs
+        if self.machine_type != 'optimal':
+            instance_props = get_instance_props(cloud_provider, self.machine_type)
+            if instance_props.ncpus < self.num_cpus:
+                self.num_cpus = PositiveInteger(instance_props.ncpus)
+                if cloud_provider.cloud == CSP.GCP:
+                    self.num_cpus = PositiveInteger(instance_props.ncpus - 1)
+                logging.debug(f'Requested number of vCPUs lowered to {self.num_cpus} because of instance type choice {self.machine_type}')
             
         # default cluster name
         username = getpass.getuser().lower()
@@ -494,12 +495,12 @@ class ElasticBlastConfig:
             dry_run = kwargs.get('dry_run', False)
 
         # post-init activities
-        # compute default labels unless provided
-        if not self.cluster.labels:
-            self.cluster.labels = create_default_labels(self.cloud_provider.cloud,
-                                                        self.cluster.results,
-                                                        self.blast,
-                                                        self.cluster.name)
+        # set resources labels
+        self.cluster.labels = create_labels(self.cloud_provider.cloud,
+                                            self.cluster.results,
+                                            self.blast,
+                                            self.cluster.name,
+                                            self.cluster.labels)
         self.validate(task, dry_run)
 
 
@@ -529,6 +530,7 @@ class ElasticBlastConfig:
         Parameters:
             cfg: ConfigParser object"""
 
+        self._validate_config_parser(cfg)
         _validate_csp(cfg)
         if sum([i.startswith('aws') for i in cfg[CFG_CLOUD_PROVIDER]]) > 0:
             self.cloud_provider = AWSConfig.create_from_cfg(cfg)
@@ -604,6 +606,34 @@ class ElasticBlastConfig:
 
             self.timeouts = TimeoutsConfig()
             self.appstate = AppState()
+
+
+    def _validate_config_parser(self, parser: configparser.ConfigParser) -> None:
+        """Ensure that each config parser key is mapped to an attribute.
+
+            Arguments:
+                parser: ConfigParser object
+
+            Raises:
+                UserReportError if parser[section][parameter] is not mapped
+                to an ElasticBlastParameter"""
+        params = defaultdict(list)
+        # for each annotated class attribute, which inherits from
+        # ConfigParserToDataclassMapper get attribute to configparser
+        # parameter mapping
+        for attribute in type(self).__annotations__:
+            if issubclass(type(self).__annotations__[attribute], ConfigParserToDataclassMapper):
+                mapping = type(self).__annotations__[attribute].mapping.values()
+                for p in mapping:
+                    if p is not None:
+                        params[p.section].append(p.param_name)
+
+        # find configparser parameters not present in the mapping
+        for section in parser:
+            for param_name in parser[section]:
+                if param_name not in params[section]:
+                    raise UserReportError(returncode=INPUT_ERROR,
+                                          message=f'Unrecognized configuration parameter "{param_name}" in section "{section}". Please, ensure that parameter names are properly spelled and placed in appropriate sections.')
 
 
     def validate(self, task: ElbCommand = ElbCommand.SUBMIT, dry_run=False):
@@ -682,18 +712,19 @@ class ElasticBlastConfig:
 
 
 
-def create_default_labels(cloud_provider: CSP,
-                          results: str,
-                          blast_conf: Optional[BlastConfig],
-                          cluster_name: str) -> str:
-    """Generate default labels for cloud resources"""
+def create_labels(cloud_provider: CSP,
+                  results: str,
+                  blast_conf: Optional[BlastConfig],
+                  cluster_name: str,
+                  user_provided_labels: str = None) -> str:
+    """Generate labels for cloud resources"""
     if cloud_provider == CSP.AWS:
         sanitize = sanitize_aws_tag
     else:
         sanitize = sanitize_gcp_label
     username = sanitize(getpass.getuser())
     if re.search(r'[A-Z]', cluster_name):
-        logging.warning('Warning: cluster name must have all lower case characters')
+        raise UserReportError(INPUT_ERROR, f'cluster name {cluster_name} must have all lower case characters')
 
     cluster_name = sanitize(cluster_name)
     blast_program = sanitize(blast_conf.program) if blast_conf else '-'
@@ -703,13 +734,57 @@ def create_default_labels(cloud_provider: CSP,
 
     results = sanitize(results)
 
-    labels = f'cluster-name={cluster_name},client-hostname={hostname},' \
-             f'created={create_date},owner={username},project=elastic-blast,' \
-             f'creator={username},program={blast_program},db={db},' \
-             f'billingcode=elastic-blast,name={cluster_name},' \
-             f'results={results}'
+    custom_labels = {}
+    if user_provided_labels:
+        kv_pairs = user_provided_labels.split(',')
+        for kv in kv_pairs:
+            tokens = kv.split('=')
+            if len(tokens) != 2:
+                msg = f'labels configuration "{kv_pairs}" is incorrect, please refer to the documentation for help'
+                raise UserReportError(INPUT_ERROR, msg)
+            key = tokens[0]
+            value = tokens[1]
+            if re.search(r'[A-Z]', key):
+                raise UserReportError(INPUT_ERROR, f'Key "{key}" must have all lower case characters')
+            if re.search(r'[A-Z]', value):
+                raise UserReportError(INPUT_ERROR, f'Value "{value}" must have all lower case characters')
+            custom_labels[key] = value
 
-    # TODO: count '=' characters in labels to quantify number of labels. There shouldn't be more than 64 in GCP, see EB-836
+    default_labels = {
+        'cluster-name' : cluster_name,
+        'client-hostname': hostname,
+        'project': 'elastic-blast',
+        'billingcode': 'elastic-blast',
+        'creator': username,
+        'created': create_date,
+        'owner': username,
+        'program': blast_program,
+        'db': db,
+        'name': cluster_name,
+        'results': results
+    }
+
+    labels = ''
+    for label in default_labels.keys():
+        if label in custom_labels.keys():
+            custom_value = custom_labels.pop(label)
+            labels += f'{label}={custom_value},'
+        else:
+            labels += f'{label}={default_labels[label]},'
+
+    for label in custom_labels.keys():
+        labels += f'{label}={custom_labels[label]},'
+    labels = labels.rstrip(',') # Remove the trailing comma
+
+    # Validate the number of labels used
+    num_labels = labels.count('=')
+    if cloud_provider == CSP.GCP:
+        if num_labels > GCP_MAX_NUM_LABELS:
+            raise UserReportError(INPUT_ERROR, f'Too many labels are being used ({num_labels}); GCP only supports up to {GCP_MAX_NUM_LABELS}')
+    else:
+        if num_labels > AWS_MAX_NUM_LABELS:
+            raise UserReportError(INPUT_ERROR, f'Too many labels are being used ({num_labels}); AWS only supports up to {AWS_MAX_NUM_LABELS}')
+
 
     return labels
 

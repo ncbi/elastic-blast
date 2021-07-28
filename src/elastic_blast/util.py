@@ -68,18 +68,36 @@ class ElbSupportedPrograms:
         if program not in self._programs:
             raise ValueError(f"{program} is not a supported BLAST program")
 
-    def get_molecule_type(self, program: str) -> str:
+    def get_db_mol_type(self, program: str) -> MolType:
         ''' Returns the expected molecule type for the program passed in as an argument.
         '''
         p = program.lower()
         if p not in self._programs:
             raise NotImplementedError(f'Invalid BLAST program "{program}"')
 
-        retval = str(MolType.UNKNOWN)
+        retval = MolType.UNKNOWN
         if p == 'blastn' or p == 'megablast' or p == 'tblastn' or p == 'tblastx':
-            retval = str(MolType.NUCLEOTIDE)
+            retval = MolType.NUCLEOTIDE
         elif re.search(r'^blast[px]$', p) or re.search(r'^(psi|rps)blast$', p) or p == 'rpstblastn':
-            retval = str(MolType.PROTEIN)
+            retval = MolType.PROTEIN
+        else:
+            raise NotImplementedError(f'Invalid BLAST program "{program}"')
+        return retval
+
+
+    def get_query_mol_type(self, program: str) -> MolType:
+        ''' Returns the expected query molecule type for the program passed in
+            as an argument.
+        '''
+        p = program.lower()
+        if p not in self._programs:
+            raise NotImplementedError(f'Invalid BLAST program "{program}"')
+
+        retval = MolType.UNKNOWN
+        if p in ['blastn', 'megablast', 'blastx', 'tblastx', 'rpstblastn']:
+            retval = MolType.NUCLEOTIDE
+        elif p in ['blastp', 'tblastn', 'psiblast', 'rpsblast']:
+            retval = MolType.PROTEIN
         else:
             raise NotImplementedError(f'Invalid BLAST program "{program}"')
         return retval
@@ -368,10 +386,6 @@ def convert_labels_to_aws_tags(labels: str):
     retval = []
     for token in labels.split(','):
         k, v = token.split('=')
-        # Change some keys to follow NCBI guidelines
-        if k == 'owner': k = 'Owner'
-        if k == 'project': k = 'Project'
-        if k == 'name': k = 'Name'
         retval.append({'Key': k, 'Value': v})
     return retval
 

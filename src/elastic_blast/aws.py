@@ -49,7 +49,7 @@ from .util import get_usage_reporting
 from .util import UserReportError, sanitize_aws_batch_job_name
 from .constants import BLASTDB_ERROR, CLUSTER_ERROR, ELB_AWS_QUERY_LENGTH, ELB_UNKNOWN_NUMBER_OF_QUERY_SPLITS, PERMISSIONS_ERROR
 from .constants import ELB_QUERY_BATCH_DIR, ELB_METADATA_DIR, ELB_LOG_DIR
-from .constants import ELB_DOCKER_IMAGE, INPUT_ERROR, ELB_QS_DOCKER_IMAGE_AWS
+from .constants import ELB_DOCKER_IMAGE_AWS, INPUT_ERROR, ELB_QS_DOCKER_IMAGE_AWS
 from .constants import DEPENDENCY_ERROR, TIMEOUT_ERROR
 from .constants import ELB_AWS_JOB_IDS, ELB_S3_PREFIX, ELB_GCS_PREFIX
 from .filehelper import parse_bucket_name_key
@@ -190,7 +190,7 @@ class ElasticBlastAws:
                 {'ParameterKey': 'MachineType', 'ParameterValue': instance_type},
                 {'ParameterKey': 'DiskType', 'ParameterValue': disk_type},
                 {'ParameterKey': 'DiskSize', 'ParameterValue': str(disk_size)},
-                {'ParameterKey': 'DockerImageBlast', 'ParameterValue': ELB_DOCKER_IMAGE},
+                {'ParameterKey': 'DockerImageBlast', 'ParameterValue': ELB_DOCKER_IMAGE_AWS},
                 {'ParameterKey': 'DockerImageQuerySplitting', 'ParameterValue': ELB_QS_DOCKER_IMAGE_AWS},
                 {'ParameterKey': 'RandomToken', 'ParameterValue': token}
             ]
@@ -293,6 +293,7 @@ class ElasticBlastAws:
         self.job_queue_name = None
         self.blast_job_definition_name = None
         self.qs_job_definition_name = None
+        self.compute_env_name = None
         if not self.dry_run and self.cf_stack and \
                self.cf_stack.stack_status == 'CREATE_COMPLETE':
             for output in self.cf_stack.outputs:
@@ -302,6 +303,8 @@ class ElasticBlastAws:
                     self.blast_job_definition_name = output['OutputValue']
                 elif output['OutputKey'] == 'QuerySplittingJobDefinitionName':
                     self.qs_job_definition_name = output['OutputValue']
+                elif output['OutputKey'] == 'ComputeEnvName':
+                    self.compute_env_name = output['OutputValue']
 
             if self.job_queue_name:
                 logging.debug(f'JobQueueName: {self.job_queue_name}')
@@ -317,6 +320,11 @@ class ElasticBlastAws:
                 logging.debug(f'QuerySplittingJobDefinitionName: {self.qs_job_definition_name}')
             else:
                 raise UserReportError(returncode=DEPENDENCY_ERROR, message='QuerySplittingJobDefinitionName could not be read from cloudformation stack')
+
+            if self.compute_env_name:
+                logging.debug(f'ComputeEnvName: {self.compute_env_name}')
+            else:
+                logging.warning('ComputeEnvName could not be read from cloudformation stack')
 
     def _provide_subnets(self):
         """ Read subnets from config file or if not set try to get them from default VPC """
@@ -631,7 +639,7 @@ class ElasticBlastAws:
         parameters = {'db': self.db,
                       'db-path': self.db_path,
                       'db-source': self.cfg.blast.db_source.name,
-                      'db-mol-type': ElbSupportedPrograms().get_molecule_type(prog),
+                      'db-mol-type': str(ElbSupportedPrograms().get_db_mol_type(prog)),
                       'num-vcpus': str(self.cfg.cluster.num_cpus),
                       'blast-program': prog,
                       'blast-options': self.cfg.blast.options,

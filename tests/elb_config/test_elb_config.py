@@ -57,6 +57,8 @@ from elastic_blast.constants import ELB_DFLT_GCP_MACHINE_TYPE, ELB_DFLT_AWS_MACH
 from elastic_blast.constants import ELB_DFLT_INIT_PV_TIMEOUT, ELB_DFLT_BLAST_K8S_TIMEOUT
 from elastic_blast.constants import ELB_DFLT_AWS_SPOT_BID_PERCENTAGE
 from elastic_blast.constants import ELB_DFLT_AWS_DISK_TYPE, ELB_DFLT_OUTFMT
+from elastic_blast.constants import ELB_DFLT_AWS_NUM_CPUS, ELB_DFLT_GCP_NUM_CPUS
+from elastic_blast.constants import INPUT_ERROR
 from elastic_blast.base import ConfigParserToDataclassMapper, ParamInfo, DBSource
 from elastic_blast.base import InstanceProperties
 from elastic_blast.elb_config import CloudURI, GCPString, AWSRegion
@@ -452,7 +454,7 @@ def test_clusterconfig_gcp():
     assert cfg.name.startswith('elasticblast')
     assert cfg.machine_type == ELB_DFLT_GCP_MACHINE_TYPE
     assert cfg.pd_size == ELB_DFLT_GCP_PD_SIZE
-    assert cfg.num_cpus == get_instance_props(gcp_cfg, cfg.machine_type).ncpus - 1
+    assert cfg.num_cpus == ELB_DFLT_GCP_NUM_CPUS
     assert cfg.num_nodes == ELB_DFLT_NUM_NODES
     assert cfg.results == RESULTS
     assert not cfg.use_preemptible
@@ -475,7 +477,7 @@ def test_clusterconfig_aws():
     assert cfg.results == RESULTS
     assert cfg.machine_type == ELB_DFLT_AWS_MACHINE_TYPE
     assert cfg.pd_size == ELB_DFLT_AWS_PD_SIZE
-    assert cfg.num_cpus == get_instance_props(aws_cfg, cfg.machine_type).ncpus
+    assert cfg.num_cpus == ELB_DFLT_AWS_NUM_CPUS
     assert cfg.num_nodes == ELB_DFLT_NUM_NODES
     assert not cfg.use_preemptible
     assert cfg.disk_type == ELB_DFLT_AWS_DISK_TYPE
@@ -489,14 +491,14 @@ def test_clusterconfig_aws():
     assert not errors
 
 
-@patch(target='elastic_blast.elb_config.aws_get_machine_properties', new=MagicMock(return_value=InstanceProperties(32, 120)))
+@patch(target='elastic_blast.elb_config.aws_get_machine_properties', new=MagicMock(return_value=InstanceProperties(ELB_DFLT_AWS_NUM_CPUS, 120)))
 def test_clusterconfig_from_configparser():
     """Test ClusterConfig initialized from a ConfigParser object"""
     RESULTS = 's3://test-bucket'
     NAME = 'test-name'
     MACHINE_TYPE = 'test-machine-type'
     PD_SIZE = 'test-pd-size'
-    NUM_CPUS = 123
+    NUM_CPUS = 10
     NUM_NODES = 5000
     USE_PREEMPTIBLE = 'Yes'
     DISK_TYPE = 'test-disk-type'
@@ -599,7 +601,7 @@ def test_ElasticBlastConfig_init_errors():
     assert 'task parameter must be specified' in str(err.value)
 
 
-@patch(target='elastic_blast.elb_config.aws_get_machine_properties', new=MagicMock(return_value=InstanceProperties(2, 8)))
+@patch(target='elastic_blast.elb_config.aws_get_machine_properties', new=MagicMock(return_value=InstanceProperties(32, 128)))
 def test_validate_too_many_cpus():
     """Test that requesting too many CPUs is reported"""
     cfg = ElasticBlastConfig(aws_region = 'test-region',
@@ -608,9 +610,88 @@ def test_validate_too_many_cpus():
                              queries = 'test-query.fa',
                              results = 's3://results',
                              task = ElbCommand.SUBMIT)
-    cfg.cluster.machine_type = 'm5.large'
-    cfg.cluster.num_cpus = 16
+    cfg.cluster.num_cpus = 128
 
     with pytest.raises(UserReportError) as err:
         cfg.validate(ElbCommand.SUBMIT)
     assert  re.search(r'number of CPUs [\w "]* exceeds', str(err.value))
+
+
+def test_ElasticBlastConfig_from_configparser():
+    """Test creating ElasticBlastConfig from a ConfigParser object"""
+    PROJECT = 'some-project'
+    REGION = 'some-region'
+    ZONE = 'some-zone'
+    QUERY = 'some-query'
+    DB = 'some-db'
+    PROGRAM = 'blastp'
+    RESULTS = 'gs://results'
+
+    confpars = configparser.ConfigParser()
+    confpars[CFG_CLOUD_PROVIDER] = {CFG_CP_GCP_PROJECT: PROJECT,
+                                    CFG_CP_GCP_REGION: REGION,
+                                    CFG_CP_GCP_ZONE: ZONE}
+
+    confpars[CFG_BLAST] = {CFG_BLAST_QUERY: QUERY,
+                           CFG_BLAST_DB: DB,
+                           CFG_BLAST_PROGRAM: PROGRAM,
+                           CFG_BLAST_RESULTS: RESULTS}
+
+    cfg = ElasticBlastConfig(confpars, task = ElbCommand.SUBMIT)
+    assert cfg.gcp.project == PROJECT
+    assert cfg.gcp.region == REGION
+    assert cfg.gcp.zone == ZONE
+    assert cfg.blast.queries_arg == QUERY
+    assert cfg.blast.db == DB
+    assert cfg.blast.program == PROGRAM
+    assert cfg.cluster.results == RESULTS
+
+
+def test_ElasticBlastConfig_from_configparser_wrong_params():
+    """Test initializing ElasticBlastConfig object from a ConfigParser object
+    with wrong section or parameter names results in an exception"""
+    confpars = configparser.ConfigParser()
+    confpars[CFG_CLOUD_PROVIDER] = {CFG_CP_GCP_PROJECT: 'some-project',
+                                    CFG_CP_GCP_REGION: 'region',
+                                    CFG_CP_GCP_ZONE: 'zone'}
+
+    # a correct parameter in an incorrect section
+    confpars[CFG_BLAST] = {CFG_BLAST_QUERY: 'some-queries',
+                           CFG_BLAST_DB: 'some-db',
+                           CFG_BLAST_PROGRAM: 'blastp',
+                           CFG_BLAST_RESULTS: 'gs://results',
+                           CFG_CLUSTER_NUM_CPUS: '4'}
+
+    with pytest.raises(UserReportError) as err:
+        ElasticBlastConfig(confpars, task = ElbCommand.SUBMIT)
+    assert err.value.returncode == INPUT_ERROR
+    assert 'Unrecognized configuration parameter' in err.value.message
+    assert CFG_CLUSTER_NUM_CPUS in err.value.message
+    assert CFG_BLAST in err.value.message
+
+    confpars[CFG_BLAST] = {CFG_BLAST_QUERY: 'some-queries',
+                           CFG_BLAST_DB: 'some-db',
+                           CFG_BLAST_PROGRAM: 'blastp',
+                           CFG_BLAST_RESULTS: 'gs://results'}
+
+    # misspelled section name
+    confpars['clustr'] = {CFG_CLUSTER_NUM_CPUS: '4'}
+
+    with pytest.raises(UserReportError) as err:
+        ElasticBlastConfig(confpars, task = ElbCommand.SUBMIT)
+    assert err.value.returncode == INPUT_ERROR
+    assert 'Unrecognized configuration parameter' in err.value.message
+    assert CFG_CLUSTER_NUM_CPUS in err.value.message
+    assert 'clustr' in err.value.message
+
+    del confpars['clustr']
+
+    # a non-existent parameter in a non-existent section
+    confpars['wrong-section'] = {'wrong-param': 'some-value'}
+
+    with pytest.raises(UserReportError) as err:
+        ElasticBlastConfig(confpars, task = ElbCommand.SUBMIT)
+    assert err.value.returncode == INPUT_ERROR
+    assert 'Unrecognized configuration parameter' in err.value.message
+    assert 'wrong-section' in err.value.message
+    assert 'wrong-param' in err.value.message

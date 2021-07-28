@@ -23,7 +23,9 @@ elb-run-summary.json
 *.tar.gz
 total_count
 /jobs
-*.fa
+/*.fa
+/*.fna
+/*.fsa
 .tox/
 htmlcov/
 .coverage*
