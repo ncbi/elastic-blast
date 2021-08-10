@@ -44,6 +44,13 @@ class ElbCommand(Enum):
     RUN_SUMMARY = 'run-summary'
 
 
+class QuerySplitMode(Enum):
+    """ Query split mode - client, cloud 1 stage, cloud 2 stage """
+    CLIENT = auto()
+    CLOUD_ONE_STAGE = auto()
+    CLOUD_TWO_STAGE = auto()
+
+
 # Number of seconds to wait after the job that initializes the persistent
 # volume completes. This is to prevent mount errors in the subsequent BLAST k8s
 # jobs
@@ -155,8 +162,11 @@ class MolType(Enum):
 ELB_DFLT_GCP_REGION = 'us-east4'
 ELB_DFLT_AWS_REGION = 'us-east-1'
 
-ELB_DOCKER_IMAGE_GCP = 'gcr.io/ncbi-sandbox-blast/ncbi/elb:0.0.29'
-ELB_DOCKER_IMAGE_AWS = 'public.ecr.aws/i6v3i0i9/elasticblast-elb:0.0.29'
+ELB_DOCKER_VERSION = '0.0.29'
+ELB_QS_DOCKER_VERSION = '0.0.2'
+
+ELB_DOCKER_IMAGE_GCP = f'gcr.io/ncbi-sandbox-blast/ncbi/elb:{ELB_DOCKER_VERSION}'
+ELB_DOCKER_IMAGE_AWS = f'public.ecr.aws/ncbi-elasticblast/elasticblast-elb:{ELB_DOCKER_VERSION}'
 ELB_DFLT_AWS_DISK_TYPE = 'gp3'
 ELB_DFLT_AWS_PD_SIZE = '1000G'
 # Only relevant if the disk-type is set to io2
@@ -164,8 +174,8 @@ ELB_DFLT_AWS_PROVISIONED_IOPS = '2000'
 ELB_DFLT_AWS_SPOT_BID_PERCENTAGE = '100'
 
 # Work in progress
-ELB_QS_DOCKER_IMAGE_GCP = 'grc.io/ncbi-sandbox-blast/ncbi/elastic-blast-query-splitting:0.0.1'
-ELB_QS_DOCKER_IMAGE_AWS = 'public.ecr.aws/i6v3i0i9/elasticblast-query-split:0.0.1'
+ELB_QS_DOCKER_IMAGE_GCP = f'gcr.io/ncbi-sandbox-blast/ncbi/elastic-blast-query-splitting:{ELB_QS_DOCKER_VERSION}'
+ELB_QS_DOCKER_IMAGE_AWS = f'public.ecr.aws/ncbi-elasticblast/elasticblast-query-split:{ELB_QS_DOCKER_VERSION}'
 
 # Config sections
 CFG_CLOUD_PROVIDER = 'cloud-provider'
@@ -239,4 +249,5 @@ K8S_MAX_JOBS_PER_DIR = 100
 # extension for files containing list of query files
 QUERY_LIST_EXT = '.query-list'
 
-
+ELB_DFLT_NUM_BATCHES_FOR_TESTING = 100
+ELB_DFLT_LOGLEVEL = 'INFO'

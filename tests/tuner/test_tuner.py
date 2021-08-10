@@ -66,6 +66,23 @@ def mocked_db_metadata(mocker):
         yield TEST_METADATA_FILE
 
 
+@pytest.fixture
+def mocked_db_metadata_not_found(mocker):
+    """A fixture that never finds any metadata file"""
+    TEST_METADATA_FILE = f'{TEST_DATA_DIR}/nr-aws.json'
+    with open(f'{TEST_DATA_DIR}/latest-dir') as f_latest_dir:
+
+        def mocked_open_for_read(filename):
+            """Mocked open_for_read funtion that never finds any metadata file"""
+            if filename.endswith('latest-dir'):
+                return f_latest_dir
+            else:
+                raise RuntimeError(f'File {filename} not found')
+
+        mocker.patch('elastic_blast.tuner.open_for_read', side_effect=mocked_open_for_read)
+        yield
+
+
 def test_get_db_data(mocked_db_metadata):
     """Test getting blast database memory requirements"""
     db = get_db_data('nr', MolType.PROTEIN, DBSource.AWS)
@@ -84,7 +101,7 @@ def test_get_db_data_user_db(mocked_db_metadata):
     assert db.moltype == MolType(db_metadata['dbtype'].lower()[:4])
 
 
-def test_get_db_data_missing_db():
+def test_get_db_data_missing_db(mocked_db_metadata_not_found):
     """Test get_blastdb_mem_requirements with a non-exstient database"""
     with pytest.raises(UserReportError):
         get_db_data('s3://some-bucket/non-existent-db', MolType.NUCLEOTIDE, DBSource.AWS)
@@ -125,9 +142,9 @@ def test_MTMode():
 
 def test_get_num_cpus():
     """Test computing number of cpus for a BLAST search"""
-    query = SeqData(length = 21000, moltype = MolType.PROTEIN)
-    assert get_num_cpus(mt_mode = MTMode.ZERO, query = query) == 16
-    assert get_num_cpus(mt_mode = MTMode.ONE, query = query) == 3
+    query = SeqData(length = 85000, moltype = MolType.PROTEIN)
+    assert get_num_cpus(program = 'blastp', mt_mode = MTMode.ZERO, query = query) == 16
+    assert get_num_cpus(program = 'blastx', mt_mode = MTMode.ONE, query = query) == 3
 
 
 def test_get_batch_length():

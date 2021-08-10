@@ -94,7 +94,8 @@ def main():
         mt_mode = get_mt_mode(args.program, args.options, db_data, query_data)
         options += f' {mt_mode}'
 
-        num_cpus = get_num_cpus(mt_mode = mt_mode, query = query_data)
+        num_cpus = get_num_cpus(program = args.program, mt_mode = mt_mode,
+                                query = query_data)
         conf[CFG_BLAST][CFG_BLAST_PROGRAM] = args.program
         conf[CFG_BLAST][CFG_BLAST_BATCH_LEN] = str(get_batch_length(program = args.program,
                                                           mt_mode = mt_mode,

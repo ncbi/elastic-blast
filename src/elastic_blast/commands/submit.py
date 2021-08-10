@@ -31,7 +31,7 @@ from tempfile import TemporaryDirectory, NamedTemporaryFile
 from pathlib import Path
 from timeit import default_timer as timer
 import uuid
-from typing import List, Tuple
+from typing import List, Tuple, Any
 from pprint import pformat
 
 from elastic_blast.resources.quotas.quota_check import check_resource_quotas
@@ -55,7 +55,7 @@ from elastic_blast.status import get_status
 from elastic_blast.util import get_blastdb_size, UserReportError, ElbSupportedPrograms
 from elastic_blast.util import get_blastdb_info
 from elastic_blast.util import get_usage_reporting
-from elastic_blast.constants import ELB_AWS_JOB_IDS, ELB_METADATA_DIR, ELB_STATE_DISK_ID_FILE, K8S_JOB_BLAST, K8S_JOB_GET_BLASTDB, K8S_JOB_RESULTS_EXPORT
+from elastic_blast.constants import ELB_AWS_JOB_IDS, ELB_METADATA_DIR, ELB_STATE_DISK_ID_FILE, K8S_JOB_BLAST, K8S_JOB_GET_BLASTDB, K8S_JOB_RESULTS_EXPORT, QuerySplitMode
 from elastic_blast.constants import K8S_JOB_IMPORT_QUERY_BATCHES, K8S_JOB_LOAD_BLASTDB_INTO_RAM
 from elastic_blast.constants import ELB_QUERY_BATCH_DIR, BLASTDB_ERROR, INPUT_ERROR
 from elastic_blast.constants import PERMISSIONS_ERROR, CLUSTER_ERROR, CSP
@@ -65,6 +65,115 @@ from elastic_blast.constants import ELB_S3_PREFIX, ELB_GCS_PREFIX
 from elastic_blast.taxonomy import setup_taxid_filtering
 from elastic_blast.config import validate_cloud_storage_object_uri
 from elastic_blast.elb_config import ElasticBlastConfig
+
+
+def get_query_split_mode(cfg: ElasticBlastConfig, query_files):
+    """ Determine query split mode """
+    # Case for cloud split on AWS: one file on S3
+    # TODO EB-1156: add one file on GCP
+    eligible_for_cloud_query_split = False
+    if cfg.cloud_provider.cloud == CSP.AWS and len(query_files) == 1 and \
+       query_files[0].startswith(ELB_S3_PREFIX):
+        eligible_for_cloud_query_split = True
+
+    use_1_stage_cloud_split = False
+    use_2_stage_cloud_split = False
+
+    if eligible_for_cloud_query_split:
+        if 'ELB_USE_1_STAGE_CLOUD_SPLIT' in os.environ:
+            use_1_stage_cloud_split = True
+        if 'ELB_USE_2_STAGE_CLOUD_SPLIT' in os.environ:
+            use_2_stage_cloud_split = True
+
+    if use_1_stage_cloud_split and use_2_stage_cloud_split:
+        err = 'Cannot configure both 1- and 2-stage cloud query splitting'
+        raise UserReportError(returncode=INPUT_ERROR, message=str(err))
+
+    if use_1_stage_cloud_split:
+        return QuerySplitMode.CLOUD_ONE_STAGE
+    elif use_2_stage_cloud_split:
+        return QuerySplitMode.CLOUD_TWO_STAGE
+    else:
+        return QuerySplitMode.CLIENT
+
+
+def prepare_1_stage(cfg: ElasticBlastConfig, query_files):
+    """ Prepare data for 1 stage cloud query split on AWS """
+    query_file = query_files[0]
+    # Get file length as approximation of sequence length
+    query_length = get_length(query_file)
+    if query_file.endswith('.gz'):
+        query_length = query_length * 4 # approximation again
+    batch_len = cfg.blast.batch_len
+    nbatch = math.ceil(query_length/batch_len)
+    queries = nbatch * [query_file]
+    return queries
+
+
+def generate_and_submit_jobs(cfg, queries, clean_up_stack):
+    dry_run = cfg.cluster.dry_run
+
+    usage_reporting = get_usage_reporting()
+
+    db, db_path, db_label = get_blastdb_info(cfg.blast.db)
+
+    # Job generation
+    blast_program = cfg.blast.program
+
+    # prepare substitution for current template
+    # TODO consider template using cfg variables directly as, e.g. ${blast.program}
+    subs = {
+        'ELB_BLAST_PROGRAM': blast_program,
+        'ELB_DB': db,
+        'ELB_DB_LABEL': db_label,
+        'ELB_MEM_REQUEST': str(cfg.blast.mem_request),
+        'ELB_MEM_LIMIT': str(cfg.blast.mem_limit),
+        'ELB_BLAST_OPTIONS': cfg.blast.options,
+        # FIXME: EB-210
+        'ELB_BLAST_TIMEOUT': str(cfg.timeouts.blast_k8s * 60),
+        'BUCKET': cfg.cluster.results,
+        'ELB_NUM_CPUS': str(cfg.cluster.num_cpus),
+        'ELB_DB_MOL_TYPE': str(ElbSupportedPrograms().get_db_mol_type(blast_program)),
+        'ELB_DOCKER_IMAGE': ELB_DOCKER_IMAGE_GCP,
+        'ELB_TIMEFMT': '%s%N',  # timestamp in nanoseconds
+        'BLAST_ELB_JOB_ID': uuid.uuid4().hex,
+        'BLAST_USAGE_REPORT': str(usage_reporting).lower(),
+        'K8S_JOB_GET_BLASTDB' : K8S_JOB_GET_BLASTDB,
+        'K8S_JOB_LOAD_BLASTDB_INTO_RAM' : K8S_JOB_LOAD_BLASTDB_INTO_RAM,
+        'K8S_JOB_IMPORT_QUERY_BATCHES' : K8S_JOB_IMPORT_QUERY_BATCHES,
+        'K8S_JOB_BLAST' : K8S_JOB_BLAST,
+        'K8S_JOB_RESULTS_EXPORT' : K8S_JOB_RESULTS_EXPORT
+    }
+
+    job_template_text = read_job_template(cfg=cfg)
+    with TemporaryDirectory() as job_path:
+        job_files = write_job_files(job_path, 'batch_', job_template_text, queries, **subs)
+        logging.debug('Generated %d job files', len(job_files))
+        logging.debug(f'Job #1 file: {job_files[0]}')
+        logging.debug('Command to run in the pod:')
+        with open(job_files[0]) as f:
+            for line in f:
+                if line.find('-query') >= 0:
+                    logging.debug(line.strip())
+                    break
+
+        logging.info('Submitting jobs to cluster')
+        clean_up_stack.append(lambda: logging.debug('Before submission computational jobs'))
+        job_names = submit_jobs(Path(job_path), dry_run=dry_run)
+        clean_up_stack.append(lambda: logging.debug('After submission computational jobs'))
+        if job_names:
+            logging.debug(f'Job #1 name: {job_names[0]}')
+
+
+def check_job_number_limit(cfg, queries, query_length):
+    dry_run = cfg.cluster.dry_run
+
+    k8s_job_limit = get_maximum_number_of_allowed_k8s_jobs(dry_run)
+    if len(queries) > k8s_job_limit:
+        batch_len = cfg.blast.batch_len
+        suggested_batch_len = int(query_length / k8s_job_limit) + 1
+        msg = f'The batch size specified ({batch_len}) led to creating {len(queries)} kubernetes jobs, which exceeds the limit on number of jobs ({k8s_job_limit}). Please increase the batch-len parameter to at least {suggested_batch_len}.'
+        raise UserReportError(INPUT_ERROR, msg)
 
 
 # TODO: use cfg only when args.wait, args.sync, and args.run_label are replicated in cfg
@@ -89,7 +198,6 @@ def submit(args, cfg, clean_up_stack):
             'for "results" configuration parameter or delete '
             'the previous ElasticBLAST search by running elastic-blast delete.')
 
-
     query_files = assemble_query_file_list(cfg)
     check_submit_data(query_files, cfg)
     if not dry_run:
@@ -110,65 +218,16 @@ def submit(args, cfg, clean_up_stack):
     queries = None
     query_length = 0
 
-    ########################################################################
-    # BEGIN: Experimental query splitting code for AWS
+    query_split_mode = get_query_split_mode(cfg, query_files)
 
-    # Case for cloud split on AWS: one file on S3
-    eligible_for_cloud_query_split = False
-    if cfg.cloud_provider.cloud == CSP.AWS and len(query_files) == 1 and \
-       query_files[0].startswith(ELB_S3_PREFIX):
-        eligible_for_cloud_query_split = True
-
-    use_1_stage_cloud_split = False
-    use_2_stage_cloud_split = False
-
-    if eligible_for_cloud_query_split:
-        if 'ELB_USE_1_STAGE_CLOUD_SPLIT' in os.environ:
-            use_1_stage_cloud_split = True
-            query_file = query_files[0]
-            # Get file length as approximation of sequence length
-            query_length = get_length(query_file)
-            if query_file.endswith('.gz'):
-                query_length = query_length * 4 # approximation again
-            batch_len = cfg.blast.batch_len
-            nbatch = math.ceil(query_length/batch_len)
-            queries = nbatch * [query_file]
-        if 'ELB_USE_2_STAGE_CLOUD_SPLIT' in os.environ:
-            use_2_stage_cloud_split = True
-
-    if use_1_stage_cloud_split and use_2_stage_cloud_split:
-        err = 'Cannot configure both 1- and 2-stage cloud query splitting'
-        raise UserReportError(returncode=INPUT_ERROR, message=str(err))
-
-    # END: Experimental query splitting code for AWS
-    ########################################################################
-
-    # Query splitting is done locally for GCP or when all queries are on the
-    # local file system
-    if are_files_on_localhost(query_files) or cfg.cloud_provider.cloud == CSP.GCP or \
-            (use_1_stage_cloud_split == False and use_2_stage_cloud_split == False):
+    if query_split_mode == QuerySplitMode.CLIENT:
         clean_up_stack.append(cleanup_temp_bucket_dirs)
         queries, query_length = split_query(query_files, cfg)
+    elif query_split_mode == QuerySplitMode.CLOUD_ONE_STAGE:
+        queries = prepare_1_stage(query_files)
 
     # setup taxonomy filtering, if requested
     setup_taxid_filtering(cfg)
-
-    # FIXME: this is a temporary code arrangement
-    if cfg.cloud_provider.cloud == CSP.AWS:
-        elastic_blast = ElasticBlastAws(cfg, create=True)
-        if use_2_stage_cloud_split:
-            elastic_blast.split_query(query_files)
-            elastic_blast.wait_for_cloud_query_split()
-            if 'ELB_NO_SEARCH' in os.environ: return 0
-            qs_res = harvest_query_splitting_results(cfg.cluster.results, dry_run)
-            queries = qs_res.query_batches
-        upload_split_query_to_bucket(cfg, clean_up_stack, dry_run)
-        elastic_blast.upload_query_length(query_length)
-        elastic_blast.submit(queries, use_1_stage_cloud_split)
-        return 0
-
-
-    k8s_job_limit = get_maximum_number_of_allowed_k8s_jobs(dry_run)
 
     # check database availability
     try:
@@ -176,66 +235,35 @@ def submit(args, cfg, clean_up_stack):
     except ValueError as err:
         raise UserReportError(returncode=BLASTDB_ERROR, message=str(err))
 
+    # FIXME: this is a temporary code arrangement
+    if cfg.cloud_provider.cloud == CSP.AWS:
+        elastic_blast = ElasticBlastAws(cfg, create=True)
+        if query_split_mode == QuerySplitMode.CLOUD_TWO_STAGE:
+            elastic_blast.split_query(query_files)
+            elastic_blast.wait_for_cloud_query_split()
+            if 'ELB_NO_SEARCH' in os.environ: return 0
+            qs_res = harvest_query_splitting_results(cfg.cluster.results, dry_run)
+            queries = qs_res.query_batches
+        upload_split_query_to_bucket(cfg, clean_up_stack, dry_run)
+        elastic_blast.upload_query_length(query_length)
+        elastic_blast.submit(queries, query_split_mode == QuerySplitMode.CLOUD_ONE_STAGE)
+        return 0
+
+    # This is the rest of GCP submit code which will be wrapped into methods
+    # of ElasticBlastGcp similar to ElasticBlastAws 
+
+    if query_split_mode == QuerySplitMode.CLIENT:
+        check_job_number_limit(cfg, queries, query_length)
+
     # check_memory_requirements(cfg)  # FIXME: EB-281, EB-313
 
-    usage_reporting = get_usage_reporting()
+    upload_split_query_to_bucket(cfg, clean_up_stack, dry_run)
+    # TODO: pass 2 stage cloud query split flag to initialize_cluster,
+    # get query batches into queries variable back (analog of harvest_query_splitting_results)
+    initialize_cluster(cfg, [], clean_up_stack)
 
-    db, db_path, db_label = get_blastdb_info(cfg.blast.db)
+    generate_and_submit_jobs(cfg, queries, clean_up_stack)
 
-    # Job generation
-    job_template_text = read_job_template(cfg=cfg)
-    program = cfg.blast.program
-
-    # prepare substitution for current template
-    # TODO consider template using cfg variables directly as, e.g. ${blast.program}
-    subs = {
-        'ELB_BLAST_PROGRAM': program,
-        'ELB_DB': db,
-        'ELB_DB_LABEL': db_label,
-        'ELB_MEM_REQUEST': str(cfg.blast.mem_request),
-        'ELB_MEM_LIMIT': str(cfg.blast.mem_limit),
-        'ELB_BLAST_OPTIONS': cfg.blast.options,
-        # FIXME: EB-210
-        'ELB_BLAST_TIMEOUT': str(cfg.timeouts.blast_k8s * 60),
-        'BUCKET': cfg.cluster.results,
-        'ELB_NUM_CPUS': str(cfg.cluster.num_cpus),
-        'ELB_DB_MOL_TYPE': str(ElbSupportedPrograms().get_db_mol_type(program)),
-        'ELB_DOCKER_IMAGE': ELB_DOCKER_IMAGE_GCP,
-        'ELB_TIMEFMT': '%s%N',  # timestamp in nanoseconds
-        'BLAST_ELB_JOB_ID': uuid.uuid4().hex,
-        'BLAST_USAGE_REPORT': str(usage_reporting).lower(),
-        'K8S_JOB_GET_BLASTDB' : K8S_JOB_GET_BLASTDB,
-        'K8S_JOB_LOAD_BLASTDB_INTO_RAM' : K8S_JOB_LOAD_BLASTDB_INTO_RAM,
-        'K8S_JOB_IMPORT_QUERY_BATCHES' : K8S_JOB_IMPORT_QUERY_BATCHES,
-        'K8S_JOB_BLAST' : K8S_JOB_BLAST,
-        'K8S_JOB_RESULTS_EXPORT' : K8S_JOB_RESULTS_EXPORT
-
-    }
-    with TemporaryDirectory() as job_path:
-        job_files = write_job_files(job_path, 'batch_', job_template_text, queries, **subs)
-        if len(job_files) > k8s_job_limit:
-            batch_len = cfg.blast.batch_len
-            suggested_batch_len = int(query_length / k8s_job_limit) + 1
-            msg = f'The batch size specified ({batch_len}) led to creating {len(job_files)} kubernetes jobs, which exceeds the limit on number of jobs ({k8s_job_limit}). Please increase the batch-len parameter to at least {suggested_batch_len}.'
-            raise UserReportError(INPUT_ERROR, msg)
-        logging.debug('Generated %d job files', len(job_files))
-        logging.debug(f'Job #1 file: {job_files[0]}')
-        logging.debug('Command to run in the pod:')
-        with open(job_files[0]) as f:
-            for line in f:
-                if line.find('-query') >= 0:
-                    logging.debug(line.strip())
-                    break
-
-        upload_split_query_to_bucket(cfg, clean_up_stack, dry_run)
-        initialize_cluster(cfg, db, db_path, clean_up_stack)
-
-        logging.info('Submitting jobs to cluster')
-        clean_up_stack.append(lambda: logging.debug('Before submission computational jobs'))
-        job_names = submit_jobs(Path(job_path), dry_run=dry_run)
-        clean_up_stack.append(lambda: logging.debug('After submission computational jobs'))
-        if job_names:
-            logging.debug(f'Job #1 name: {job_names[0]}')
 
     # Sync mode disabled per EB-700
     #if args.sync:
@@ -297,7 +325,7 @@ def check_running_cluster(cfg: ElasticBlastConfig) -> bool:
         return False
 
 
-def initialize_cluster(cfg: ElasticBlastConfig, db: str, db_path: str, clean_up_stack):
+def initialize_cluster(cfg: ElasticBlastConfig, query_files, clean_up_stack):
     """ Creates a k8s cluster, connects to it and initializes the persistent disk"""
     logging.info('Starting cluster')
     clean_up_stack.append(lambda: logging.debug('Before creating cluster'))
@@ -310,7 +338,7 @@ def initialize_cluster(cfg: ElasticBlastConfig, db: str, db_path: str, clean_up_
 
     logging.info('Initializing storage')
     clean_up_stack.append(lambda: logging.debug('Before initializing storage'))
-    initialize_storage(cfg, db, db_path)
+    initialize_storage(cfg, query_files)
     clean_up_stack.append(lambda: logging.debug('After initializing storage'))
 
 

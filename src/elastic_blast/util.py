@@ -42,6 +42,7 @@ from typing import List, Union, Callable
 from .constants import MolType, GCS_DFLT_BUCKET
 from .constants import DEPENDENCY_ERROR, AWS_MAX_TAG_LENGTH, GCP_MAX_LABEL_LENGTH
 from .constants import CSP, AWS_MAX_JOBNAME_LENGTH
+from .constants import ELB_DFLT_LOGLEVEL
 from .base import DBSource
 
 class ElbSupportedPrograms:
@@ -302,6 +303,12 @@ def config_logging(args: argparse.Namespace) -> None:
     logformat_for_stderr = "%(levelname)s: %(message)s"
     datefmt = '%Y-%m-%dT%H:%M:%S.%fZ'
 
+    if not hasattr(args, 'loglevel'):
+        if 'ELB_LOGLEVEL' in os.environ:
+            args.loglevel = os.environ['ELB_LOGLEVEL']
+        else:
+            args.loglevel = ELB_DFLT_LOGLEVEL
+
     if args.logfile == 'stderr':
         logger = logging.getLogger()
         logger.setLevel(_str2ll(args.loglevel))
@@ -386,6 +393,10 @@ def convert_labels_to_aws_tags(labels: str):
     retval = []
     for token in labels.split(','):
         k, v = token.split('=')
+        # Change some keys to follow NCBI guidelines and AWS conventions
+        if k == 'owner': k = 'Owner'
+        if k == 'project': k = 'Project'
+        if k == 'name': k ='Name'
         retval.append({'Key': k, 'Value': v})
     return retval
 
@@ -438,6 +449,15 @@ def validate_gke_cluster_name(val: str) -> None:
     # alphanumeric, and must be no longer than 40 characters).
     if re.fullmatch(r'(?:[a-z](?:[-a-z0-9]{0,38}[a-z0-9])?)', val) is None:
         raise ValueError(f'"{val}" is not a valid GKE cluster name. The string must be less than 40 characters and can only contain lowercase letters, digits, and dashes.')
+
+
+def validate_gcp_disk_name(val: str) -> None:
+    """Test whether a given string is a legal GCE disk name
+
+    Raises:
+        ValueError id the string is not a legal GCE disk name"""
+    if re.fullmatch(r'(?:[a-z](?:[-a-z0-9]{0,61}[a-z0-9])?)', val) is None:
+        raise ValueError(f'"{val}" is not a valid GCE disk name. The string must be less than 61 characters long and can only contain lowercase letters, digits, and dashes.')
 
 
 def validate_gcp_string(val: str) -> None:

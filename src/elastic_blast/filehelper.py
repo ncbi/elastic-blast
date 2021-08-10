@@ -37,6 +37,7 @@ import logging
 import urllib.request
 from string import digits
 from random import sample
+from tenacity import retry, stop_after_attempt, wait_exponential
 from typing import Dict, IO, Tuple, Iterable, Generator, TextIO, List
 
 import boto3  # type: ignore
@@ -73,6 +74,7 @@ def harvest_query_splitting_results(bucket_name: str, dry_run: bool = False, bot
     return QuerySplittingResults(query_length=qlen, query_batches=query_batches)
 
 
+@retry(reraise=True, stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10))
 def upload_file_to_gcs(filename: str, gcs_location: str, dry_run: bool = False) -> None:
     """ Function to copy the filename provided to GCS """
     cmd = f'gsutil -qm cp {filename} {gcs_location}'

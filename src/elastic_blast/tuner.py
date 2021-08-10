@@ -63,8 +63,16 @@ class MTMode(Enum):
 
 
 # MT mode 1 query length per thread
+# From https://preview.ncbi.nlm.nih.gov/books/prevqa/NBK322759/ , in particular
+# As noted above, the threading by query option works well with relatively small databases if you have a lot of queries to process.
+# For BLASTP, your input FASTA should contain at least 10,000 residues per thread, or 320,000 residues for 32 threads. 
+# For BLASTX, the FASTA should contain 30,000 bases per thread. For both BLASTP and BLASTX, we find threading by query works best 
+# if the database has fewer than 2 billion residues (e.g, swissprot). For BLASTN, your FASTA file should contain at least 2.5 
+# million bases per thread and the database should contain fewer than 14 billion residues. Threading by query also works well if
+# you limit the search, such as by -taxid or -gilist, regardless of the size of the database.
 RESIDUES_PER_THREAD = 10000
 BASES_PER_THREAD = 2500000
+BASES_PER_THREAD_BLASTX = 30000
 
 # Maximum database length for MT mode 1
 MAX_MT_ONE_DB_LENGTH_PROT = 2000000000
@@ -124,6 +132,8 @@ def get_mt_mode(program: str, options: str, db: DbData, query: SeqData) -> MTMod
         db: Database information
         query: Queries information
     """
+    if program == 'blastx' and query.length <= BASES_PER_THREAD_BLASTX:
+        return MTMode.ZERO
     if (query.moltype == MolType.PROTEIN and query.length <= RESIDUES_PER_THREAD) or \
        (query.moltype == MolType.NUCLEOTIDE and query.length <= BASES_PER_THREAD):
         return MTMode.ZERO
@@ -143,16 +153,20 @@ def get_mt_mode(program: str, options: str, db: DbData, query: SeqData) -> MTMod
     return MTMode.ZERO
 
 
-def get_num_cpus(mt_mode: MTMode, query: SeqData) -> int:
+def get_num_cpus(program: str, mt_mode: MTMode, query: SeqData) -> int:
     """Get number of CPUs to use to optimally run BLAST
 
     Arguments:
+        program: BLAST program
         mt_mode: BLAST MT mode
         query: Queries information"""
     if mt_mode == MTMode.ZERO:
         return NUM_THREADS_MT_ZERO
     else:
-        characters_per_thread = RESIDUES_PER_THREAD if query.moltype == MolType.PROTEIN else BASES_PER_THREAD
+        if program.lower() == 'blastx':
+            characters_per_thread = BASES_PER_THREAD_BLASTX
+        else:
+            characters_per_thread = RESIDUES_PER_THREAD if query.moltype == MolType.PROTEIN else BASES_PER_THREAD
         return min([query.length // characters_per_thread + 1, 16])
 
 
@@ -169,6 +183,9 @@ def get_batch_length(program: str, mt_mode: MTMode, num_cpus: int) -> int:
     if batch_len is None:
         raise UserReportError(returncode=INPUT_ERROR,
                               message=f"Invalid BLAST program '{program}'")
+
+    if program.lower == 'blastx':
+        batch_len = BASES_PER_THREAD_BLASTX
 
     if mt_mode == MTMode.ONE:
         batch_len *= num_cpus

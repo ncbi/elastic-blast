@@ -1,0 +1,16 @@
+[metadata]
+name = elastic_blast
+
+[files]
+packages_root = src
+
+scripts =
+  bin/*
+
+data_files =
+  share = share/**
+  Makefile = Makefile
+
+[auto-version]
+type = fixed
+value = ${VERSION}

@@ -176,7 +176,7 @@ def test_initialize_persistent_disk(safe_exec_mock, mocker):
 
     args = Namespace(cfg=os.path.join(TEST_DATA_DIR, 'initialize_persistent_disk.ini'))
     cfg = ElasticBlastConfig(configure(args), task = ElbCommand.SUBMIT)
-    kubernetes.initialize_persistent_disk(cfg, cfg.blast.db)
+    kubernetes.initialize_persistent_disk(cfg)
 
 
 def test_initialize_persistent_disk_failed(mocker):
@@ -189,7 +189,7 @@ def test_initialize_persistent_disk_failed(mocker):
     args = Namespace(cfg=os.path.join(TEST_DATA_DIR, 'initialize_persistent_disk.ini'))
     cfg = ElasticBlastConfig(configure(args), task = ElbCommand.SUBMIT)
     with pytest.raises(RuntimeError):
-        kubernetes.initialize_persistent_disk(cfg, cfg.blast.db)
+        kubernetes.initialize_persistent_disk(cfg)
     kubernetes.safe_exec.assert_called()
 
 

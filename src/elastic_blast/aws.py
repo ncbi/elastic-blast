@@ -52,6 +52,7 @@ from .constants import ELB_QUERY_BATCH_DIR, ELB_METADATA_DIR, ELB_LOG_DIR
 from .constants import ELB_DOCKER_IMAGE_AWS, INPUT_ERROR, ELB_QS_DOCKER_IMAGE_AWS
 from .constants import DEPENDENCY_ERROR, TIMEOUT_ERROR
 from .constants import ELB_AWS_JOB_IDS, ELB_S3_PREFIX, ELB_GCS_PREFIX
+from .constants import ELB_DFLT_NUM_BATCHES_FOR_TESTING
 from .filehelper import parse_bucket_name_key
 from .aws_traits import get_machine_properties, create_aws_config, get_availability_zones_for
 from .object_storage_utils import write_to_s3
@@ -620,8 +621,9 @@ class ElasticBlastAws:
     def submit(self, query_batches: List[str], one_stage_cloud_query_split: bool) -> None:
         """ Submit query batches to cluster, converts AWS exceptions to UserReportError
             Parameters:
-                query_batches     - list of bucket names of queries to submit
-                one_stage_cloud_query_split - do the query split in the cloud """
+                query_batches               - list of bucket names of queries to submit
+                one_stage_cloud_query_split - do the query split in the cloud as a part
+                                              of executing a regular job """
         self.job_ids = []
 
         prog = self.cfg.blast.program
@@ -662,8 +664,19 @@ class ElasticBlastAws:
 
         # For testing purposes if there is no search requested
         # we can use limited number of jobs
-        if no_search and one_stage_cloud_query_split:
-            query_batches = query_batches[:100]
+        if (no_search and one_stage_cloud_query_split) or 'ELB_PERFORMANCE_TESTING' in os.environ:
+            nbatches2test = ELB_DFLT_NUM_BATCHES_FOR_TESTING
+            def is_int(value: str):
+                try:
+                    int(value)
+                    return True
+                except:
+                    return False
+            if is_int(os.environ['ELB_PERFORMANCE_TESTING']):
+                nbatches2test = int(os.environ['ELB_PERFORMANCE_TESTING'])
+            query_batches = query_batches[:nbatches2test]
+            logging.debug(f'For testing purposes will only process a subset of query batches: {nbatches2test}')
+
         for i, q in enumerate(query_batches):
             parameters['query-batch'] = q
             parameters['split-part'] = str(i)

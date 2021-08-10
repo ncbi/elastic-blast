@@ -27,8 +27,9 @@ SHELL=/bin/bash
 .PHONY: all pre-check check clean build publish gcp-build gcp-check gcp-clean
 
 IMG?=ncbi/elastic-blast-query-splitting
-VERSION?=0.0.1
+VERSION?=0.0.2
 GCP_PROJECT?=$(shell gcloud config get-value project 2>/dev/null)
+GCP_TEST_BUCKET?=gs://elasticblast-test/query-split-run-test
 AWS_REGION?=us-east-1
 AWS_SERVER?=public.ecr.aws/i6v3i0i9
 AWS_IMG?=${AWS_SERVER}/elasticblast-query-split
@@ -53,6 +54,11 @@ check:
 
 gcp-build:
 	gcloud builds submit --config cloudbuild.yaml --substitutions _VERSION=${VERSION},_IMG=${IMG}
+
+.PHONY: gcp-test
+gcp-test:
+	gcloud builds submit --config cloudrun.yaml --substitutions _IMG="gcr.io/${GCP_PROJECT}/${IMG}:${VERSION}",_CMD="run.sh -i gs://elastic-blast-samples/queries/nopal/nopal-transcriptome.tgz -b 5000000 -o ${GCP_TEST_BUCKET} -q ooo"
+	[ `gsutil cat ${GCP_TEST_BUCKET}/metadata/batch_list.txt | wc -l` -eq 44 ]
 
 gcp-clean:
 	-gcloud container images delete gcr.io/${GCP_PROJECT}/${IMG}:${VERSION}

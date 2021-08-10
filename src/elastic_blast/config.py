@@ -111,13 +111,13 @@ def configure(args: argparse.Namespace) -> configparser.ConfigParser:
     _load_config_from_environment(retval)
 
     # These command line options override the config value settings
-    if hasattr(args, 'results') and args.results:
+    if hasattr(args, CFG_BLAST_RESULTS) and args.results:
         retval[CFG_BLAST][CFG_BLAST_RESULTS] = args.results
-    if hasattr(args, 'program') and args.program:
+    if hasattr(args, CFG_BLAST_PROGRAM) and args.program:
         retval[CFG_BLAST][CFG_BLAST_PROGRAM] = args.program
     if hasattr(args, 'query') and args.query:
         retval[CFG_BLAST][CFG_BLAST_QUERY] = args.query
-    if hasattr(args, 'db') and args.db:
+    if hasattr(args, CFG_BLAST_DB) and args.db:
         retval[CFG_BLAST][CFG_BLAST_DB] = args.db
     if hasattr(args, 'blast_opts') and args.blast_opts:
         if args.blast_opts[0] == '--':
@@ -127,14 +127,24 @@ def configure(args: argparse.Namespace) -> configparser.ConfigParser:
         retval[CFG_BLAST][CFG_BLAST_OPTIONS] = ' '.join(blast_opts)
     if hasattr(args, CFG_BLAST_RESULTS) and getattr(args, CFG_BLAST_RESULTS):
         retval[CFG_BLAST][CFG_BLAST_RESULTS] = getattr(args, CFG_BLAST_RESULTS)
+
     if hasattr(args, 'num_nodes') and args.num_nodes:
         retval[CFG_CLUSTER][CFG_CLUSTER_NUM_NODES] = str(args.num_nodes)
+    if hasattr(args, 'num_cpus') and args.num_cpus:
+        retval[CFG_CLUSTER][CFG_CLUSTER_NUM_CPUS] = str(args.num_cpus)
+    if hasattr(args, 'machine_type') and args.machine_type:
+        retval[CFG_CLUSTER][CFG_CLUSTER_MACHINE_TYPE] = args.machine_type
+    if hasattr(args, 'mem_limit') and args.mem_limit:
+        retval[CFG_BLAST][CFG_BLAST_MEM_LIMIT] = args.mem_limit
+
     if hasattr(args, 'aws_region') and args.aws_region:
         retval[CFG_CLOUD_PROVIDER][CFG_CP_AWS_REGION] = args.aws_region
     if hasattr(args, 'gcp_project') and args.gcp_project:
         retval[CFG_CLOUD_PROVIDER][CFG_CP_GCP_PROJECT] = args.gcp_project
     if hasattr(args, 'gcp_region') and args.gcp_region:
         retval[CFG_CLOUD_PROVIDER][CFG_CP_GCP_REGION] = args.gcp_region
+    if hasattr(args, 'gcp_zone') and args.gcp_zone:
+        retval[CFG_CLOUD_PROVIDER][CFG_CP_GCP_ZONE] = args.gcp_zone
     if hasattr(args, 'gcp_zone') and args.gcp_zone:
         retval[CFG_CLOUD_PROVIDER][CFG_CP_GCP_ZONE] = args.gcp_zone
 

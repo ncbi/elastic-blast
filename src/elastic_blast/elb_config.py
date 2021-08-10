@@ -25,6 +25,7 @@ Author: Greg Boratyn (boratyng@ncbi.nlm.nih.gov)
 Created: Tue 09 Feb 2021 03:52:31 PM EDT
 """
 
+import os
 from dataclasses import dataclass
 from dataclasses import InitVar, field, fields, asdict
 import getpass
@@ -367,6 +368,10 @@ class ClusterConfig(ConfigParserToDataclassMapper):
         # default cluster name
         username = getpass.getuser().lower()
         self.name = f'elasticblast-{username}-{self.results.md5}'
+
+        # Experimental: this is to facilitate performance testing
+        if 'ELB_PERFORMANCE_TESTING' in os.environ:
+            self.num_nodes = 1
 
 
     def validate(self, errors: List[str], task: ElbCommand):
@@ -744,10 +749,15 @@ def create_labels(cloud_provider: CSP,
                 raise UserReportError(INPUT_ERROR, msg)
             key = tokens[0]
             value = tokens[1]
-            if re.search(r'[A-Z]', key):
-                raise UserReportError(INPUT_ERROR, f'Key "{key}" must have all lower case characters')
-            if re.search(r'[A-Z]', value):
-                raise UserReportError(INPUT_ERROR, f'Value "{value}" must have all lower case characters')
+            if cloud_provider == CSP.GCP:
+                # https://cloud.google.com/kubernetes-engine/docs/how-to/creating-managing-labels
+                if re.search(r'[A-Z]', key) or len(key) > GCP_MAX_LABEL_LENGTH:
+                    raise UserReportError(INPUT_ERROR, f'Key "{key}" must have all lower case characters and have less than {GCP_MAX_LABEL_LENGTH+1} characters')
+                if re.search(r'[A-Z]', value) or len(value) > GCP_MAX_LABEL_LENGTH:
+                    raise UserReportError(INPUT_ERROR, f'Value "{value}" must have all lower case characters and have less than {GCP_MAX_LABEL_LENGTH+1} characters')
+            elif cloud_provider == CSP.AWS:
+                if len(key) > AWS_MAX_TAG_LENGTH:
+                    raise UserReportError(INPUT_ERROR, f'Key "{key}" must have less than {AWS_MAX_TAG_LENGTH+1} characters')
             custom_labels[key] = value
 
     default_labels = {
@@ -763,6 +773,11 @@ def create_labels(cloud_provider: CSP,
         'name': cluster_name,
         'results': results
     }
+    # Change some keys to follow NCBI guidelines and AWS conventions
+    if cloud_provider == CSP.AWS:
+        default_labels['Project'] = default_labels.pop('project')
+        default_labels['Owner'] = default_labels.pop('owner')
+        default_labels['Name'] = default_labels.pop('name')
 
     labels = ''
     for label in default_labels.keys():

@@ -49,12 +49,12 @@ spec:
             fi;
             exit $exit_code;
         - name: ${K8S_JOB_IMPORT_QUERY_BATCHES}
-          image: google/cloud-sdk:slim
+          image: ${ELB_IMAGE_QS}
           workingDir: /blast/queries
           volumeMounts:
           - name: blastdb
             mountPath: /blast/queries
             readOnly: false
-          command: ["gsutil", "-mq", "cp", "${QUERY_BATCHES}/batch_*.fa", "/blast/queries/"]
+          command: ["run.sh", "-i", "${INPUT_QUERY}", "-o", "${BUCKET}", "-b", "${BATCH_LEN}", "-c", "${COPY_ONLY}", "-q", "/blast/queries/"]
       restartPolicy: Never
   backoffLimit: 3

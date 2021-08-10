@@ -202,7 +202,11 @@ def test_delete_cluster_with_cleanup_disk_left(gke_mock, mocker):
                  side_effect=mocked_get_persistent_disks)
 
     cfg = get_mocked_config()
-    gcp.delete_cluster_with_cleanup(cfg)
+    with pytest.raises(UserReportError) as err:
+        gcp.delete_cluster_with_cleanup(cfg)
+    assert err.value.returncode == CLUSTER_ERROR
+    assert 'not able to delete persistent disk' in err.value.message
+    assert GCP_DISKS[0] in err.value.message
     gcp.safe_exec.assert_called()
     kubernetes.get_persistent_disks.assert_called()
     # test that GCP disk deletion was called for the appropriate disk
@@ -237,7 +241,9 @@ def test_delete_cluster_with_cleanup_failed_get_disks(gke_mock, mocker):
         mocked_get_disks.invocation_counter += 1
         if mocked_get_disks.invocation_counter == 1:
             raise RuntimeError('Mocked GCP listing error')
-        pass
+        elif mocked_get_disks.invocation_counter == 2:
+            return [GCP_DISKS[0]]
+        return []
     mocked_get_disks.invocation_counter = 0
 
     def mocked_delete_cluster(cfg):
@@ -391,31 +397,6 @@ def test_delete_cluster_with_cleanup_cluster_stopping(gke_mock, mocker):
     assert errinfo.value.returncode == CLUSTER_ERROR
     assert GKE_CLUSTERS[0] in errinfo.value.message
     assert 'already being deleted' in errinfo.value.message
-
-
-def test_delete_cluster_with_cleanup_disk_known(gke_mock, mocker):
-    """Test deleting cluster and persistent disk when disk id is known"""
-    def mocked_delete_cluster(cfg):
-        """Mocked cluster deletion, to test that it was called"""
-        pass
-
-    def mocked_delete_disk(name, cfg):
-        """Mocked disk deletion, to test that it was called"""
-        pass
-
-    def mocked_delete_all():
-        """Mocked deletion of all kubernetes jobs and persistent disks"""
-        raise RuntimeError('It should not have been called')
-
-    mocker.patch('elastic_blast.gcp.delete_cluster', side_effect=mocked_delete_cluster)
-    mocker.patch('elastic_blast.gcp.delete_disk', side_effect=mocked_delete_disk)
-    mocker.patch('elastic_blast.kubernetes.delete_all', side_effect=mocked_delete_all)
-
-    cfg = get_mocked_config()
-    cfg.appstate.disk_id = GCP_DISKS[0]
-    gcp.delete_cluster_with_cleanup(cfg)
-    gcp.delete_cluster.assert_called()
-    gcp.delete_disk.assert_called_with(cfg.appstate.disk_id, cfg)
 
 
 def test_remove_split_query(mocker):

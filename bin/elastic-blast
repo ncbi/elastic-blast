@@ -43,6 +43,7 @@ from elastic_blast.gcp import check_prerequisites
 from elastic_blast.config import configure
 from elastic_blast.elb_config import ElasticBlastConfig
 from elastic_blast.constants import ELB_METADATA_DIR, ELB_META_CONFIG_FILE, ElbCommand
+from elastic_blast.constants import ELB_DFLT_LOGLEVEL
 from elastic_blast.filehelper import open_for_write
 
 
@@ -140,20 +141,27 @@ def create_arg_parser():
     parser.add_argument('--version', action='version', version='%(prog)s ' + VERSION)
 
     common_opts_parser = ElbArgumentParser(add_help=False)
-    common_opts_parser.add_argument("--cfg", metavar="FILE",
+
+    csp_opts = common_opts_parser.add_argument_group('Cloud Service Provider options')
+    csp_opts.add_argument("--aws-region", help="AWS region to run ElasticBLAST")
+    csp_opts.add_argument("--gcp-project", help="GCP project to run ElasticBLAST")
+    csp_opts.add_argument("--gcp-region", help="GCP region to run ElasticBLAST")
+    csp_opts.add_argument("--gcp-zone", help="GCP zone to run ElasticBLAST")
+
+    elb_opts = common_opts_parser.add_argument_group('ElasticBLAST configuration options')
+    elb_opts.add_argument("--cfg", metavar="FILE",
                                     type=file_must_exist,
                                     help="ElasticBLAST configuration file")
-    common_opts_parser.add_argument(f"--{constants.CFG_BLAST_RESULTS}", type=str,
+    elb_opts.add_argument(f"--{constants.CFG_BLAST_RESULTS}", type=str,
                         help="Bucket URI where to save the output from ElasticBLAST")
-    common_opts_parser.add_argument("--aws-region", help="AWS region to run ElasticBLAST")
-    common_opts_parser.add_argument("--gcp-project", help="GCP project to run ElasticBLAST")
-    common_opts_parser.add_argument("--gcp-region", help="GCP region to run ElasticBLAST")
-    common_opts_parser.add_argument("--gcp-zone", help="GCP zone to run ElasticBLAST")
-    common_opts_parser.add_argument("--logfile", default=DFLT_LOGFILE, type=str,
-                                    help="Default: " + DFLT_LOGFILE)
-    common_opts_parser.add_argument("--loglevel", default='INFO',
+
+    app_opts = common_opts_parser.add_argument_group('Application options')
+    app_opts.add_argument("--logfile", default=DFLT_LOGFILE, type=str,
+                                    help=f"Default: {DFLT_LOGFILE}")
+    app_opts.add_argument("--loglevel", default=argparse.SUPPRESS,
+                                    help=f"Default: {ELB_DFLT_LOGLEVEL}",
                                     choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"])
-    common_opts_parser.add_argument("--dry-run", action='store_true', 
+    app_opts.add_argument("--dry-run", action='store_true', 
                                     help="Do not perform any actions")
 
     sp = parser.add_subparsers(dest='subcommand')#title='Subcommands')
@@ -168,21 +176,35 @@ def create_submit_arg_parser(subparser, common_opts_parser):
     """ Create the command line options subparser for the submit command. """
     parser = subparser.add_parser('submit', help='Submit an ElasticBLAST search',
                                   parents=[common_opts_parser])
-    parser.add_argument("--program", type=str, help="BLAST program to run",
+    # BLAST configuration parameters
+    blast_cli_opts = parser.add_argument_group('BLAST options')
+    blast_cli_opts.add_argument("--program", type=str, help="BLAST program to run",
                         choices=ElbSupportedPrograms().get())
-    parser.add_argument("--query", type=str,
+    blast_cli_opts.add_argument("--query", type=str,
                         help="Query sequence data, can be provided as a local path or GCS bucket URI to a single file/tarball")
-    parser.add_argument("--db", type=str, help="BLAST database to search")
-    parser.add_argument("--num-nodes", type=positive_int,
+    blast_cli_opts.add_argument("--db", type=str, help="BLAST database to search")
+    blast_cli_opts.add_argument('blast_opts', nargs=argparse.REMAINDER,
+                        metavar='BLAST_OPTS',
+                        help="Options to pass to BLAST program")
+
+    # ElasticBLAST search configuration parameters
+    elb_opts = parser.add_argument_group('ElasticBLAST configuration options')
+    elb_opts.add_argument("--batch-len", type=positive_int,
+                        help="Query size for each BLAST job")
+    elb_opts.add_argument("--machine-type", type=str,
+                        help="Instance type to use")
+    elb_opts.add_argument("--num-nodes", type=positive_int,
                         help="Number of worker nodes to use")
+    elb_opts.add_argument("--num-cpus", type=positive_int,
+                        help="Number of threads to run in each BLAST job")
+    elb_opts.add_argument("--mem-limit", type=str,
+                        help="Memory limit for each BLAST job")
+
     #parser.add_argument("--sync", action='store_true', 
     #                    help="Run in synchronous mode")
     # FIXME: EB-132
     parser.add_argument("--run-label", type=str,
                         help="Run-label to tag this ElasticBLAST search, format: key:value")
-    parser.add_argument('blast_opts', nargs=argparse.REMAINDER,
-                        metavar='BLAST_OPTS',
-                        help="Options to pass to BLAST program")
     parser.set_defaults(func=elb_submit)
     return parser
 

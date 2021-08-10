@@ -180,9 +180,17 @@ def mocked_safe_exec(cmd: Union[List[str], str]) -> MockedCompletedProcess:
                     'Pending': '<none>'}
         return MockedCompletedProcess('\n'.join(['STATUS'] + [switcher[i] for i in K8S_JOB_STATUS]))
 
-    # delete all jobs, pvcs, and pvs
-    elif ' '.join(cmd) == 'kubectl delete jobs,pvc,pv --all':
-        return MockedCompletedProcess('\n'.join(['deleted ' + i for i in K8S_JOBS + GKE_PVS]) + '\n')
+    # delete all jobs
+    elif ' '.join(cmd) == 'kubectl delete jobs --all':
+       return MockedCompletedProcess('\n'.join(['deleted ' + i for i in K8S_JOBS]) + '\n')
+
+    # delete all pvcs
+    elif ' '.join(cmd) == 'kubectl delete pvc --all':
+        return MockedCompletedProcess('\n'.join(['deleted ' + i for i in GKE_PVS]) + '\n')
+
+    # delete all pvs
+    elif ' '.join(cmd) == 'kubectl delete pv --all':
+        return MockedCompletedProcess('\n')
 
     # check if kubernetes cluster is alive
     elif ' '.join(cmd) == 'kubectl version --short':
@@ -218,6 +226,7 @@ class GKEMock:
     def __init__(self):
         """Class constructor"""
         self.options = list()
+        self.disk_delete_called = False
 
     def set_options(self, options: List[str]) -> None:
         """Set optional mocked GKE behavior.
@@ -250,5 +259,11 @@ class GKEMock:
             if cmd.startswith('kubectl'):
                 raise SafeExecError(returncode=1,
                                     message='Mocked kubectl error')
+
+        # report no disks after disk deletion was called
+        if cmd.startswith('gcloud compute disks list') and self.disk_delete_called:
+            return MockedCompletedProcess(json.dumps([]))
+        if cmd.startswith('gcloud compute disks delete'):
+           self.disk_delete_called = True
 
         return mocked_safe_exec(cmd)

@@ -18,7 +18,8 @@
 #   
 # Please cite NCBI in any work or product based on this material.
 
-FROM alpine:3.14
+#FROM alpine:3.14
+FROM google/cloud-sdk:alpine
 ARG version
 
 COPY requirements.txt .

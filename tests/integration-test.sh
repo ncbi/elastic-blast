@@ -99,7 +99,7 @@ $ROOT_DIR/elastic-blast delete --cfg $CFG --loglevel DEBUG --logfile $logfile $D
 # Test results
 find . -name "batch*.out.gz" -type f -print0 | \
     xargs -0 -P $NTHREADS  -I{} gzip -t {}
-if grep 'outfmt 11' $logfile; then
+if grep -q 'outfmt 11' $logfile; then
     find . -name "batch*.out.gz" -type f -print0 | \
         xargs -0 -P $NTHREADS -I{} \
         bash -c "zcat {} | datatool -m /netopt/ncbi_tools64/c++.metastable/src/objects/blast/blast.asn -M /am/ncbiapdata/asn/asn.all -v - -e /dev/null"

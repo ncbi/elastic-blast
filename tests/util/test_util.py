@@ -38,6 +38,7 @@ from elastic_blast.util import convert_memory_to_mb, get_blastdb_size, sanitize_
 from elastic_blast.util import safe_exec, SafeExecError, convert_disk_size_to_gb
 from elastic_blast.util import sanitize_gcp_labels, sanitize_for_k8s, sanitize_aws_tag
 from elastic_blast.util import validate_gcp_string, convert_labels_to_aws_tags
+from elastic_blast.util import validate_gcp_disk_name
 from elastic_blast.gcp_traits import get_machine_properties
 from elastic_blast.elb_config import ElasticBlastConfig
 from elastic_blast.base import InstanceProperties
@@ -187,10 +188,10 @@ def test_convert_labels_to_aws_tags():
     for i in tags:
         k, v = i.values()
         t[k] = v
-    assert('project' in t.keys())
+    assert('Project' in t.keys())
     assert('billingcode' in t.keys())
-    assert('name' in t.keys())
-    assert('owner' in t.keys())
+    assert('Name' in t.keys())
+    assert('Owner' in t.keys())
     assert('results' in t.keys())
     assert(t['results'] == 's3://some.bucket.with_s0me-interesting-name-end')
 
@@ -244,6 +245,23 @@ def test_validate_gcp_string():
             validate_gcp_string(s)
 
 
+def test_validate_gcp_disk_name():
+    """Test GCP disk name validation"""
+    # correct string
+    validate_gcp_disk_name('gke-some-name-1234455677')
+
+    # incorrect strings
+    incorrect_strings = ['a string with spaces',
+                         'UPPERCASE',
+                         'illegal-character-:',
+                         'illigal-character-.',
+                         'illigal-character-?',
+                         'illigal-character-_',
+                         '']
+
+    for s in incorrect_strings:
+        with pytest.raises(ValueError):
+            validate_gcp_disk_name(s)
 
 
 def test_cleanup_stage_failed():

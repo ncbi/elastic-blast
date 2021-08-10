@@ -35,8 +35,9 @@ from tempfile import TemporaryDirectory
 from typing import List, Optional
 
 from .util import safe_exec, gcp_get_blastdb_latest_path, ElbSupportedPrograms, SafeExecError
+from .util import get_blastdb_info
 from .subst import substitute_params
-from .constants import ELB_PAUSE_AFTER_INIT_PV, ELB_DOCKER_IMAGE_GCP
+from .constants import ELB_PAUSE_AFTER_INIT_PV, ELB_DOCKER_IMAGE_GCP, ELB_QS_DOCKER_IMAGE_GCP
 from .constants import K8S_JOB_BLAST, K8S_JOB_GET_BLASTDB
 from .constants import K8S_JOB_IMPORT_QUERY_BATCHES, K8S_JOB_LOAD_BLASTDB_INTO_RAM, K8S_JOB_RESULTS_EXPORT
 from .constants import ELB_K8S_JOB_SUBMISSION_MAX_WAIT
@@ -153,27 +154,30 @@ def submit_jobs(path: pathlib.Path, dry_run=False) -> List[str]:
 
 
 def delete_all(dry_run: bool = False) -> List[str]:
-    """Delete all kubernetes jobs, persitent volume claims, and persitent volumes.
+    """Delete all kubernetes jobs, persistent volume claims, and persistent volumes.
 
     Returns:
         A list of deleted kubernetes objects
 
     Raises:
         util.SafeExecError on problems with command line kubectl"""
-    cmd = 'kubectl delete jobs,pvc,pv --all'
+    commands = ['kubectl delete jobs --all',
+                'kubectl delete pvc --all',
+                'kubectl delete pv --all']
     result = []
-    if dry_run:
-        logging.info(cmd)
-    else:
-        p = safe_exec(cmd)
-        if p.stdout:
-            for line in p.stdout.decode().split('\n'):
-                if line:
-                    # nothing was deleted
-                    if line.startswith('No resources found'):
-                        break
-                    fields = line.split()
-                    result.append(fields[1])
+    for cmd in commands:
+        if dry_run:
+            logging.info(cmd)
+        else:
+            p = safe_exec(cmd)
+            if p.stdout:
+                for line in p.stdout.decode().split('\n'):
+                    if line:
+                        # nothing was deleted
+                        if line.startswith('No resources found'):
+                            break
+                        fields = line.split()
+                        result.append(fields[1])
     return result
 
 
@@ -272,20 +276,21 @@ def _ensure_successful_job(k8s_job_file: pathlib.Path, dry_run: bool = False) ->
         raise RuntimeError(f'{k8s_job_file} failed: {p.stderr.decode()}')
 
 
-def initialize_storage(cfg: ElasticBlastConfig, db: str, db_path: str = '') -> None:
+def initialize_storage(cfg: ElasticBlastConfig, query_files) -> None:
     """ Initialize storage for ElasticBLAST cluster """
     use_local_ssd = cfg.cluster.use_local_ssd
     if use_local_ssd:
-        initialize_local_ssd(cfg, db, db_path)
+        initialize_local_ssd(cfg)
     else:
-        initialize_persistent_disk(cfg, db, db_path)
+        initialize_persistent_disk(cfg, query_files)
         label_persistent_disk(cfg)
 
 
-def initialize_local_ssd(cfg: ElasticBlastConfig, db: str, db_path: str = '') -> None:
+def initialize_local_ssd(cfg: ElasticBlastConfig) -> None:
     """ Initialize local SSDs for ElasticBLAST cluster """
+    db, db_path, _ = get_blastdb_info(cfg.blast.db)
     if not db:
-        raise ValueError("Argument 'db' can't be empty")
+        raise ValueError("Config parameter 'db' can't be empty")
     dry_run = cfg.cluster.dry_run
     init_blastdb_minutes_timeout = cfg.timeouts.init_pv
     num_nodes = cfg.cluster.num_nodes
@@ -366,17 +371,18 @@ def initialize_local_ssd(cfg: ElasticBlastConfig, db: str, db_path: str = '') ->
                 safe_exec(cmd)
 
 
-def initialize_persistent_disk(cfg: ElasticBlastConfig, db: str, db_path: str = '') -> None:
+def initialize_persistent_disk(cfg: ElasticBlastConfig, query_files: List[str] = []) -> None:
     """ Initialize Persistent Disk for ElasticBLAST execution
     Arguments:
         cfg - configuration to get parameters from
-        db - BLAST db name
-        db_path - if custom database, path to the database files
+        query_files - if non empty - list of query files to be split in the cloud,
+                      now supported only single file.
     """
 
     # ${LOGDATETIME} setup_pd start >>${ELB_LOGFILE}
+    db, db_path, _ = get_blastdb_info(cfg.blast.db)
     if not db:
-        raise ValueError("Argument 'db' can't be empty")
+        raise ValueError("Config parameter 'db' can't be empty")
     cluster_name = cfg.cluster.name
     pd_size = str(cfg.cluster.pd_size)
     program = cfg.blast.program
@@ -390,10 +396,16 @@ def initialize_persistent_disk(cfg: ElasticBlastConfig, db: str, db_path: str = 
     results_bucket = cfg.cluster.results
     dry_run = cfg.cluster.dry_run
     query_batches = os.path.join(results_bucket, ELB_QUERY_BATCH_DIR)
+    input_query = query_files[0] if query_files else 'None'
 
     init_blastdb_minutes_timeout = cfg.timeouts.init_pv
 
     subs = {
+        'INPUT_QUERY' : input_query,
+        'BATCH_LEN' : str(cfg.blast.batch_len),
+        'COPY_ONLY' : '1',
+        'ELB_IMAGE_QS' : ELB_QS_DOCKER_IMAGE_GCP,
+
         'QUERY_BATCHES': query_batches,
         'ELB_PD_SIZE': pd_size,
         'ELB_CLUSTER_NAME': cluster_name,

@@ -1,0 +1,3 @@
+steps:
+- name: '${_IMG}'
+  args: ['sh', '-c', '${_CMD}']
