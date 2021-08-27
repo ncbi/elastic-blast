@@ -32,16 +32,21 @@ import os
 import json
 import re
 import argparse
+from pathlib import Path
 from dataclasses import dataclass, field
 from typing import List
+from tempfile import NamedTemporaryFile
 import boto3  # type: ignore
 from botocore.exceptions import ClientError  #type: ignore
+from elastic_blast.base import PositiveInteger
 from elastic_blast.aws_traits import create_aws_config
 from elastic_blast.aws import handle_aws_error
 from elastic_blast.util import safe_exec
 from elastic_blast.filehelper import parse_bucket_name_key
-from elastic_blast.constants import ELB_AWS_JOB_IDS, ELB_AWS_QUERY_LENGTH, ELB_METADATA_DIR
+from elastic_blast.constants import ELB_AWS_JOB_IDS, ELB_QUERY_LENGTH, ELB_METADATA_DIR
 from elastic_blast.constants import ELB_LOG_DIR, CSP, ElbCommand
+from elastic_blast.constants import ELB_BACKEND_LOG, AwsPricing
+from elastic_blast.object_storage_utils import download_from_s3, copy_file_to_s3
 
 # Artificial exit codes to differentiate failure modes
 # of AWS job.
@@ -82,7 +87,7 @@ class Run:
 
         vars = [ 'db_num_seq', 'db_length', 'query_length', 'cluster_name',
                  'instance_type', 'instance_vcpus', 'instance_ram', 'min_vcpus',
-                 'max_vcpus', 'num_nodes']
+                 'max_vcpus', 'num_nodes', 'pricing']
         for var in vars:
             if hasattr(log_parser, var):
                 setattr(self, var, getattr(log_parser, var))
@@ -94,27 +99,52 @@ def create_arg_parser(subparser, common_opts_parser):
             parents=[common_opts_parser])
     parser.add_argument('-o', '--output', type=argparse.FileType('wt'), default='-', 
             help='Output file, default: stdout')
-    parser.add_argument('-d', '--detailed', action="store_true", default=False,
-        help='List log files consulted for info')
-    parser.add_argument('-l', '--write-logs', type=argparse.FileType('wt'), default=None,
-        help='File name to write log files to')
-    parser.add_argument('-r', '--read-logs', type=argparse.FileType('rt'), default=None,
-        help='File name to read log files from')
-
-#    parser.add_argument("--run-label", type=str,
-#            help="Run-label to use for this ElasticBLAST search, format: key:value")
     parser.set_defaults(func=_run_summary)
 
 
+def _get_aws_logs_from_results_bucket(logs_on_results_bucket: str):
+    """ Tries to fetch the AWS Batch job logs from a file on the results bucket.
+    @return a temporary file-like object with the contents of the AWS
+            Batch job logs files or None if these logs are not available in
+            the results bucket.
+    """
+    retval = NamedTemporaryFile(mode='w+t')
+    try:
+        logging.debug(f'Trying to fetch AWS Batch job logs from results bucket {logs_on_results_bucket}')
+        download_from_s3(logs_on_results_bucket, Path(retval.name))
+    except FileNotFoundError:
+        retval.close()
+        return None
+    return retval
+
+
+def _get_path_to_aws_batch_job_logs_on(results_bucket: str) -> str:
+    """ Build the path to the AWS Batch job log files in the results bucket"""
+    if not results_bucket:
+        raise ValueError('Missing results bucket specification')
+    return os.path.join(results_bucket, ELB_LOG_DIR, ELB_BACKEND_LOG)
+
+
 def _run_summary(args, cfg, clean_up_stack):
-    """ Entry point to delete resources associated with an ElasticBLAST search """
+    """ Entry point to create run-summary file for an ElasticBLAST search """
     cfg.validate(ElbCommand.RUN_SUMMARY)
     cloud_provider = cfg.cloud_provider.cloud
-    if cloud_provider == CSP.AWS:
-        if args.read_logs:
-            run = _read_job_logs_aws_from_file(args.read_logs)
+    got_logs_from_bucket = False
+    if not args.results:
+        if 'ELB_RESULTS' in os.environ:
+            args.results = os.environ['ELB_RESULTS']
         else:
-            run = _read_job_logs_aws(cfg, args.write_logs)
+            args.results = cfg.cluster.results
+    if cloud_provider == CSP.AWS:
+        logs_on_bucket = _get_path_to_aws_batch_job_logs_on(args.results)
+        logs = _get_aws_logs_from_results_bucket(logs_on_bucket)
+        if logs:
+            run = _read_job_logs_aws_from_file(logs)
+            got_logs_from_bucket = True
+        else:
+            logs = NamedTemporaryFile('w+t')
+            run = _read_job_logs_aws(cfg, logs)
+            logs.flush()
     elif cloud_provider == CSP.GCP:
         run = _read_job_logs_gcp(cfg)
     else:
@@ -123,6 +153,16 @@ def _run_summary(args, cfg, clean_up_stack):
     if nnotdone:
         print(f'{nnotdone} jobs still pending', file=sys.stderr)
         return 0
+
+    # Sanity check
+    #if not hasattr(run, 'instance_type') and cloud_provider == CSP.AWS:
+    #    logging.fatal(f'AWS Batch job logs may be missing, perhaps your search is too old')
+    #    return 1
+
+    if not got_logs_from_bucket and cloud_provider == CSP.AWS:
+        logging.debug(f'Saving AWS Batch job logs to results bucket {logs_on_bucket}')
+        copy_file_to_s3(logs_on_bucket, logs)
+
     nfailed = sum(map(lambda x: 1 if x > 0 else 0, run.exit_codes))
     now = _format_time(time.time())
 
@@ -149,11 +189,14 @@ def _run_summary(args, cfg, clean_up_stack):
     if hasattr(run, 'instance_ram'):
         summary['clusterInfo']['RamPerMachine'] = run.instance_ram
     summary['clusterInfo']['machineType'] = machineType
+    if hasattr(run, 'pricing'):
+        summary['clusterInfo']['pricing'] = run.pricing
 #    summary['clusterInfo']['region'] = run.getInfoItem('init', 'region')
 #    summary['clusterInfo']['zone'] = run.getInfoItem('init', 'zone')
 
     blast_run_time = (run.end_time - run.start_time) / 1000
     summary['runtime'] = {}
+    #summary['runtime']['wallClock'] = PositiveInteger(blast_run_time)
     summary['runtime']['wallClock'] = blast_run_time
     for phase in run.phase_names:
         total_var = phase + '_time'
@@ -213,8 +256,6 @@ def _read_job_logs_gcp(cfg):
     if not results:
         return Run()
     log_uri = results + '/' + ELB_LOG_DIR + '/BLAST_RUNTIME-*.out'
-#    if self.detailed:
-#        print("Checking logs", log_uri)
 
     cmd = ['gsutil', 'cat', log_uri]
     if dry_run:
@@ -248,8 +289,6 @@ def _read_job_logs_gcp(cfg):
             njobs += 1
         if verb == 'exitCode':
             exit_codes.append(int(parts[4]))
-#    if self.detailed:
-#        print(f"Read {nread} lines of logs")
     if not nread:
         logging.error(proc.stderr.read().strip(), file=sys.stderr)
     return Run(njobs, start_time, end_time, exit_codes)
@@ -306,6 +345,8 @@ class AwsLogParser:
             self.cluster_name = parts[1]
         elif parts[0] == 'instance_type':
             self.instance_type = parts[1]
+        elif parts[0] == 'pricing':
+            self.pricing = parts[1]
         elif parts[0] in ('instance_vcpus', 'instance_ram', 'min_vcpus',
                           'max_vcpus', 'num_nodes', 'query_length'):
             setattr(self, parts[0], int(parts[1]))
@@ -334,6 +375,10 @@ class AwsLogParser:
                 mo = re_end.search(message)
                 if mo:
                     t = ts - self.phase_start_time
+                    #logging.debug(f'Got end of {phase}: start={self.phase_start_time} stop={ts} total={t}')
+                    if self.phase_start_time == 0:
+                        logging.warning(f'Only found stop time {ts} for {phase}')
+                        continue
                     total_var = phase + '_time'
                     num_var = phase + '_num'
                     min_var = phase + '_min'
@@ -358,6 +403,7 @@ class AwsLogParser:
                     else:
                         val = t
                     setattr(self, max_var, val)
+                    self.phase_start_time = 0
 
 class AwsCompEnv:
     def __init__(self, batch, ec2):
@@ -366,6 +412,7 @@ class AwsCompEnv:
         self.instance_type: str = ''
         self.instance_vcpus: int = 0
         self.instance_ram: int = 0
+        self.pricing: AwsPricing = AwsPricing.UNSUPPORTED
         self.min_vcpus: int = 0
         self.max_vcpus: int = 0
         self.num_nodes: int = 0
@@ -384,6 +431,11 @@ class AwsCompEnv:
         self.ce_name = ce_descr['computeEnvironmentName']
         comp_res = ce_descr['computeResources']
         self.instance_type = comp_res['instanceTypes'][0]
+        if comp_res['type'] == 'EC2':
+            self.pricing = AwsPricing.ON_DEMAND
+        elif comp_res['type'] == 'SPOT':
+            self.pricing = AwsPricing.SPOT
+
         if self.instance_type != 'optimal':
             res = self.ec2.describe_instance_types(InstanceTypes=[self.instance_type])
             instance_type_descr = res['InstanceTypes'][0]
@@ -394,13 +446,14 @@ class AwsCompEnv:
             self.num_nodes = int(comp_res['maxvCpus'] / self.instance_vcpus)
 
 
-def _read_job_logs_aws_from_file(read_logs):
+def _read_job_logs_aws_from_file(logfile):
     """ return Run object with number of finished job, start, end, and exit codes,
         and any additional information we can learn about this run """
     log_parser = AwsLogParser()
-    for line in read_logs:
+    contents = Path(logfile.name).read_text()
+    for line in contents.split('\n'):
         log_parser.parse_line(line)
-    
+
     run = Run(log_parser.njobs, log_parser.start_time, log_parser.end_time, log_parser.exit_codes)
     run.read_log_parser(log_parser)
     return run
@@ -411,6 +464,7 @@ def _read_job_logs_aws(cfg, write_logs):
     """ return Run object with number of finished job, start, end, and exit codes,
         and any additional information we can learn about this run """
     dry_run = cfg.cluster.dry_run
+    logging.debug('Trying to fetch AWS Batch job logs from AWS')
     if dry_run:
         return Run()
     boto_cfg = create_aws_config(cfg.aws.region)
@@ -431,19 +485,17 @@ def _read_job_logs_aws(cfg, write_logs):
     body = resp['Body']
     job_list = json.loads(body.read().decode())
 
-    if write_logs:
-        write_logs.write('AWS job log dump\n')
+    write_logs.write('AWS job log dump\n')
 
     # This one is new, so we apply defensive programming here
     query_length = 0
     try:
-        fname = os.path.join(results, ELB_METADATA_DIR, ELB_AWS_QUERY_LENGTH)
+        fname = os.path.join(results, ELB_METADATA_DIR, ELB_QUERY_LENGTH)
         bucket, key = parse_bucket_name_key(fname)
         resp = s3.get_object(Bucket=bucket, Key=key)
         body = resp['Body']
         query_length = int(body.read().decode())
-        if write_logs:
-            write_logs.write(f'query_length\t{query_length}\n')
+        write_logs.write(f'query_length\t{query_length}\n')
     except:
         pass
 
@@ -462,14 +514,14 @@ def _read_job_logs_aws(cfg, write_logs):
             if not aws_comp_env:
                 aws_comp_env = AwsCompEnv(batch, ec2)
                 aws_comp_env.parseJobQueue(job_queue)
-                if write_logs:
-                    write_logs.write(f'cluster_name\t{aws_comp_env.ce_name}\n')
-                    write_logs.write(f'instance_type\t{aws_comp_env.instance_type}\n')
-                    write_logs.write(f'instance_vcpus\t{aws_comp_env.instance_vcpus}\n')
-                    write_logs.write(f'instance_ram\t{aws_comp_env.instance_ram}\n')
-                    write_logs.write(f'min_vcpus\t{aws_comp_env.min_vcpus}\n')
-                    write_logs.write(f'max_vcpus\t{aws_comp_env.max_vcpus}\n')
-                    write_logs.write(f'num_nodes\t{aws_comp_env.num_nodes}\n')
+                write_logs.write(f'cluster_name\t{aws_comp_env.ce_name}\n')
+                write_logs.write(f'pricing\t{aws_comp_env.pricing.name}\n')
+                write_logs.write(f'instance_type\t{aws_comp_env.instance_type}\n')
+                write_logs.write(f'instance_vcpus\t{aws_comp_env.instance_vcpus}\n')
+                write_logs.write(f'instance_ram\t{aws_comp_env.instance_ram}\n')
+                write_logs.write(f'min_vcpus\t{aws_comp_env.min_vcpus}\n')
+                write_logs.write(f'max_vcpus\t{aws_comp_env.max_vcpus}\n')
+                write_logs.write(f'num_nodes\t{aws_comp_env.num_nodes}\n')
             status = job['status']
             job_exit_code = JOB_EXIT_CODE_UNINITIALIZED
             reason = ''
@@ -491,8 +543,7 @@ def _read_job_logs_aws(cfg, write_logs):
                 else:
                     # Signal that job failed without attempts
                     job_exit_code = JOB_EXIT_CODE_FAILED_WITH_NO_ATTEMPT
-            if write_logs:
-                write_logs.write(f'job\t{job_id}\t{job_exit_code}\t{status}{reason}\n')
+            write_logs.write(f'job\t{job_id}\t{job_exit_code}\t{status}{reason}\n')
             log_parser.init_job(job_exit_code)
             container = job['container']
             vcpus = container['vcpus']
@@ -513,10 +564,9 @@ def _read_job_logs_aws(cfg, write_logs):
                     for event in events:
                         ts = event['timestamp']
                         message = event['message']
-                        if write_logs:
-                            escaped_message = message.encode("unicode_escape").decode("utf-8")
+                        escaped_message = message.encode("unicode_escape").decode("utf-8")
 #                            decoded_message = escaped_message.encode('utf-8').decode("unicode_escape")
-                            write_logs.write(f'{ts}\t{escaped_message}\n')
+                        write_logs.write(f'{ts}\t{escaped_message}\n')
                         log_parser.parse(ts, message)
                 except ClientError as e:
                     # If it's ResourceNotFoundException the log stream is still being copied.
@@ -529,6 +579,7 @@ def _read_job_logs_aws(cfg, write_logs):
     if aws_comp_env:
         log_parser.cluster_name = aws_comp_env.ce_name
         log_parser.instance_type = aws_comp_env.instance_type
+        log_parser.pricing = aws_comp_env.pricing.name
         log_parser.instance_vcpus = aws_comp_env.instance_vcpus
         log_parser.instance_ram = aws_comp_env.instance_ram
         log_parser.min_vcpus = aws_comp_env.min_vcpus

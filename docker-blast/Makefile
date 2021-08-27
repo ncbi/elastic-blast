@@ -29,7 +29,7 @@ IMG?=ncbi/elb
 GCP_IMG?=gcr.io/ncbi-sandbox-blast/${IMG}
 AWS_SERVER?=public.ecr.aws/i6v3i0i9
 AWS_IMG?=${AWS_SERVER}/elasticblast-elb
-VERSION?=0.0.29
+VERSION?=0.0.30
 
 ifeq (, $(shell which vmtouch 2>/dev/null))
 NOVMTOUCH?=--no-vmtouch

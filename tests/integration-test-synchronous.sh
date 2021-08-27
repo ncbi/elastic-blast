@@ -39,7 +39,9 @@ NTHREADS=$(get_num_cores)
 cleanup_resources_on_error() {
     echo "Previous exit code: $?"
     set +e
-    time $ROOT_DIR/elastic-blast delete --cfg $CFG --loglevel DEBUG --logfile $logfile $DRY_RUN
+    if ! grep -qi gcp $CFG; then
+        time $ROOT_DIR/elastic-blast delete --cfg $CFG --loglevel DEBUG --logfile $logfile $DRY_RUN
+    fi
     exit 1;
 }
 
@@ -63,22 +65,21 @@ if ! grep -qi aws $CFG; then
     # Split query is now removed during submit --sync, so all tests with it are unavailable
     # Compare with async version, integration-test.sh
 
-    # Test results
-    find . -name "batch*.out.gz" -type f -print0 | \
-        xargs -0 -P $NTHREADS  -I{} gzip -t {}
-    if grep 'outfmt 11' $logfile; then
-        find . -name "batch*.out.gz" -type f -print0 | \
-            xargs -0 -P $NTHREADS -I{} \
-            bash -c "zcat {} | datatool -m /netopt/ncbi_tools64/c++.metastable/src/objects/blast/blast.asn -M /am/ncbiapdata/asn/asn.all -v - -e /dev/null"
-    fi
-    test $(du -a -b *.out.gz | sort -n | head -n 1 | cut -f 1) -gt 0
 else
-    $ROOT_DIR/elastic-blast run-summary --cfg $CFG --loglevel DEBUG --logfile $logfile -o $runsummary_output --write-logs $logs --detailed $DRY_RUN
+    $ROOT_DIR/elastic-blast run-summary --cfg $CFG --loglevel DEBUG --logfile $logfile -o $runsummary_output $DRY_RUN
     # As we have no logs yet we can't check ASN.1 integrity
     # Get results
     aws s3 cp ${ELB_RESULTS}/ . --recursive --exclude '*' --include "*.out.gz" --exclude '*/*'
-    # Test results
-    find . -name "batch*.out.gz" -type f -print0 | \
-        xargs -0 -P $NTHREADS  -I{} gzip -t {}
-    test $(du -a -b *.out.gz | sort -n | head -n 1 | cut -f 1) -gt 0
+    # Get backend logs
+    aws s3 cp ${ELB_RESULTS}/logs/backends.log ${logs}
 fi
+
+# Test results
+find . -name "batch*.out.gz" -type f -print0 | \
+    xargs -0 -P $NTHREADS  -I{} gzip -t {}
+if grep 'outfmt 11' $logfile; then
+    find . -name "batch*.out.gz" -type f -print0 | \
+        xargs -0 -P $NTHREADS -I{} \
+        bash -c "zcat {} | datatool -m /netopt/ncbi_tools64/c++.metastable/src/objects/blast/blast.asn -M /am/ncbiapdata/asn/asn.all -v - -e /dev/null"
+fi
+test $(du -a -b *.out.gz | sort -n | head -n 1 | cut -f 1) -gt 0

@@ -63,7 +63,7 @@ INI_VALID = os.path.join(TEST_DATA_DIR, 'good_conf.ini')
 ELB_EXENAME = 'elastic-blast'
 
 
-def run_elastic_blast(cmd: List[str]) -> subprocess.CompletedProcess:
+def run_elastic_blast(cmd: List[str], env=None) -> subprocess.CompletedProcess:
     """Run Elastic-BLAST application with given command line parameters.
 
     Arguments:
@@ -71,8 +71,13 @@ def run_elastic_blast(cmd: List[str]) -> subprocess.CompletedProcess:
 
     Returns:
         subprocess.CompletedProcess object"""
+    effective_env = dict(os.environ)
+    if env:
+        for key, value in env.items():
+            effective_env[key] = str(value)
     p = subprocess.run([ELB_EXENAME] + cmd, check=False,
-                       stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+                       stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                       env=effective_env)
     return p
 
 
@@ -135,7 +140,8 @@ def test_too_many_k8s_jobs(gke_mock):
     """Test that providing a configuration that generates k8s jobs that exceed the limit produces 
     a sensible error message and exit code.
     """
-    p = run_elastic_blast(f'submit --cfg {INI_TOO_MANY_K8S_JOBS}'.split())
+    p = run_elastic_blast(f'submit --cfg {INI_TOO_MANY_K8S_JOBS}'.split(), env={'ELB_USE_CLIENT_SPLIT':1})
+    run_elastic_blast(f'delete --cfg {INI_TOO_MANY_K8S_JOBS}'.split())
     print(p.stderr.decode())
     assert p.returncode == constants.INPUT_ERROR
     msg = p.stderr.decode()
@@ -147,6 +153,7 @@ def test_bad_num_nodes(gke_mock):
     """Test that providing negative number of nodes produces a correct error
     message and exit code"""
     p = run_elastic_blast('submit --num-nodes -1'.split())
+    run_elastic_blast('delete --num-nodes -1'.split())
     assert p.returncode == constants.INPUT_ERROR
     msg = p.stderr.decode()
     assert 'Traceback' not in msg
@@ -159,6 +166,7 @@ def test_invalid_machine_type_gcp(gke_mock):
     """Test that providing an invalid machine type produces a correct error
     message and exit code"""
     p = run_elastic_blast(f'submit --cfg {INI_INVALID_MACHINE_TYPE_GCP}'.split())
+    run_elastic_blast(f'delete --cfg {INI_INVALID_MACHINE_TYPE_GCP}'.split())
     msg = p.stderr.decode()
     assert p.returncode == constants.INPUT_ERROR
     assert 'Traceback' not in msg
@@ -172,6 +180,7 @@ def test_invalid_machine_type_aws(gke_mock):
     """Test that providing an invalid machine type produces a correct error
     message and exit code"""
     p = run_elastic_blast(f'submit --cfg {INI_INVALID_MACHINE_TYPE_AWS}'.split())
+    run_elastic_blast(f'delete --cfg {INI_INVALID_MACHINE_TYPE_AWS}'.split())
     assert p.returncode == constants.INPUT_ERROR
     msg = p.stderr.decode()
     assert 'Traceback' not in msg
@@ -184,6 +193,7 @@ def test_invalid_optimal_machine_type_aws_incomplete_mem_limit(gke_mock):
     """Test that providing a machine type 'optimal' with incomplete
     configuration produces a correct error message and exit code"""
     p = run_elastic_blast(f'submit --cfg {INI_INCOMPLETE_MEM_LIMIT_OPTIMAL_MACHINE_TYPE_AWS}'.split())
+    run_elastic_blast(f'delete --cfg {INI_INCOMPLETE_MEM_LIMIT_OPTIMAL_MACHINE_TYPE_AWS}'.split())
     assert p.returncode == constants.INPUT_ERROR
     msg = p.stderr.decode()
     assert 'Traceback' not in msg
@@ -195,6 +205,7 @@ def test_invalid_optimal_machine_type_aws_incomplete_mem_limit(gke_mock):
 def test_optimal_machine_type_aws_no_num_cpus(gke_mock):
     """Test that providing a machine type 'optimal' without num-cpus works fine"""
     p = run_elastic_blast(f'submit --cfg {INI_NO_NUM_CPUS_OPTIMAL_MACHINE_TYPE_AWS}'.split())
+    run_elastic_blast(f'delete --cfg {INI_NO_NUM_CPUS_OPTIMAL_MACHINE_TYPE_AWS}'.split())
     msg = p.stderr.decode()
     assert 'Traceback' not in msg
     assert 'ERROR' not in msg
@@ -205,6 +216,7 @@ def test_invalid_mem_limit(gke_mock):
     """Test that providing an invalid memory limit configuration produces a correct error
     message and exit code"""
     p = run_elastic_blast(f'submit --cfg {INI_INVALID_MEM_LIMIT}'.split())
+    run_elastic_blast(f'delete --cfg {INI_INVALID_MEM_LIMIT}'.split())
     msg = p.stderr.decode()
     assert p.returncode == constants.INPUT_ERROR
     assert 'Traceback' not in msg
@@ -212,6 +224,9 @@ def test_invalid_mem_limit(gke_mock):
     assert ' has an invalid value:' in msg
 
 
+# FIXME: This is sad, but config doesn't take into account dry run, so it tries to 
+# get_instance_props - see elb_config.py:360
+@pytest.mark.skipif(os.getenv('TEAMCITY_VERSION') is not None, reason='No credentials in TC unit tests')
 def test_invalid_blast_option_no_closing_quote(gke_mock):
     """Test that providing an invalid memory limit configuration produces a correct error
     message and exit code"""
@@ -239,6 +254,7 @@ def test_non_existent_option(gke_mock):
 
 def test_wrong_input_query(gke_mock):
     p = run_elastic_blast(['submit', '--query', 'invalid-file', '--db', 'nt', '--cfg', os.path.join(TEST_DATA_DIR, 'good_conf.ini')])
+    run_elastic_blast(['delete', '--cfg', os.path.join(TEST_DATA_DIR, 'good_conf.ini')])
     assert p.returncode == constants.INPUT_ERROR
     msg = p.stderr.decode()
     assert 'Traceback' not in msg
@@ -247,6 +263,7 @@ def test_wrong_input_query(gke_mock):
 
 def test_wrong_results_bucket(gke_mock):
     p = run_elastic_blast(['submit', '--query', os.path.join(TEST_DATA_DIR, 'query.fa'), '--db', 'nt', '--cfg', os.path.join(TEST_DATA_DIR, 'bad_bucket_conf.ini')])
+    run_elastic_blast(['delete', 'nt', '--cfg', os.path.join(TEST_DATA_DIR, 'bad_bucket_conf.ini')])
     msg = p.stderr.decode()
     print(msg)
     assert p.returncode == constants.PERMISSIONS_ERROR
@@ -283,6 +300,7 @@ def test_gcp_config_errors(gke_mock):
 
 def test_blastdb_error():
     p = run_elastic_blast(f'submit --cfg {INI_NO_BLASTDB}'.split())
+    run_elastic_blast(f'delete --cfg {INI_NO_BLASTDB}'.split())
     assert p.returncode == constants.BLASTDB_ERROR
     msg = p.stderr.decode()
     print(msg)
@@ -361,6 +379,8 @@ def test_dependency_error():
 def test_cluster_error():
     p = safe_exec('which gcloud')
     gcloud_exepath = p.stdout.decode()
+    p = safe_exec('which gsutil')
+    gsutil_exepath = p.stdout.decode()
     spy_file = os.path.join(os.getcwd(), 'spy_file.txt')
 
     gcloud = f"""\
@@ -370,14 +390,25 @@ echo STOPPING
 else
 echo `{gcloud_exepath} $@`
 fi"""
+    gsutil = f"""\
+#!/bin/sh
+if [ "${1} ${2}" == "-q stat" ]; then
+exit 1
+else
+echo `{gsutil_exepath} $@`
+fi"""
     env = dict(os.environ)
     with TemporaryDirectory() as d:
         env['PATH'] = d + ':' + env['PATH']
         gcloud_fname = os.path.join(d, 'gcloud')
         with open(gcloud_fname, 'wt') as f:
             f.write(gcloud)
+        gsutil_fname = os.path.join(d, 'gsutil')
+        with open(gsutil_fname, 'wt') as f:
+            f.write(gsutil)
         import stat
         os.chmod(gcloud_fname, stat.S_IRWXU)
+        os.chmod(gsutil_fname, stat.S_IRWXU)
 
         fn_config = os.path.join(TEST_DATA_DIR, 'cluster-error.ini')
 
@@ -404,6 +435,7 @@ fi"""
         assert 'Traceback' not in msg
         assert 'Previous instance of cluster' in msg
         assert 'is still STOPPING' in msg
+        assert 'delete the previous ElasticBLAST search' in msg
 
         # elastic-blast status --cfg tests/app/data/cluster-error.ini --loglevel DEBUG --logfile stderr
         p = subprocess.run([ELB_EXENAME, 'status',
@@ -414,6 +446,7 @@ fi"""
         msg = p.stderr.decode()
         print(msg)
         assert 'Traceback' not in msg
+    run_elastic_blast(['delete', '--cfg', fn_config])
 
 # Failing tests for not implemented error codes
 # TODO: Update the call and modify running condition when implemented
@@ -421,6 +454,7 @@ fi"""
 @pytest.mark.skip(reason="Not yet implemented return code")
 def test_blast_engine_error():
     p = run_elastic_blast(f'submit --cfg blast_engine_fail.ini'.split())
+    run_elastic_blast(f'delete --cfg blast_engine_fail.ini'.split())
     assert p.returncode == constants.BLAST_ENGINE_ERROR
     msg = p.stderr.decode()
     print(msg)
@@ -430,6 +464,7 @@ def test_blast_engine_error():
 @pytest.mark.skip(reason="Not yet implemented return code")
 def test_blast_out_of_memory_error():
     p = run_elastic_blast(f'submit --cfg out_of_memory.ini'.split())
+    run_elastic_blast(f'delete --cfg out_of_memory.ini'.split())
     assert p.returncode == constants.OUT_OF_MEMORY_ERROR
     msg = p.stderr.decode()
     print(msg)
@@ -439,6 +474,7 @@ def test_blast_out_of_memory_error():
 @pytest.mark.skip(reason="Not yet implemented return code")
 def test_blast_timeout_error():
     p = run_elastic_blast(f'submit --cfg timeout.ini'.split())
+    run_elastic_blast(f'delete --cfg timeout.ini'.split())
     assert p.returncode == constants.TIMEOUT_ERROR
     msg = p.stderr.decode()
     print(msg)

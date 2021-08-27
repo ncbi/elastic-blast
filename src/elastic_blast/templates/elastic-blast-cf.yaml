@@ -181,11 +181,11 @@ Resources:
       EnableDnsSupport: true
       EnableDnsHostnames: true
       Tags:
-        - Key: name
+        - Key: Name
           Value: !Join [-, [elasticblast, !Ref Owner, !Ref RandomToken]]
-        - Key: project
+        - Key: Project
           Value: BLAST
-        - Key: owner
+        - Key: Owner
           Value: !Ref Owner
         - Key: billingcode
           Value: elastic-blast
@@ -195,11 +195,11 @@ Resources:
     Condition: CreateVPC
     Properties:
       Tags:
-        - Key: name
+        - Key: Name
           Value: !Join [-, [elasticblast, !Ref Owner, !Ref RandomToken]]
-        - Key: project
+        - Key: Project
           Value: BLAST
-        - Key: owner
+        - Key: Owner
           Value: !Ref Owner
         - Key: billingcode
           Value: elastic-blast
@@ -225,11 +225,11 @@ Resources:
           - !FindInMap [CidrArgs, Count, !Ref NumberOfAZs]
           - !FindInMap [CidrArgs, CidrBits, !Ref NumberOfAZs]
       Tags:
-        - Key: name
+        - Key: Name
           Value: !Join [-, [elasticblast, !Ref Owner, !Ref RandomToken, PublicSubnet1]]
-        - Key: project
+        - Key: Project
           Value: BLAST
-        - Key: owner
+        - Key: Owner
           Value: !Ref Owner
         - Key: billingcode
           Value: elastic-blast
@@ -248,11 +248,11 @@ Resources:
           - !FindInMap [CidrArgs, Count, !Ref NumberOfAZs]
           - !FindInMap [CidrArgs, CidrBits, !Ref NumberOfAZs]
       Tags:
-        - Key: name
+        - Key: Name
           Value: !Join [-, [elasticblast, !Ref Owner, !Ref RandomToken, PublicSubnet2]]
-        - Key: project
+        - Key: Project
           Value: BLAST
-        - Key: owner
+        - Key: Owner
           Value: !Ref Owner
         - Key: billingcode
           Value: elastic-blast
@@ -271,11 +271,11 @@ Resources:
           - !FindInMap [CidrArgs, CidrBits, !Ref NumberOfAZs]
       AvailabilityZone: !Select [2, !GetAZs '']
       Tags:
-        - Key: name
+        - Key: Name
           Value: !Join [-, [elasticblast, !Ref Owner, !Ref RandomToken, PublicSubnet3]]
-        - Key: project
+        - Key: Project
           Value: BLAST
-        - Key: owner
+        - Key: Owner
           Value: !Ref Owner
         - Key: billingcode
           Value: elastic-blast
@@ -294,11 +294,11 @@ Resources:
           - !FindInMap [CidrArgs, CidrBits, !Ref NumberOfAZs]
       AvailabilityZone: !Select [3, !GetAZs '']
       Tags:
-        - Key: name
+        - Key: Name
           Value: !Join [-, [elasticblast, !Ref Owner, !Ref RandomToken, PublicSubnet4]]
-        - Key: project
+        - Key: Project
           Value: BLAST
-        - Key: owner
+        - Key: Owner
           Value: !Ref Owner
         - Key: billingcode
           Value: elastic-blast
@@ -317,11 +317,11 @@ Resources:
           - !FindInMap [CidrArgs, CidrBits, !Ref NumberOfAZs]
       AvailabilityZone: !Select [4, !GetAZs '']
       Tags:
-        - Key: name
+        - Key: Name
           Value: !Join [-, [elasticblast, !Ref Owner, !Ref RandomToken, PublicSubnet5]]
-        - Key: project
+        - Key: Project
           Value: BLAST
-        - Key: owner
+        - Key: Owner
           Value: !Ref Owner
         - Key: billingcode
           Value: elastic-blast
@@ -340,11 +340,11 @@ Resources:
           - !FindInMap [CidrArgs, CidrBits, !Ref NumberOfAZs]
       AvailabilityZone: !Select [5, !GetAZs '']
       Tags:
-        - Key: name
+        - Key: Name
           Value: !Join [-, [elasticblast, !Ref Owner, !Ref RandomToken, PublicSubnet6]]
-        - Key: project
+        - Key: Project
           Value: BLAST
-        - Key: owner
+        - Key: Owner
           Value: !Ref Owner
         - Key: billingcode
           Value: elastic-blast
@@ -357,11 +357,11 @@ Resources:
     Properties:
       VpcId: !Ref NewVPC
       Tags:
-        - Key: name
+        - Key: Name
           Value: !Join [-, [elasticblast, !Ref Owner, !Ref RandomToken, PublicRoutes]]
-        - Key: project
+        - Key: Project
           Value: BLAST
-        - Key: owner
+        - Key: Owner
           Value: !Ref Owner
         - Key: billingcode
           Value: elastic-blast
@@ -433,11 +433,11 @@ Resources:
           FromPort: 22
           ToPort: 22
       Tags:
-        - Key: name
+        - Key: Name
           Value: !Join [-, [elasticblast, !Ref Owner, !Ref RandomToken, SG]]
-        - Key: project
+        - Key: Project
           Value: BLAST
-        - Key: owner
+        - Key: Owner
           Value: !Ref Owner
         - Key: billingcode
           Value: elastic-blast
@@ -507,10 +507,10 @@ Resources:
         LaunchTemplate:
           LaunchTemplateId: !Ref Ec2LaunchTemplate
         Tags:
-           project: BLAST
+           Project: BLAST
            billingcode: elastic-blast
-           owner: !Ref Owner
-           name: !Join [-, [elasticblast, !Ref Owner, !Ref RandomToken]]
+           Owner: !Ref Owner
+           Name: !Join [-, [elasticblast, !Ref Owner, !Ref RandomToken]]
 
   JobQueue:
     Type: AWS::Batch::JobQueue
@@ -522,10 +522,10 @@ Resources:
       - ComputeEnvironment: !Ref ComputeEnvironment
         Order: 1
       Tags:
-         project: BLAST
+         Project: BLAST
          billingcode: elastic-blast
-         owner: !Ref Owner
-         name: !Join [-, [elasticblast, !Ref Owner, !Ref RandomToken]]
+         Owner: !Ref Owner
+         Name: !Join [-, [elasticblast, !Ref Owner, !Ref RandomToken]]
 
   Ec2LaunchTemplate:
     Type: AWS::EC2::LaunchTemplate
@@ -552,11 +552,11 @@ Resources:
             # Set tags on attached volume
             AWS_INSTANCE_ID=$(curl -s http://169.254.169.254/latest/meta-data/instance-id)
             ROOT_VOLUME_IDS=$(aws ec2 describe-instances --region ${AWS::Region} --instance-id $AWS_INSTANCE_ID --output text --query Reservations[0].Instances[0].BlockDeviceMappings[0].Ebs.VolumeId)
-            aws ec2 create-tags --resources $ROOT_VOLUME_IDS --region ${AWS::Region} --tags Key=name,Value=${AWS::StackName}
-            aws ec2 create-tags --resources $ROOT_VOLUME_IDS --region ${AWS::Region} --tags Key=owner,Value=${Owner}
+            aws ec2 create-tags --resources $ROOT_VOLUME_IDS --region ${AWS::Region} --tags Key=Name,Value=${AWS::StackName}
+            aws ec2 create-tags --resources $ROOT_VOLUME_IDS --region ${AWS::Region} --tags Key=Owner,Value=${Owner}
             aws ec2 create-tags --resources $ROOT_VOLUME_IDS --region ${AWS::Region} --tags Key=billingcode,Value=elastic-blast
-            aws ec2 create-tags --resources $ROOT_VOLUME_IDS --region ${AWS::Region} --tags Key=project,Value=BLAST
-            aws ec2 create-tags --resources $ROOT_VOLUME_IDS --region ${AWS::Region} --tags Key=created-for-instance-id,Value=$AWS_INSTANCE_ID
+            aws ec2 create-tags --resources $ROOT_VOLUME_IDS --region ${AWS::Region} --tags Key=Project,Value=BLAST
+            aws ec2 create-tags --resources $ROOT_VOLUME_IDS --region ${AWS::Region} --tags Key=Created-For-Instance-ID,Value=$AWS_INSTANCE_ID
 
             # See better way of handling AWS NVME disks
             # https://serverfault.com/a/952864
@@ -582,9 +582,9 @@ Resources:
       TagSpecifications:
         - ResourceType: launch-template
           Tags:
-            - Key: project
+            - Key: Project
               Value: BLAST
-            - Key: owner
+            - Key: Owner
               Value: !Ref Owner
             - Key: billingcode
               Value: elastic-blast
@@ -620,10 +620,10 @@ Resources:
           Action: RETRY
       PropagateTags: true
       Tags:
-        project: BLAST
+        Project: BLAST
         billingcode: elastic-blast
-        owner: !Ref Owner
-        name: !Join [-, [elasticblast, !Ref Owner, !Ref RandomToken]]
+        Owner: !Ref Owner
+        Name: !Join [-, [elasticblast, !Ref Owner, !Ref RandomToken]]
 
   BlastSearchJobDefinition:
     Type: AWS::Batch::JobDefinition
@@ -685,10 +685,10 @@ Resources:
           Action: RETRY
       PropagateTags: true
       Tags:
-         project: BLAST
+         Project: BLAST
          billingcode: elastic-blast
-         owner: !Ref Owner
-         name: !Join [-, [elasticblast, !Ref Owner, !Ref RandomToken]]
+         Owner: !Ref Owner
+         Name: !Join [-, [elasticblast, !Ref Owner, !Ref RandomToken]]
 
 
   # AWS advises to use region-specific IAM resource names. Otherwise using the
@@ -719,11 +719,11 @@ Resources:
       ManagedPolicyArns:
       - arn:aws:iam::aws:policy/service-role/AmazonEC2ContainerServiceforEC2Role
       Tags:
-        - Key: name
+        - Key: Name
           Value: !Join [-, [elasticblast, !Ref Owner, !Ref RandomToken]]
-        - Key: project
+        - Key: Project
           Value: BLAST
-        - Key: owner
+        - Key: Owner
           Value: !Ref Owner
         - Key: billingcode
           Value: elastic-blast
@@ -745,11 +745,11 @@ Resources:
       ManagedPolicyArns:
       - arn:aws:iam::aws:policy/service-role/AWSBatchServiceRole
       Tags:
-        - Key: name
+        - Key: Name
           Value: !Join [-, [elasticblast, !Ref Owner, !Ref RandomToken]]
-        - Key: project
+        - Key: Project
           Value: BLAST
-        - Key: owner
+        - Key: Owner
           Value: !Ref Owner
         - Key: billingcode
           Value: elastic-blast
@@ -770,11 +770,11 @@ Resources:
       ManagedPolicyArns:
       - arn:aws:iam::aws:policy/AmazonS3FullAccess
       Tags:
-        - Key: name
+        - Key: Name
           Value: !Join [-, [elasticblast, !Ref Owner, !Ref RandomToken]]
-        - Key: project
+        - Key: Project
           Value: BLAST
-        - Key: owner
+        - Key: Owner
           Value: !Ref Owner
         - Key: billingcode
           Value: elastic-blast
@@ -796,11 +796,11 @@ Resources:
       ManagedPolicyArns:
       - arn:aws:iam::aws:policy/service-role/AmazonEC2SpotFleetTaggingRole
       Tags:
-        - Key: name
+        - Key: Name
           Value: !Join [-, [elasticblast, !Ref Owner, !Ref RandomToken]]
-        - Key: project
+        - Key: Project
           Value: BLAST
-        - Key: owner
+        - Key: Owner
           Value: !Ref Owner
         - Key: billingcode
           Value: elastic-blast

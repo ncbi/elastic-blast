@@ -30,10 +30,11 @@ import os
 import io
 from .filehelper import open_for_write, get_error
 from typing import Union, List, Iterable, TextIO, Tuple
+from .constants import ELB_QUERY_BATCH_FILE_PREFIX
 
 def make_full_name(out_path, nchunk, suffix):
     """ Generate full name for chunk in a uniform manner """
-    return os.path.join(out_path, f'batch_{nchunk:03d}.{suffix}')
+    return os.path.join(out_path, f'{ELB_QUERY_BATCH_FILE_PREFIX}{nchunk:03d}.{suffix}')
 
 
 def write_chunk(out_path, nchunk, buffer) -> str:

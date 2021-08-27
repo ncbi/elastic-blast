@@ -57,7 +57,7 @@ def _status(args, cfg, clean_up_stack):
         dry_run = cfg.cluster.dry_run
 
         if cfg.cloud_provider.cloud == CSP.GCP:
-            gcp.get_gke_credentials(cfg)
+            cfg.appstate.k8s_ctx = gcp.get_gke_credentials(cfg)
 
         verbose_result = ''
         while True:
@@ -71,7 +71,7 @@ def _status(args, cfg, clean_up_stack):
                 failed = counts['failed']
                 result = f'Pending {pending}\nRunning {running}\nSucceeded {succeeded}\nFailed {failed}'
             else:
-                pending, running, succeeded, failed = get_status(args.run_label, dry_run=dry_run)
+                pending, running, succeeded, failed = get_status(cfg.appstate.k8s_ctx, args.run_label, dry_run=dry_run)
                 result = f'Pending {pending}\nRunning {running}\nSucceeded {succeeded}\nFailed {failed}'
 
             if not args.wait or pending + running == 0:

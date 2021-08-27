@@ -45,6 +45,7 @@ from .constants import ELB_K8S_JOB_SUBMISSION_MIN_WAIT
 from .constants import ELB_K8S_JOB_SUBMISSION_MAX_RETRIES
 from .constants import ELB_K8S_JOB_SUBMISSION_TIMEOUT, ELB_METADATA_DIR
 from .constants import K8S_MAX_JOBS_PER_DIR, ELB_STATE_DISK_ID_FILE, ELB_QUERY_BATCH_DIR
+from .constants import ELB_DFLT_K8S_JANITOR_SCHEDULE
 from .filehelper import upload_file_to_gcs
 from .elb_config import ElasticBlastConfig
 
@@ -73,14 +74,17 @@ def get_maximum_number_of_allowed_k8s_jobs(dry_run: bool = False) -> int:
     return retval
 
 
-def get_persistent_volumes() -> List[str]:
+def get_persistent_volumes(k8s_ctx: str) -> List[str]:
     """Return a list of persistent volume ids for a kubernetes cluster.
     Kubeconfig file determines the cluster that will be contacted.
+
+    Arguments:
+        k8s_ctx: The kubernetes context to which the jobs should be submitted
 
     Raises:
         util.SafeExecError on problems communicating with the cluster
         RuntimeError when kubectl result cannot be parsed"""
-    cmd = 'kubectl get pv -o json'
+    cmd = f'kubectl --context={k8s_ctx} get pv -o json'
     p = safe_exec(cmd)
     try:
         dvols = json.loads(p.stdout.decode())
@@ -91,14 +95,14 @@ def get_persistent_volumes() -> List[str]:
     return [i['metadata']['name'] for i in dvols['items']]
 
 
-def get_persistent_disks(dry_run: bool = False) -> List[str]:
+def get_persistent_disks(k8s_ctx: str, dry_run: bool = False) -> List[str]:
     """Return a list of persistent disks for a kubernetes cluster.
     Kubeconfig file determines the cluster that will be contacted.
 
     Raises:
         util.SafeExecError on problems communicating with the cluster
         json.decoder.JSONDecodeError on problems with parsing kubectl json output"""
-    cmd = 'kubectl get pv -o json'
+    cmd = f'kubectl --context={k8s_ctx} get pv -o json'
     if dry_run:
         logging.info(cmd)
     else:
@@ -110,16 +114,17 @@ def get_persistent_disks(dry_run: bool = False) -> List[str]:
 
 
 @retry( stop=(stop_after_delay(ELB_K8S_JOB_SUBMISSION_TIMEOUT) | stop_after_attempt(ELB_K8S_JOB_SUBMISSION_MAX_RETRIES)), wait=wait_random(min=ELB_K8S_JOB_SUBMISSION_MIN_WAIT, max=ELB_K8S_JOB_SUBMISSION_MAX_WAIT))
-def submit_jobs_with_retries(path: pathlib.Path, dry_run=False) -> List[str]:
+def submit_jobs_with_retries(k8s_ctx: str, path: pathlib.Path, dry_run=False) -> List[str]:
     """ Retry kubernetes job submissions with the parameters specified in the decorator """
-    return submit_jobs(path, dry_run)
+    return submit_jobs(k8s_ctx, path, dry_run)
 
 
-def submit_jobs(path: pathlib.Path, dry_run=False) -> List[str]:
+def submit_jobs(k8s_ctx: str, path: pathlib.Path, dry_run=False) -> List[str]:
     """Submit kubernetes jobs using yaml files in the provided path.
 
     Arguments:
         path: Path to kubernetes job file or directory containing job files
+        k8s_ctx: The kubernetes context to which the jobs should be submitted
 
     Returns:
         A list of submitted job names
@@ -132,14 +137,18 @@ def submit_jobs(path: pathlib.Path, dry_run=False) -> List[str]:
         raise RuntimeError(f'Path with kubernetes jobs "{path}" does not exist')
     if path.is_dir():
         num_files = len(os.listdir(str(path)))
-        if num_files == 0:
+        if num_files == 0 and not dry_run:
             raise RuntimeError(f'Job directory {str(path)} is empty')
         elif num_files > K8S_MAX_JOBS_PER_DIR:
-            for f in sorted(os.listdir(str(path))):
-                retval += submit_jobs_with_retries(pathlib.Path(os.path.join(path, f)), dry_run)
+            files = os.listdir(str(path))
+            for i, f in enumerate(sorted(files, key=lambda x: int(os.path.splitext(x)[0].split('_')[1]))):
+                retval += submit_jobs_with_retries(k8s_ctx, pathlib.Path(os.path.join(path, f)), dry_run)
+                perc_done = i / num_files * 100.
+                if i % 50 == 0:
+                    logging.debug(f'Submitted job file # {i} of {num_files} {perc_done:.2f}% done')
             return retval
 
-    cmd = f'kubectl apply -f {path} -o json'
+    cmd = f'kubectl --context={k8s_ctx} apply -f {path} -o json'
     if dry_run:
         logging.info(cmd)
     else:
@@ -153,17 +162,20 @@ def submit_jobs(path: pathlib.Path, dry_run=False) -> List[str]:
     return retval
 
 
-def delete_all(dry_run: bool = False) -> List[str]:
+def delete_all(k8s_ctx: str, dry_run: bool = False) -> List[str]:
     """Delete all kubernetes jobs, persistent volume claims, and persistent volumes.
+
+    Arguments:
+        k8s_ctx: The kubernetes context to which the jobs should be submitted
 
     Returns:
         A list of deleted kubernetes objects
 
     Raises:
         util.SafeExecError on problems with command line kubectl"""
-    commands = ['kubectl delete jobs --all',
-                'kubectl delete pvc --all',
-                'kubectl delete pv --all']
+    commands = [f'kubectl --context={k8s_ctx} delete jobs --all',
+                f'kubectl --context={k8s_ctx} delete pvc --all',
+                f'kubectl --context={k8s_ctx} delete pv --all']
     result = []
     for cmd in commands:
         if dry_run:
@@ -181,17 +193,18 @@ def delete_all(dry_run: bool = False) -> List[str]:
     return result
 
 
-def get_jobs(selector: Optional[str] = None, dry_run: bool = False) -> List[str]:
+def get_jobs(k8s_ctx: str, selector: Optional[str] = None, dry_run: bool = False) -> List[str]:
     """Return a list of kubernetes jobs
 
     Arguments:
+        k8s_ctx: The kubernetes context to which the jobs should be submitted
         selector: Kubernetes job label to select jobs
         dry_run: Dry run
 
     Raises:
         util.SafeExecError on problems with command line kubectl
         RuntimeError for unexpected kubctl output"""
-    cmd = 'kubectl get jobs -o json'
+    cmd = 'kubectl --context={k8s_ctx} get jobs -o json'
     if selector is not None:
         cmd += f' -l {selector}'
     if dry_run:
@@ -206,18 +219,18 @@ def get_jobs(selector: Optional[str] = None, dry_run: bool = False) -> List[str]
     return [i['metadata']['name'] for i in out['items']]
 
 
-def _wait_for_job(job_file: pathlib.Path, attempts: int = 30, secs2wait: int = 60, dry_run: bool = False) -> None:
+def _wait_for_job(k8s_ctx: str, job_file: pathlib.Path, attempts: int = 30, secs2wait: int = 60, dry_run: bool = False) -> None:
     """ Wait for the job to return successfully or raise a TimeoutError after specified number of attempts """
 
     for counter in range(attempts):
-        if _job_succeeded(job_file, dry_run):
+        if _job_succeeded(k8s_ctx, job_file, dry_run):
             break
         time.sleep(secs2wait)
     else:
         raise TimeoutError(f'{job_file} timed out')
 
 
-def _job_succeeded(k8s_job_file: pathlib.Path, dry_run: bool = False) -> bool:
+def _job_succeeded(k8s_ctx: str, k8s_job_file: pathlib.Path, dry_run: bool = False) -> bool:
     """ Checks whether the job file passed in as an argument has succeeded or not.
     Returns true if the job succeeded, false otherwise.
     If the job failed, a RuntimeError is raised.
@@ -225,7 +238,7 @@ def _job_succeeded(k8s_job_file: pathlib.Path, dry_run: bool = False) -> bool:
     if not k8s_job_file.exists():
         raise FileNotFoundError(str(k8s_job_file))
 
-    cmd = f'kubectl get -f {k8s_job_file} -o json'
+    cmd = f'kubectl --context={k8s_ctx} get -f {k8s_job_file} -o json'
 
     if dry_run:
         logging.info(cmd)
@@ -256,7 +269,7 @@ def _job_succeeded(k8s_job_file: pathlib.Path, dry_run: bool = False) -> bool:
     return int(retval) == 1
 
 
-def _ensure_successful_job(k8s_job_file: pathlib.Path, dry_run: bool = False) -> None:
+def _ensure_successful_job(k8s_ctx: str, k8s_job_file: pathlib.Path, dry_run: bool = False) -> None:
     """ Verify that the k8s job succeeded
     Pre-condition: the string passed represents an existing k8s file
     Raises a RuntimeException if job failed
@@ -264,7 +277,7 @@ def _ensure_successful_job(k8s_job_file: pathlib.Path, dry_run: bool = False) ->
     if not k8s_job_file.exists():
         raise FileNotFoundError(str(k8s_job_file))
 
-    cmd = f'kubectl get -f {k8s_job_file} -o json'
+    cmd = f'kubectl --context={k8s_ctx} get -f {k8s_job_file} -o json'
 
     if dry_run:
         logging.info(cmd)
@@ -325,7 +338,7 @@ def initialize_local_ssd(cfg: ElasticBlastConfig) -> None:
             subs['NODE_ORDINAL'] = str(n)
             with job_init_local_ssd.open(mode='wt') as f:
                 f.write(substitute_params(job_init_local_ssd_tmpl, subs))
-        cmd = f"kubectl apply -f {d}"
+        cmd = f"kubectl --context={cfg.appstate.k8s_ctx} apply -f {d}"
         if dry_run:
             logging.info(cmd)
         else:
@@ -335,7 +348,7 @@ def initialize_local_ssd(cfg: ElasticBlastConfig) -> None:
         timeout = init_blastdb_minutes_timeout * 60
         sec2wait = 20
         while timeout > 0:
-            cmd = f'kubectl get jobs -o jsonpath=' \
+            cmd = f'kubectl --context={cfg.appstate.k8s_ctx} get jobs -o jsonpath=' \
                 '{.items[?(@.status.active)].metadata.name}{\'\\t\'}' \
                 '{.items[?(@.status.failed)].metadata.name}{\'\\t\'}' \
                 '{.items[?(@.status.succeeded)].metadata.name}'
@@ -349,7 +362,7 @@ def initialize_local_ssd(cfg: ElasticBlastConfig) -> None:
                 logging.debug(res)
             active, failed, succeeded = res.split('\t')
             if failed:
-                proc = safe_exec(f'kubectl logs -l app=setup')
+                proc = safe_exec(f'kubectl --context={cfg.appstate.k8s_ctx} logs -l app=setup')
                 for line in proc.stdout.split('\n'):
                     logging.debug(line)
                 raise RuntimeError(f'Local SSD initialization jobs failed: {failed}')
@@ -364,7 +377,7 @@ def initialize_local_ssd(cfg: ElasticBlastConfig) -> None:
         logging.debug(f'RUNTIME init-storage {end-start} seconds')
         # Delete setup jobs
         if not 'ELB_DONT_DELETE_SETUP_JOBS' in os.environ:
-            cmd = 'kubectl delete jobs -l app=setup'
+            cmd = f'kubectl --context={cfg.appstate.k8s_ctx} delete jobs -l app=setup'
             if dry_run:
                 logging.info(cmd)
             else:
@@ -375,7 +388,8 @@ def initialize_persistent_disk(cfg: ElasticBlastConfig, query_files: List[str] =
     """ Initialize Persistent Disk for ElasticBLAST execution
     Arguments:
         cfg - configuration to get parameters from
-        query_files - if non empty - list of query files to be split in the cloud,
+        query_files - if non empty - list of query files to be split in the cloud
+                      in QuerySplitMode.CLOUD_TWO_STAGE mode,
                       now supported only single file.
     """
 
@@ -396,14 +410,35 @@ def initialize_persistent_disk(cfg: ElasticBlastConfig, query_files: List[str] =
     results_bucket = cfg.cluster.results
     dry_run = cfg.cluster.dry_run
     query_batches = os.path.join(results_bucket, ELB_QUERY_BATCH_DIR)
-    input_query = query_files[0] if query_files else 'None'
+
+    if query_files:
+        # Case of QuerySplitMode.CLOUD_TWO_STAGE
+        # We have one file we need to pass to job init_pv/import-query-batches
+        # and signal the splitting is required
+        input_query = query_files[0]
+        copy_only = '0'
+    else:
+        # Case of QuerySplitMode.CLIENT
+        # We request copy of already split queries from $BUCKET/query_batches to
+        # persistent volume
+        # input_query is irrelevant in this case
+        input_query = 'None'
+        copy_only = '1'
+
+    k8s_ctx = cfg.appstate.k8s_ctx
+    if not k8s_ctx:
+        # This should never happen when calling the elastic-blast script, as
+        # the k8s context is set as part of calling gcloud container clusters get credentials
+        # This check is to pacify the mypy type checker and to alert those
+        # using the API directly of missing pre-conditions
+        raise RuntimeError(f'kubernetes context is missing for "{cluster_name}"')
 
     init_blastdb_minutes_timeout = cfg.timeouts.init_pv
 
     subs = {
         'INPUT_QUERY' : input_query,
         'BATCH_LEN' : str(cfg.blast.batch_len),
-        'COPY_ONLY' : '1',
+        'COPY_ONLY' : copy_only,
         'ELB_IMAGE_QS' : ELB_QS_DOCKER_IMAGE_GCP,
 
         'QUERY_BATCHES': query_batches,
@@ -427,7 +462,7 @@ def initialize_persistent_disk(cfg: ElasticBlastConfig, query_files: List[str] =
     with TemporaryDirectory() as d:
         set_extraction_path(d)
         storage_gcp = resource_filename('elastic_blast', 'templates/storage-gcp-ssd.yaml')
-        cmd = f"kubectl apply -f {storage_gcp}"
+        cmd = f"kubectl --context={k8s_ctx} apply -f {storage_gcp}"
         if dry_run:
             logging.info(cmd)
         else:
@@ -436,7 +471,7 @@ def initialize_persistent_disk(cfg: ElasticBlastConfig, query_files: List[str] =
         pvc_yaml = os.path.join(d, 'pvc.yaml')
         with open(pvc_yaml, 'wt') as f:
             f.write(substitute_params(resource_string('elastic_blast', 'templates/pvc.yaml.template').decode(), subs))
-        cmd = f"kubectl apply -f {pvc_yaml}"
+        cmd = f"kubectl --context={k8s_ctx} apply -f {pvc_yaml}"
         if dry_run:
             logging.info(cmd)
         else:
@@ -446,21 +481,25 @@ def initialize_persistent_disk(cfg: ElasticBlastConfig, query_files: List[str] =
         job_init_pv = pathlib.Path(os.path.join(d, 'job-init-pv.yaml'))
         with job_init_pv.open(mode='wt') as f:
             f.write(substitute_params(resource_string('elastic_blast', f'templates/{job_init_pv_template}').decode(), subs))
-        cmd = f"kubectl apply -f {job_init_pv}"
+        cmd = f"kubectl --context={k8s_ctx} apply -f {job_init_pv}"
         if dry_run:
             logging.info(cmd)
         else:
             safe_exec(cmd)
 
-        _wait_for_job(job_init_pv, init_blastdb_minutes_timeout,
-                      dry_run=dry_run)
-        end = timer()
-        logging.debug(f'RUNTIME init-pv {end-start} seconds')
+        # wait for the disk to be provisioned
+        time.sleep(5)
 
         # save persistent disk id so that it can be deleted on clean up
-        disks = get_persistent_disks(dry_run)
+        disks = get_persistent_disks(k8s_ctx, dry_run)
+        nretries = ELB_K8S_JOB_SUBMISSION_MAX_RETRIES
+        while nretries and not dry_run and not disks:
+            time.sleep(5)
+            disks = get_persistent_disks(k8s_ctx, dry_run)
+            nretries -= 1
         if disks:
             logging.debug(f'GCP disk IDs {disks}')
+            logging.debug(f'Disk id(s) got in {(ELB_K8S_JOB_SUBMISSION_MAX_RETRIES+1)-nretries} tries')
             cfg.appstate.disk_id = disks[0]
             disk_id_file = os.path.join(d, ELB_STATE_DISK_ID_FILE)
             with open(disk_id_file, 'w') as f:
@@ -468,16 +507,22 @@ def initialize_persistent_disk(cfg: ElasticBlastConfig, query_files: List[str] =
                     print(d, file=f)
             dest = os.path.join(cfg.cluster.results, ELB_METADATA_DIR, ELB_STATE_DISK_ID_FILE)
             upload_file_to_gcs(disk_id_file, dest, dry_run)
-        else:
+        elif not dry_run:
             logging.error('Failed to get disk ID')
 
+        _wait_for_job(k8s_ctx, job_init_pv, init_blastdb_minutes_timeout,
+                      dry_run=dry_run)
+        end = timer()
+        logging.debug(f'RUNTIME init-pv {end-start} seconds')
+
         if not 'ELB_DONT_DELETE_SETUP_JOBS' in os.environ:
-            cmd = f"kubectl delete -f {job_init_pv}"
+            cmd = f"kubectl --context={k8s_ctx} delete -f {job_init_pv}"
             if dry_run:
                 logging.info(cmd)
             else:
-                get_logs('app=setup', [K8S_JOB_GET_BLASTDB,
-                                       K8S_JOB_IMPORT_QUERY_BATCHES], dry_run)
+                get_logs(k8s_ctx, 'app=setup', 
+                        [K8S_JOB_GET_BLASTDB, K8S_JOB_IMPORT_QUERY_BATCHES], 
+                        dry_run)
                 safe_exec(cmd)
         # ${LOGDATETIME} setup_pd end >>${ELB_LOGFILE}
 
@@ -496,7 +541,7 @@ def label_persistent_disk(cfg: ElasticBlastConfig) -> None:
     # Label disk with given claim with standard labels
     pv_claim = 'blast-dbs-pvc'
     labels = cfg.cluster.labels
-    get_pv_cmd = 'kubectl get pv -o custom-columns=CLAIM:.spec.claimRef.name,PDNAME:.spec.gcePersistentDisk.pdName'
+    get_pv_cmd = f'kubectl --context={cfg.appstate.k8s_ctx} get pv -o custom-columns=CLAIM:.spec.claimRef.name,PDNAME:.spec.gcePersistentDisk.pdName'
     if dry_run:
         logging.info(get_pv_cmd)
         pd_name = f'disk_name_with_claim_{pv_claim}'
@@ -520,16 +565,16 @@ def label_persistent_disk(cfg: ElasticBlastConfig) -> None:
         safe_exec(cmd)
 
 
-def check_server(dry_run: bool = False):
+def check_server(k8s_ctx: str, dry_run: bool = False):
     """Check that server set after gcp.get_gke_credentials is alive"""
-    cmd = 'kubectl version --short'
+    cmd = f'kubectl --context={k8s_ctx} version --short'
     if dry_run:
         logging.info(cmd)
     else:
         safe_exec(cmd)
 
 
-def get_logs(label: str, containers: List[str], dry_run: bool = False):
+def get_logs(k8s_ctx: str, label: str, containers: List[str], dry_run: bool = False):
     """ Collect logs from Kubernetes.
       Parameters:
         label - Kubernetes label to specify log source
@@ -537,7 +582,7 @@ def get_logs(label: str, containers: List[str], dry_run: bool = False):
         dry_run - report command only, don't execute it.
     """
     for c in containers:
-        cmd = f'kubectl logs -l {label} -c {c} --timestamps --since=24h --tail=-1'
+        cmd = f'kubectl --context={k8s_ctx} logs -l {label} -c {c} --timestamps --since=24h --tail=-1'
         if dry_run:
             logging.info(cmd)
         else:
@@ -562,3 +607,55 @@ def get_logs(label: str, containers: List[str], dry_run: bool = False):
                     root_logger.handlers[0].setFormatter(orig_formatter) # type: ignore
             except SafeExecError:
                 pass
+
+
+def collect_k8s_logs(cfg: ElasticBlastConfig):
+    """ Collect logs from Kubernetes logs for several label/container combinations.
+      Parameters:
+        cfg - configuration with parameters, now only dry-run is used
+    """
+    dry_run = cfg.cluster.dry_run
+    k8s_ctx = cfg.appstate.k8s_ctx
+    if not k8s_ctx:
+        raise RuntimeError('kubernetes context is missing for {cluster_name}')
+    # TODO use named constants for labels and containers
+    # also modify corresponding YAML templates and their substitution
+    get_logs(k8s_ctx, 'app=setup', [K8S_JOB_GET_BLASTDB, K8S_JOB_IMPORT_QUERY_BATCHES], dry_run)
+    get_logs(k8s_ctx, 'app=blast', [K8S_JOB_BLAST, K8S_JOB_RESULTS_EXPORT], dry_run)
+
+
+def submit_janitor_cronjob(cfg: ElasticBlastConfig):
+    """ Creates a k8s cronjob to delete GCP cluster once the jobs are done """
+    dry_run = cfg.cluster.dry_run
+
+    janitor_schedule_cron = ELB_DFLT_K8S_JANITOR_SCHEDULE
+    if 'ELB_JANITOR_SCHEDULE' in os.environ:
+        janitor_schedule_cron = os.environ['ELB_JANITOR_SCHEDULE']
+        logging.debug(f'Overriding janitor schedule to "{janitor_schedule_cron}"')
+
+    subs = {
+        'ELB_GCP_PROJECT'       : cfg.gcp.project,
+        'ELB_GCP_REGION'        : cfg.gcp.region,
+        'ELB_GCP_ZONE'          : cfg.gcp.zone,
+        'ELB_RESULTS'           : cfg.cluster.results,
+        'ELB_CLUSTER_NAME'      : cfg.cluster.name,
+        'ELB_JANITOR_SCHEDULE'  : janitor_schedule_cron
+    }
+    logging.debug("Submitting ElasticBLAST janitor cronjob")
+    with TemporaryDirectory() as d:
+        set_extraction_path(d)
+        rbac_yaml = resource_filename('elastic_blast', 'templates/elb-janitor-rbac.yaml')
+        cmd = f"kubectl --context={cfg.appstate.k8s_ctx} apply -f {rbac_yaml}"
+        if dry_run:
+            logging.info(cmd)
+        else:
+            safe_exec(cmd)
+
+        cronjob_yaml = os.path.join(d, 'elb-cronjob.yaml')
+        with open(cronjob_yaml, 'wt') as f:
+            f.write(substitute_params(resource_string('elastic_blast', 'templates/elb-janitor-cronjob.yaml.template').decode(), subs))
+        cmd = f"kubectl --context={cfg.appstate.k8s_ctx} apply -f {cronjob_yaml}"
+        if dry_run:
+            logging.info(cmd)
+        else:
+            safe_exec(cmd)

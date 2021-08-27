@@ -285,16 +285,23 @@ def vmtouch_database(args):
 def download_taxidlist(args):
     if not args.taxidlist:
         return
-    hash = md5(args.taxidlist.encode()).hexdigest()
-    sanitized = re.sub(r'[^-A-Za-z0-9.]', '-', args.taxidlist)
-    taxidlist_done = f"taxidlist_{sanitized}_{hash}"
-    if os.path.exists(taxidlist_done):
-        return
-    print('Start taxidlist copy')
     creds = ' --no-sign-request' if args.no_creds else ''
-    p = safe_exec(f"aws s3 cp {args.taxidlist} . --quiet{creds}")
-    print('End taxidlist copy')
-    if not dry_run:
+    if dry_run:
+        print('Start taxidlist copy')
+        print(f"aws s3 cp {args.taxidlist} . --quiet{creds}")
+        print('End taxidlist copy')
+        return
+    hashsum = md5(args.taxidlist.encode()).hexdigest()
+    sanitized = re.sub(r'[^-A-Za-z0-9.]', '-', args.taxidlist)
+    taxidlist_base = f"taxidlist_{sanitized}_{hashsum}"
+    taxidlist_done = taxidlist_base + '.done'
+    taxidlist_lock = taxidlist_base + '.lock'
+    with filelock.FileLock(taxidlist_lock):
+        if os.path.exists(taxidlist_done):
+            return
+        print('Start taxidlist copy')
+        safe_exec(f"aws s3 cp {args.taxidlist} . --quiet{creds}")
+        print('End taxidlist copy')
         with open(taxidlist_done, 'w'): pass
 
 

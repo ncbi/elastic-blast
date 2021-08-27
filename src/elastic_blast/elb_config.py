@@ -293,7 +293,7 @@ class BlastConfig(ConfigParserToDataclassMapper):
         try:
             shlex.split(self.options)
         except ValueError as err:
-            errors.append(f'Incorrect BLAST options: {str(err)}')
+            errors.append(f'Incorrect BLAST options: {str(err)} in "{self.options}"')
 
 
 
@@ -357,7 +357,7 @@ class ClusterConfig(ConfigParserToDataclassMapper):
                 self.num_cpus = PositiveInteger(ELB_DFLT_AWS_NUM_CPUS)
 
         # Sanity check for the instance type and num CPUs
-        if self.machine_type != 'optimal':
+        if self.machine_type != 'optimal' and not self.dry_run:
             instance_props = get_instance_props(cloud_provider, self.machine_type)
             if instance_props.ncpus < self.num_cpus:
                 self.num_cpus = PositiveInteger(instance_props.ncpus)
@@ -399,7 +399,11 @@ class TimeoutsConfig(ConfigParserToDataclassMapper):
 @dataclass
 class AppState:
     """Application state values"""
+
+    # The GCP persistent disk ID
     disk_id: Optional[str] = None
+    # The kubernetes context
+    k8s_ctx: Optional[str] = None
 
 
 @dataclass

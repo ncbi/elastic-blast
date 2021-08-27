@@ -33,13 +33,13 @@ from .util import safe_exec, SafeExecError, UserReportError
 from .constants import CLUSTER_ERROR
 
 #TODO: get rid of unused run_label, EB-407 
-def get_status(run_label=None, dry_run=False):
+def get_status(k8s_ctx: str, run_label=None, dry_run=False):
     """Return numbers of pending, running, succeded, and failed jobs
 
     run_label: optional argument
         If argument run_label is set it is added to pod selector for kubectl request.
     """
-    status = defaultdict(int)
+    status = defaultdict(int)  # type: ignore
     selector = 'app=blast'
     # If run_label is set add it to selector
     if run_label:
@@ -50,7 +50,7 @@ def get_status(run_label=None, dry_run=False):
         else:
             raise ValueError('Run label not in correct format, must be: <key>:<value>')
     # if we need name of the job in the future add NAME:.metadata.name to custom-columns
-    kubectl = 'kubectl'
+    kubectl = f'kubectl --context={k8s_ctx}'
 
     # get status of jobs (pending/running, succeeded, failed)
     cmd = f'{kubectl} get jobs -o custom-columns=STATUS:.status.conditions[0].type -l {selector}'.split()
@@ -73,12 +73,12 @@ def get_status(run_label=None, dry_run=False):
                 status['Pending'] += 1
             
     # get number of running pods
-    arglist = [kubectl, 'get', 'pods', '-o', 'custom-columns=STATUS:.status.phase', '-l', selector]
+    cmd = f'{kubectl} get pods -o custom-columns=STATUS:.status.phase -l {selector}'.split()
     if dry_run:
-        logging.info(arglist)
+        logging.info(cmd)
     else:
         try:
-            proc = safe_exec(arglist)
+            proc = safe_exec(cmd)
         except SafeExecError as e:
             raise UserReportError(CLUSTER_ERROR, e.message.strip())
         for line in proc.stdout.decode().split('\n'):

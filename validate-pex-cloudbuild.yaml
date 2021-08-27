@@ -1,0 +1,17 @@
+steps:
+- name: 'python:3.7-alpine3.14'
+  entrypoint: sh
+  args:
+    - -c
+    - |
+      apk add curl &&
+      curl -sO https://storage.googleapis.com/elastic-blast/release/${_VERSION}/elastic-blast &&
+      curl -sO https://storage.googleapis.com/elastic-blast/release/${_VERSION}/elastic-blast.md5 &&
+      md5sum -c elastic-blast.md5 &&
+      chmod +x elastic-blast &&
+      ./elastic-blast --version && \
+      ./elastic-blast --help && \
+      ./elastic-blast submit --help && \
+      ./elastic-blast status --help && \
+      ./elastic-blast delete --help && \
+      ./elastic-blast run-summary --help

@@ -44,20 +44,19 @@ from botocore.exceptions import ClientError, NoCredentialsError, ParamValidation
 
 from .util import convert_labels_to_aws_tags, convert_disk_size_to_gb
 from .util import convert_memory_to_mb, UserReportError
-from .util import ElbSupportedPrograms
-from .util import get_usage_reporting
-from .util import UserReportError, sanitize_aws_batch_job_name
-from .constants import BLASTDB_ERROR, CLUSTER_ERROR, ELB_AWS_QUERY_LENGTH, ELB_UNKNOWN_NUMBER_OF_QUERY_SPLITS, PERMISSIONS_ERROR
+from .util import ElbSupportedPrograms, get_usage_reporting, sanitize_aws_batch_job_name
+from .constants import BLASTDB_ERROR, CLUSTER_ERROR, ELB_QUERY_LENGTH, PERMISSIONS_ERROR
 from .constants import ELB_QUERY_BATCH_DIR, ELB_METADATA_DIR, ELB_LOG_DIR
 from .constants import ELB_DOCKER_IMAGE_AWS, INPUT_ERROR, ELB_QS_DOCKER_IMAGE_AWS
 from .constants import DEPENDENCY_ERROR, TIMEOUT_ERROR
 from .constants import ELB_AWS_JOB_IDS, ELB_S3_PREFIX, ELB_GCS_PREFIX
-from .constants import ELB_DFLT_NUM_BATCHES_FOR_TESTING
+from .constants import ELB_DFLT_NUM_BATCHES_FOR_TESTING, ELB_UNKNOWN_NUMBER_OF_QUERY_SPLITS
 from .filehelper import parse_bucket_name_key
 from .aws_traits import get_machine_properties, create_aws_config, get_availability_zones_for
 from .object_storage_utils import write_to_s3
 from .base import DBSource
 from .elb_config import ElasticBlastConfig
+from .elasticblast import ElasticBlast
 
 
 CF_TEMPLATE = os.path.join(os.path.dirname(__file__), 'templates', 'elastic-blast-cf.yaml')
@@ -103,27 +102,25 @@ def check_cluster(cfg: ElasticBlastConfig) -> bool:
         return False
 
 
-class ElasticBlastAws:
+class ElasticBlastAws(ElasticBlast):
     """ Implementation of core ElasticBLAST functionality in AWS.
     Uses a CloudFormation template and AWS Batch.
     """
 
-    def __init__(self, cfg: ElasticBlastConfig, create=False):
+    def __init__(self, cfg: ElasticBlastConfig, create=False, cleanup_stack: List[Any]=None):
         """ Class constructor: it's meant to be a starting point and to implement
         a base class with the core ElasticBLAST interface
         Parameters:
             cfg - configuration to use for cluster creation
             create - if cluster does not exist, create it. Default: False
         """
+        super().__init__(cfg, create, cleanup_stack)
         self._init(cfg, create)
 
     @handle_aws_error
     def _init(self, cfg: ElasticBlastConfig, create: bool):
         """ Internal constructor, converts AWS exceptions to UserReportError """
         self.boto_cfg = create_aws_config(cfg.aws.region)
-        self.cfg = cfg
-
-        self.dry_run = self.cfg.cluster.dry_run
         self.stack_name = self.cfg.cluster.name
 
         self.cf = boto3.resource('cloudformation', config=self.boto_cfg)
@@ -425,7 +422,9 @@ class ElasticBlastAws:
         DFLT_BATCH_SERVICE_ROLE_NAME = 'AWSBatchServiceRole'
         role = self.iam.Role(DFLT_BATCH_SERVICE_ROLE_NAME)
         try:
-            role.arn
+            # Accessing role.arn will trigger an exception if the role is
+            # not defined
+            _ = role.arn
             logging.debug(f'Using {role.name} present in the account')
             return role.arn
         except self.iam.meta.client.exceptions.NoSuchEntityException:
@@ -533,7 +532,7 @@ class ElasticBlastAws:
 
 
     @handle_aws_error
-    def split_query(self, query_files: List[str]) -> None:
+    def cloud_query_split(self, query_files: List[str]) -> None:
         """ Submit the query sequences for splitting to the cloud.
             Parameters:
                 query_files     - list files containing query sequence data to split
@@ -755,7 +754,12 @@ class ElasticBlastAws:
     def upload_query_length(self, query_length: int) -> None:
         """Save query length in a metadata file in S3"""
         if query_length <= 0: return
-        write_to_s3(os.path.join(self.results_bucket, ELB_METADATA_DIR, ELB_AWS_QUERY_LENGTH), str(query_length), self.boto_cfg)
+        write_to_s3(os.path.join(self.results_bucket, ELB_METADATA_DIR, ELB_QUERY_LENGTH), str(query_length), self.boto_cfg)
+
+
+    def check_job_number_limit(self, queries, query_length) -> None:
+        " Check that number of jobs generated does not exceed platform maximum "
+        pass
 
 
     def check_status(self, extended=False) -> Tuple[Dict[str, int], str]:

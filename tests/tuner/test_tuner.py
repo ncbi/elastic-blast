@@ -34,7 +34,7 @@ from elastic_blast.filehelper import open_for_read
 from elastic_blast.base import DBSource
 from elastic_blast.constants import ELB_BLASTDB_MEMORY_MARGIN
 from elastic_blast.util import UserReportError, get_query_batch_size
-from elastic_blast.base import MemoryStr
+from elastic_blast.base import MemoryStr, InstanceProperties
 import pytest
 
 
@@ -157,26 +157,29 @@ def test_get_batch_length():
     assert get_batch_length(program = 'blastp', mt_mode = MTMode.ONE,
                             num_cpus = NUM_CPUS) == get_query_batch_size(PROGRAM) * NUM_CPUS
 
+
+@patch(target='elastic_blast.tuner.aws_get_machine_properties', new=MagicMock(return_value=InstanceProperties(32, 128)))
 def test_aws_get_mem_limit():
     """Test getting search job memory limit for AWS"""
-    CONST_MEM_LIMIT = MemoryStr('20G')
+    NUM_CPUS=2
     db = DbData(length=20000, moltype=MolType.PROTEIN, bytes_to_cache_gb=60)
 
-    # when db_factor == 0.0 and with_optimal is False, const_limit is returned
-    assert aws_get_mem_limit(db=db, const_limit=CONST_MEM_LIMIT, db_factor=0.0, with_optimal=False).asGB() == CONST_MEM_LIMIT.asGB()
+    # when db_factor == 0.0 and with_optimal is False, memory is divided
+    # equally between all jobs running on an instance type
+    assert aws_get_mem_limit(num_cpus=NUM_CPUS, machine_type='some-instance-type', db=db, db_factor=0.0).asGB() == 7.9
 
     # when db_factor > 0.0 and with_optimal is False,
     # db.bytes_to_cache * db_factor is returned
     DB_FACTOR = 1.2
-    assert abs(aws_get_mem_limit(db=db, const_limit=CONST_MEM_LIMIT, db_factor=DB_FACTOR, with_optimal=False).asGB() - db.bytes_to_cache_gb * DB_FACTOR) < 1
+    assert abs(aws_get_mem_limit(num_cpus=NUM_CPUS, machine_type='some-instance-type', db=db, db_factor=DB_FACTOR).asGB() - db.bytes_to_cache_gb * DB_FACTOR) < 1
 
     # when with_optimal is True 60G is returned if db.bytes_to_cache >= 60G,
     # otherwise db.bytes_to_cache_gb + 2G
     db.bytes_to_cache_gb = 60
-    assert aws_get_mem_limit(db=db, const_limit=CONST_MEM_LIMIT, db_factor=0.0, with_optimal=True) == MemoryStr('60G')
+    assert aws_get_mem_limit(num_cpus=NUM_CPUS, machine_type='optimal', db=db, db_factor=0.0) == MemoryStr('60G')
 
     db.bytes_to_cache_gb = 20
-    assert aws_get_mem_limit(db=db, const_limit=CONST_MEM_LIMIT, db_factor=0.0, with_optimal=True) == MemoryStr('22G')
+    assert aws_get_mem_limit(num_cpus=NUM_CPUS, machine_type='optimal', db=db, db_factor=0.0) == MemoryStr('22G')
 
 
 def test_gcp_get_mem_limit():
@@ -215,29 +218,29 @@ def test_aws_get_machine_type():
     MIN_CPUS = 8
     db = DbData(length=500, moltype=MolType.PROTEIN, bytes_to_cache_gb=70)
     result = aws_get_machine_type(db=db, num_cpus=MIN_CPUS, region='us-east-1')
-    # r5.4xlarge should be selected here because it has the fewest CPUs out of
+    # m5.8xlarge should be selected here because it has the least memory out of
     # instance types that satisfy the memory requirement
-    assert result == 'r5.4xlarge'
+    assert result == 'm5.8xlarge'
 
 
 def test_gcp_get_machine_type():
     """Test selecting machine type for GCP"""
     NUM_CPUS = 14
-    MEM_LIMIT = MemoryStr('120G')
-    result = gcp_get_machine_type(mem_limit=MEM_LIMIT, num_cpus=NUM_CPUS)
+    db = DbData(length=500, moltype=MolType.PROTEIN, bytes_to_cache_gb=118)
+    result = gcp_get_machine_type(db, num_cpus=NUM_CPUS)
     assert result == 'n1-standard-32'
 
     NUM_CPUS = 14
-    MEM_LIMIT = MemoryStr('40G')
-    result = gcp_get_machine_type(mem_limit=MEM_LIMIT, num_cpus=NUM_CPUS)
+    db.bytes_to_cache_gb = 40
+    result = gcp_get_machine_type(db, num_cpus=NUM_CPUS)
     assert result == 'e2-standard-16'
 
     NUM_CPUS = 256
-    MEM_LIMIT = MemoryStr('40G')
+    db.bytes_to_cache_gb = 40
     with pytest.raises(UserReportError):
-        gcp_get_machine_type(mem_limit=MEM_LIMIT, num_cpus=NUM_CPUS)
+        gcp_get_machine_type(db, num_cpus=NUM_CPUS)
 
     NUM_CPUS = 32
-    MEM_LIMIT = MemoryStr('1024G')
+    db.bytes_to_cache_gb = 1024
     with pytest.raises(UserReportError):
-        gcp_get_machine_type(mem_limit=MEM_LIMIT, num_cpus=NUM_CPUS)
+        gcp_get_machine_type(db, num_cpus=NUM_CPUS)

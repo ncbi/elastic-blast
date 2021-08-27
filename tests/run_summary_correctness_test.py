@@ -19,8 +19,9 @@
 #   
 # Please cite NCBI in any work or product based on this material.
 
-import os, sys, re, json
+import os, sys, re, json, argparse
 from datetime import datetime
+from pathlib import Path
 
 
 def validTime(dt):
@@ -136,8 +137,12 @@ def compare(sample, obj):
 
 
 def main():
-    with open(sys.argv[1]) as f:
-        summary = json.load(f)
+    parser = argparse.ArgumentParser(description="Application to test run-summary output")
+    parser.add_argument("run_summary", type=argparse.FileType('r'), help="Run-summary JSON file")
+    args = parser.parse_args()
+    if Path(args.run_summary.name).stat().st_size == 0:
+        raise RuntimeError(f'{args.run_summary.name} is empty')
+    summary = json.load(args.run_summary)
     results = []
     def accCompare(path, value):
         results.append(compare(value, getItem(summary, *path)))

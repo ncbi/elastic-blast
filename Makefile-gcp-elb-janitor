@@ -1,0 +1,38 @@
+# Makefile to facilitate management/testing of the ElasticBLAST janitor cronjob 
+
+list:
+	kubectl get cj
+	kubectl describe cj
+	-kubectl get clusterrolebinding | grep janitor
+
+logs:
+	for job in `kubectl get jobs -o NAME | grep janitor`; do \
+		j=`basename $$job`; \
+		echo "************ Cronjob $$j ******************"; \
+		pod=`kubectl get pods --selector=job-name=$$j -o NAME | grep -v NAME`; \
+		echo $$pod; \
+		kubectl logs $$pod; \
+	done
+
+init: elb-janitor.yaml
+	kubectl apply -f src/elastic_blast/templates/elb-janitor-rbac.yaml
+	kubectl apply -f elb-janitor.yaml
+
+clean:
+	kubectl delete `kubectl get cj -o NAME`
+	kubectl delete -f src/elastic_blast/templates/elb-janitor-rbac.yaml
+	${RM} elb-janitor.yaml
+
+ELB_GCP_REGION?=us-east4
+ELB_GCP_ZONE?=us-east4-b
+ELB_GCP_PROJECT?=ncbi-sandbox-blast
+ELB_RESULTS?=gs://elasticblast-${USER}/auto-shutdown-6
+ELB_CLUSTER_NAME?=`make -s results2clustername ELB_RESULTS=${ELB_RESULTS}`
+
+elb-janitor.yaml: src/elastic_blast/templates/elb-janitor-cronjob.yaml.template
+	ELB_RESULTS=${ELB_RESULTS} \
+	ELB_GCP_PROJECT=${ELB_GCP_PROJECT} \
+	ELB_GCP_REGION=${ELB_GCP_REGION} \
+	ELB_GCP_ZONE=${ELB_GCP_ZONE} \
+	ELB_CLUSTER_NAME=${ELB_CLUSTER_NAME} \
+		 envsubst '$$ELB_RESULTS $$ELB_GCP_PROJECT $$ELB_GCP_ZONE $$ELB_GCP_REGION $$ELB_CLUSTER_NAME' < $< > $@

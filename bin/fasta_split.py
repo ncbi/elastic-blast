@@ -42,6 +42,7 @@ from tarfile import ReadError
 from elastic_blast.filehelper import open_for_read, open_for_write, copy_to_bucket
 from elastic_blast.split import FASTAReader
 from elastic_blast.jobs import write_job_files
+from elastic_blast.constants import ELB_QUERY_BATCH_FILE_PREFIX
 
 
 DEFAULT_BATCH_LEN    = 5000000
@@ -103,7 +104,7 @@ def main():
         with open_for_read(input_path) as s:
             reader = FASTAReader(s, batch_len, out_path)
             total_count, queries = reader.read_and_cut()
-        jobs = write_job_files(job_path, 'batch_', job_template_text, queries, **subs)
+        jobs = write_job_files(job_path, ELB_QUERY_BATCH_FILE_PREFIX, job_template_text, queries, **subs)
         if count_file:
             if count_file == '-':
                 sys.stdout.write(str(total_count)+'\n')

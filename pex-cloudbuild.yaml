@@ -11,7 +11,17 @@ steps:
 - name: 'python:${_PY_VERSION}-alpine3.14'
   args: ['sh', '-c', '.env/bin/pip3 install -q -r requirements/base.txt']
 - name: 'python:${_PY_VERSION}-alpine3.14'
+  entrypoint: sh
+  args:
+    - -c
+    - if [ ${_PY_VERSION} == "3.7" ]; then
+        .env/bin/pex --disable-cache . -r requirements/base.txt -c elastic-blast -o elastic-blast;
+        md5sum elastic-blast > elastic-blast.md5;
+      fi;
+- name: 'python:${_PY_VERSION}-alpine3.14'
   args: ['sh', '-c', '.env/bin/pex --disable-cache . -r requirements/base.txt -c elastic-blast -o elastic-blast${_PY_VERSION}']
+- name: 'python:${_PY_VERSION}-alpine3.14'
+  args: ['sh', '-c', 'md5sum elastic-blast${_PY_VERSION} > elastic-blast${_PY_VERSION}.md5']
 
 substitutions:
   _TARGET: 'gs://elasticblast-test/builds'
@@ -19,4 +29,5 @@ substitutions:
 artifacts:
   objects:
     location: '${_TARGET}/${_VERSION}'
-    paths: 'elastic-blast${_PY_VERSION}'
+    paths: 
+      - 'elastic-blast*'

@@ -1,0 +1,41 @@
+apiVersion: batch/v1beta1
+kind: CronJob
+metadata:
+  # This cannot exceed 52 characters
+  name: elb-janitor
+  labels:
+    app: janitor
+spec:
+  schedule: "${ELB_JANITOR_SCHEDULE}"
+  jobTemplate:
+    spec:
+      template:
+        metadata:
+          labels:
+            app: janitor
+        spec:
+          containers:
+          - name: check-blast-jobs
+            image: gcr.io/ncbi-sandbox-blast/ncbi/elastic-blast-demo:latest
+            imagePullPolicy: IfNotPresent
+            env:
+            - name: ELB_CLUSTER_NAME
+              value: "${ELB_CLUSTER_NAME}"
+            command: ["/bin/bash", "-cx"]
+            # TODO: replace kubectl calls by elastic-blast status --status-via-exit-code once EB-258 is implemented
+            #       OR refactor src/elastic_blast/status.py to check when search is done from python
+            args:
+            - tmpfile=`mktemp`;
+              elastic-blast status --verbose --results ${ELB_RESULTS} --gcp-project ${ELB_GCP_PROJECT} --gcp-region ${ELB_GCP_REGION} --gcp-zone ${ELB_GCP_ZONE} | tee $tmpfile;
+              if grep '^Pending 0' $tmpfile && grep '^Running 0' $tmpfile; then
+                gsutil -qm cp $tmpfile ${ELB_RESULTS}/metadata/DONE.txt;
+                elastic-blast delete --loglevel DEBUG --logfile stderr --results ${ELB_RESULTS} --gcp-project ${ELB_GCP_PROJECT} --gcp-region ${ELB_GCP_REGION} --gcp-zone ${ELB_GCP_ZONE};
+              fi;
+              num_failed=`grep '^Failed ' $tmpfile | cut -f 2 -d ' '`;
+              if [ $num_failed -gt 0 ] ; then
+                gsutil -qm cp $tmpfile ${ELB_RESULTS}/metadata/FAILURE.txt;
+                elastic-blast delete --loglevel DEBUG --logfile stderr --results ${ELB_RESULTS} --gcp-project ${ELB_GCP_PROJECT} --gcp-region ${ELB_GCP_REGION} --gcp-zone ${ELB_GCP_ZONE};
+              fi;
+          restartPolicy: OnFailure
+  concurrencyPolicy: Forbid
+

@@ -156,24 +156,24 @@ def mocked_safe_exec(cmd: Union[List[str], str]) -> MockedCompletedProcess:
         return MockedCompletedProcess()
 
     # get persistent disks
-    elif ' '.join(cmd) == 'kubectl get pv -o json':
+    elif cmd[0] == 'kubectl' and 'get pv -o json' in ' '.join(cmd):
         result = {'items': []}  # type: ignore
         for i in GCP_DISKS:
             result['items'].append({'spec': {'gcePersistentDisk': {'pdName': i}}})  # type: ignore
         return MockedCompletedProcess(json.dumps(result))
 
     # get kubernetes jobs
-    elif ' '.join(cmd).startswith('kubectl get jobs -o json'):
+    elif cmd[0] == 'kubectl' and 'get jobs -o json' in ' '.join(cmd):
         result = {'items': []}
         for i in K8S_JOBS:
             result['items'].append({'metadata': {'name': i}})
         return MockedCompletedProcess(json.dumps(result))
 
     # get kubernetes job status with one pod deleted due to failure
-    elif ' '.join(cmd).startswith('kubectl get pods -o custom-columns=STATUS'):
+    elif cmd[0] == 'kubectl' and 'get pods -o custom-columns=STATUS' in ' '.join(cmd):
         return MockedCompletedProcess('\n'.join(['STATUS'] + ['Running' for i in K8S_JOB_STATUS if i == 'Running']))
 
-    elif ' '.join(cmd).startswith('kubectl get jobs -o custom-columns=STATUS'):
+    elif cmd[0] == 'kubectl' and 'get jobs -o custom-columns=STATUS' in ' '.join(cmd):
         switcher = {'Failed': 'Failed',
                     'Succeeded': 'Complete',
                     'Running': '<none>',
@@ -181,19 +181,19 @@ def mocked_safe_exec(cmd: Union[List[str], str]) -> MockedCompletedProcess:
         return MockedCompletedProcess('\n'.join(['STATUS'] + [switcher[i] for i in K8S_JOB_STATUS]))
 
     # delete all jobs
-    elif ' '.join(cmd) == 'kubectl delete jobs --all':
+    elif cmd[0] == 'kubectl' and 'delete jobs --all' in ' '.join(cmd):
        return MockedCompletedProcess('\n'.join(['deleted ' + i for i in K8S_JOBS]) + '\n')
 
     # delete all pvcs
-    elif ' '.join(cmd) == 'kubectl delete pvc --all':
+    elif cmd[0] == 'kubectl' and  'delete pvc --all' in ' '.join(cmd):
         return MockedCompletedProcess('\n'.join(['deleted ' + i for i in GKE_PVS]) + '\n')
 
     # delete all pvs
-    elif ' '.join(cmd) == 'kubectl delete pv --all':
+    elif cmd[0] == 'kubectl' and 'delete pv --all' in ' '.join(cmd):
         return MockedCompletedProcess('\n')
 
     # check if kubernetes cluster is alive
-    elif ' '.join(cmd) == 'kubectl version --short':
+    elif ' '.join(cmd).startswith('kubectl') and 'version --short' in ' '.join(cmd):
         return MockedCompletedProcess()
 
     # list BLAST databases available in the cloud
@@ -210,6 +210,16 @@ def mocked_safe_exec(cmd: Union[List[str], str]) -> MockedCompletedProcess:
 
     # Check whether a file exists in GCS
     elif ' '.join(cmd).startswith('gsutil -q cat'):
+        return MockedCompletedProcess(stdout='',stderr='',returncode=0)
+
+    # Check whether a file is being removed from GCS
+    elif ' '.join(cmd).startswith('gsutil -mq rm'):
+        return MockedCompletedProcess(stdout='',stderr='',returncode=0)
+
+    elif ' '.join(cmd).startswith('kubectl config current-context'):
+        return MockedCompletedProcess(stdout='dummy-context',stderr='',returncode=0)
+
+    elif cmd[0] == 'kubectl' and  'apply -f' in ' '.join(cmd):
         return MockedCompletedProcess(stdout='',stderr='',returncode=0)
 
     # raise ValueError for unrecognized command line
@@ -256,9 +266,9 @@ class GKEMock:
 
         # any kubectl call fails
         if 'kubectl-error' in self.options:
-            if cmd.startswith('kubectl'):
+            if cmd.startswith('kubectl') and 'config current-context' not in cmd:
                 raise SafeExecError(returncode=1,
-                                    message='Mocked kubectl error')
+                                    message=f'Mocked kubectl error in "{cmd}"')
 
         # report no disks after disk deletion was called
         if cmd.startswith('gcloud compute disks list') and self.disk_delete_called:

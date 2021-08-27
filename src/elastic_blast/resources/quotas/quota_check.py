@@ -24,6 +24,8 @@ def check_resource_quotas(cfg: ElasticBlastConfig) -> None:
     requested can be met, the function will return, otherwise an exception will
     be raised.
     """
+    if cfg.cluster.dry_run:
+        return
     if cfg.cloud_provider.cloud == elastic_blast.config.CSP.AWS:
         boto_cfg = create_aws_config(cfg.aws.region)
         ResourceCheckAwsEc2CloudFormation(boto_cfg)()

@@ -123,7 +123,7 @@ def configure(args: argparse.Namespace) -> configparser.ConfigParser:
         if args.blast_opts[0] == '--':
             args.blast_opts.pop(0)
         # quote arguments with spaces in them
-        blast_opts = map(lambda x: x if x.find(' ') < 0 else "'"+x+'"', args.blast_opts)
+        blast_opts = map(lambda x: x if x.find(' ') < 0 else "'"+x+"'", args.blast_opts)
         retval[CFG_BLAST][CFG_BLAST_OPTIONS] = ' '.join(blast_opts)
     if hasattr(args, CFG_BLAST_RESULTS) and getattr(args, CFG_BLAST_RESULTS):
         retval[CFG_BLAST][CFG_BLAST_RESULTS] = getattr(args, CFG_BLAST_RESULTS)
@@ -143,8 +143,6 @@ def configure(args: argparse.Namespace) -> configparser.ConfigParser:
         retval[CFG_CLOUD_PROVIDER][CFG_CP_GCP_PROJECT] = args.gcp_project
     if hasattr(args, 'gcp_region') and args.gcp_region:
         retval[CFG_CLOUD_PROVIDER][CFG_CP_GCP_REGION] = args.gcp_region
-    if hasattr(args, 'gcp_zone') and args.gcp_zone:
-        retval[CFG_CLOUD_PROVIDER][CFG_CP_GCP_ZONE] = args.gcp_zone
     if hasattr(args, 'gcp_zone') and args.gcp_zone:
         retval[CFG_CLOUD_PROVIDER][CFG_CP_GCP_ZONE] = args.gcp_zone
 
@@ -226,4 +224,4 @@ def validate_cloud_storage_object_uri(uri: str) -> None:
         if re.fullmatch(r'^[a-z0-9][a-z0-9._-]+[a-z0-9]$', bucket) is None:
             raise ValueError('A GS bucket name must contain only lowercase letters, numbers, dashes (-), underscores (_), and dots (.)')
     else:
-        raise ValueError(f'An object URI must start with {ELB_GCS_PREFIX} or ${ELB_S3_PREFIX}')
+        raise ValueError(f'An object URI must start with {ELB_GCS_PREFIX} or {ELB_S3_PREFIX}')

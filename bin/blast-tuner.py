@@ -106,31 +106,36 @@ def main():
 
         conf[CFG_CLUSTER][CFG_CLUSTER_NUM_CPUS] = str(num_cpus)
 
-        if cloud_provider == CSP.AWS:
-            mem_limit = aws_get_mem_limit(db = db_data,
-                                          const_limit = MemoryStr(f'{args.constant_mem_limit}G'),
-                                          db_factor = db_mem_limit_factor,
-                                          with_optimal = args.with_optimal)
-        else:
-            # Currently one job per instance is assumed in GCP
-            mem_limit = gcp_get_mem_limit(db = db_data,
-                                          db_factor = db_mem_limit_factor)
-        conf[CFG_BLAST][CFG_BLAST_MEM_LIMIT] = mem_limit
-
         if args.with_optimal:
             machine_type = 'optimal'
             if cloud_provider != CSP.AWS:
                 raise UserReportError(INPUT_ERROR, f'The "optimal" instance type is only allowed for AWS')
         else:
             if cloud_provider == CSP.AWS:
-                machine_type = aws_get_machine_type(db = db_data,
-                                                    num_cpus = num_cpus,
-                                                    region = args.region)
+                if args.db == 'nt':
+                    machine_type = 'c5ad.16xlarge'
+                elif args.db == 'nr':
+                    machine_type = 'm5ad.16xlarge'
+                else:
+                    machine_type = aws_get_machine_type(db = db_data,
+                                                        num_cpus = num_cpus,
+                                                        region = args.region)
             else:
-                machine_type = gcp_get_machine_type(mem_limit = mem_limit,
-                                                     num_cpus = num_cpus)
+                machine_type = gcp_get_machine_type(db = db_data,
+                                                    num_cpus = num_cpus)
 
         conf[CFG_CLUSTER][CFG_CLUSTER_MACHINE_TYPE] = machine_type
+
+        if cloud_provider == CSP.AWS:
+            mem_limit = aws_get_mem_limit(num_cpus = num_cpus,
+                                          machine_type = machine_type,
+                                          db = db_data,
+                                          db_factor = db_mem_limit_factor)
+        else:
+            # Currently one job per instance is assumed in GCP
+            mem_limit = gcp_get_mem_limit(db = db_data,
+                                          db_factor = db_mem_limit_factor)
+        conf[CFG_BLAST][CFG_BLAST_MEM_LIMIT] = mem_limit
 
         for section in SECTIONS:
             print(f'[{section}]', file=args.out)
@@ -166,7 +171,6 @@ def create_arg_parser():
     optional.add_argument("--options", type=str, help='BLAST options', default='')
     optional.add_argument("--db-mem-limit-factor", type=float,
                           help='This number times database bytes-to-cache will produce memory limit for a BLAST search. (default: 0.0: for AWS, 1.1 for GCP)')
-    optional.add_argument("--constant-mem-limit", type=int, help='A constant memory limit for all search jobs in GB', default='20')
     optional.add_argument("--with-optimal", action='store_true',
                          help='Use AWS optimal instance type')
     optional.add_argument('--version', action='version',

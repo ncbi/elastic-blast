@@ -39,6 +39,7 @@ from elastic_blast import gcp
 from elastic_blast.config import configure
 from elastic_blast.elb_config import ElasticBlastConfig
 from elastic_blast.constants import ElbCommand
+from elastic_blast.constants import K8S_UNINITIALIZED_CONTEXT
 
 from typing import List
 
@@ -75,7 +76,7 @@ def test_get_persistent_volumes(mocker):
         return MockedCompletedProcess(json.dumps(result))
     mocker.patch('elastic_blast.kubernetes.safe_exec', side_effect=fake_safe_exec)
 
-    pvs = kubernetes.get_persistent_volumes()
+    pvs = kubernetes.get_persistent_volumes(K8S_UNINITIALIZED_CONTEXT)
     assert sorted(pvs) == sorted(GKE_PVS)
     kubernetes.safe_exec.assert_called()
 
@@ -88,13 +89,13 @@ def test_get_persistent_volumes_bad_json(mocker):
 
     mocker.patch('elastic_blast.kubernetes.safe_exec', side_effect=safe_exec_bad_json)
     with pytest.raises(RuntimeError):
-        kubernetes.get_persistent_volumes()
+        kubernetes.get_persistent_volumes(K8S_UNINITIALIZED_CONTEXT)
     kubernetes.safe_exec.assert_called()
 
 
 def test_get_persistent_disk(kubectl_mock):
     """Test getting k8s cluster persistent disks"""
-    disks = kubernetes.get_persistent_disks()
+    disks = kubernetes.get_persistent_disks(K8S_UNINITIALIZED_CONTEXT)
     assert sorted(disks) == sorted(GCP_DISKS)
     kubernetes.safe_exec.assert_called()
 
@@ -107,7 +108,7 @@ def test_get_persistent_disk_empty(mocker):
         return MockedCompletedProcess(json.dumps(result))
     mocker.patch('elastic_blast.kubernetes.safe_exec', side_effect=safe_exec_no_disks)
 
-    disks = kubernetes.get_persistent_disks()
+    disks = kubernetes.get_persistent_disks(K8S_UNINITIALIZED_CONTEXT)
     assert disks is not None
     assert not disks
     kubernetes.safe_exec.assert_called()
@@ -118,13 +119,13 @@ def test_submit_jobs_bad_path():
     path: Path = Path('/some/non/existent/path')
     assert not path.exists()
     with pytest.raises(RuntimeError):
-        kubernetes.submit_jobs(path)
+        kubernetes.submit_jobs(K8S_UNINITIALIZED_CONTEXT, path)
 
     with TemporaryDirectory() as temp:
         path = Path(temp)
         assert path.exists()
         with pytest.raises(RuntimeError):
-            kubernetes.submit_jobs(path)
+            kubernetes.submit_jobs(K8S_UNINITIALIZED_CONTEXT, path)
 
 
 FAKE_LABELS = 'cluster-name=fake-cluster'
@@ -139,22 +140,22 @@ def safe_exec_mock(mocker):
         if isinstance(cmd, list):
             cmd = ' '.join(cmd)
         print(cmd)
-        if cmd == 'kubectl get pv -o json':
+        if 'kubectl ' in cmd and 'get pv -o json' in cmd:
             result = {'items': []}  # type: ignore
             result['items'].append({'spec': {'gcePersistentDisk': {'pdName': GCP_DISKS[0]}}})  # type: ignore
             return MockedCompletedProcess(stdout=json.dumps(result))
-        if cmd.startswith('kubectl get pv'):
+        if 'kubectl ' in cmd and 'get pv' in cmd:
             return MockedCompletedProcess(stdout='CLAIM PDNAME\nblast-dbs-pvc gke-some-synthetic-name')
-        if cmd.startswith('kubectl get -f'):
+        if 'kubectl' in cmd and 'get -f' in cmd:
             fn = os.path.join(TEST_DATA_DIR, 'job-status.json')
             return MockedCompletedProcess(stdout=Path(fn).read_text())
-        if cmd.startswith('kubectl apply -f'):
-            fn = cmd[len('kubectl apply -f '):]
+        if 'kubectl ' in cmd and 'apply -f' in cmd:
+            fn = cmd.split(' ')[-1] # the file name is the last argument in cmd
             with open(fn) as f:
                 print(f.read())
         if cmd.startswith('gcloud compute disks update'):
             assert(cmd.startswith(f'gcloud compute disks update gke-some-synthetic-name --update-labels {FAKE_LABELS}'))
-        if cmd.startswith('kubectl logs'):
+        if 'kubectl' in cmd and 'logs' in cmd:
             return MockedCompletedProcess(stdout='2020-06-18T04:48:33.320344002Z test log entry')
         return MockedCompletedProcess()
 
@@ -176,6 +177,7 @@ def test_initialize_persistent_disk(safe_exec_mock, mocker):
 
     args = Namespace(cfg=os.path.join(TEST_DATA_DIR, 'initialize_persistent_disk.ini'))
     cfg = ElasticBlastConfig(configure(args), task = ElbCommand.SUBMIT)
+    cfg.appstate.k8s_ctx = K8S_UNINITIALIZED_CONTEXT
     kubernetes.initialize_persistent_disk(cfg)
 
 
@@ -183,11 +185,19 @@ def test_initialize_persistent_disk_failed(mocker):
     def fake_safe_exec_failed_job(cmd):
         fn = os.path.join(TEST_DATA_DIR, 'job-status-failed.json')
         return MockedCompletedProcess(stdout=Path(fn).read_text())
+
+    def mocked_get_persistent_disks(k8s_ctx, dry_run):
+        """Mocked getting persistent disks ids"""
+        return list()
+
     mocker.patch('elastic_blast.kubernetes.safe_exec',
                  side_effect=fake_safe_exec_failed_job)
+    mocker.patch('elastic_blast.kubernetes.get_persistent_disks',
+                 side_effect=mocked_get_persistent_disks)
     from argparse import Namespace
     args = Namespace(cfg=os.path.join(TEST_DATA_DIR, 'initialize_persistent_disk.ini'))
     cfg = ElasticBlastConfig(configure(args), task = ElbCommand.SUBMIT)
+    cfg.appstate.k8s_ctx = K8S_UNINITIALIZED_CONTEXT
     with pytest.raises(RuntimeError):
         kubernetes.initialize_persistent_disk(cfg)
     kubernetes.safe_exec.assert_called()
@@ -208,7 +218,7 @@ def test_label_persistent_disk(safe_exec_mock):
 
 def test_delete_all(kubectl_mock):
     """Test deleteting all jobs, persistent volume claims and persistent volumes"""
-    deleted = kubernetes.delete_all()
+    deleted = kubernetes.delete_all(K8S_UNINITIALIZED_CONTEXT)
     assert sorted(deleted) == sorted(K8S_JOBS + GKE_PVS)
     kubernetes.safe_exec.assert_called()
 
@@ -221,7 +231,7 @@ def test_delete_all_no_resources(mocker):
 
     mocker.patch('elastic_blast.kubernetes.safe_exec',
                  side_effect=safe_exec_no_resources)
-    deleted = kubernetes.delete_all()
+    deleted = kubernetes.delete_all(K8S_UNINITIALIZED_CONTEXT)
     # result must be an empty list
     assert isinstance(deleted, list)
     assert not deleted
@@ -230,7 +240,7 @@ def test_delete_all_no_resources(mocker):
 
 def test_get_jobs(kubectl_mock):
     """Test getting kubernetes job ids"""
-    jobs = kubernetes.get_jobs()
+    jobs = kubernetes.get_jobs(K8S_UNINITIALIZED_CONTEXT)
     assert sorted(jobs) == sorted(K8S_JOBS)
 
 
@@ -300,6 +310,7 @@ def gke_cluster_with_pv():
     try:
         cmd = []
         cmd.append(f'gcloud container clusters get-credentials {name}')
+        cmd.append('kubectl config current-context')
         cmd.append(f'kubectl apply -f {get_yamldir()}/test-storage-gcp.yaml')
         cmd.append(f'kubectl apply -f {get_yamldir()}/test-pvc.yaml')
         cmd.append(f'kubectl apply -f {get_yamldir()}/test-job-init-pv.yaml')
@@ -310,7 +321,7 @@ def gke_cluster_with_pv():
         raise
     # we need to wait for kubenetes to act on the cluster
     time.sleep(30)
-    disks = kubernetes.get_persistent_disks()
+    disks = kubernetes.get_persistent_disks(K8S_UNINITIALIZED_CONTEXT)
     yield name
 
     # test teardown
@@ -339,7 +350,7 @@ def test_get_persistent_disks_real(gke_cluster_with_pv):
     # make sure that cluster exists
     assert name in gcp.get_gke_clusters()
 
-    disks = kubernetes.get_persistent_disks()
+    disks = kubernetes.get_persistent_disks(K8S_UNINITIALIZED_CONTEXT)
 
     # there must be exactly one persistent disk
     assert len(disks) == 1
@@ -358,13 +369,13 @@ def test_delete_all_real(gke_cluster_with_pv):
     assert name in gcp.get_gke_clusters()
 
     # ... and has jobs and persistent disks
-    disks = kubernetes.get_persistent_disks()
+    disks = kubernetes.get_persistent_disks(K8S_UNINITIALIZED_CONTEXT)
     assert len(disks) > 0
-    assert len(kubernetes.get_jobs()) > 0
+    assert len(kubernetes.get_jobs(K8S_UNINITIALIZED_CONTEXT)) > 0
 
     # delete everything
-    kubernetes.delete_all()
+    kubernetes.delete_all(K8S_UNINITIALIZED_CONTEXT)
 
     # test that jobs and volumes were deleted
-    assert len(kubernetes.get_jobs()) == 0
-    assert len(kubernetes.get_persistent_disks()) == 0
+    assert len(kubernetes.get_jobs(K8S_UNINITIALIZED_CONTEXT)) == 0
+    assert len(kubernetes.get_persistent_disks(K8S_UNINITIALIZED_CONTEXT)) == 0

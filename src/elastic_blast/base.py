@@ -1,13 +1,13 @@
 #                           PUBLIC DOMAIN NOTICE
 #              National Center for Biotechnology Information
-#  
+#
 # This software is a "United States Government Work" under the
 # terms of the United States Copyright Act.  It was written as part of
 # the authors' official duties as United States Government employees and
 # thus cannot be copyrighted.  This software is freely available
 # to the public for use.  The National Library of Medicine and the U.S.
 # Government have not placed any restriction on its use or reproduction.
-#   
+#
 # Although all reasonable efforts have been taken to ensure the accuracy
 # and reliability of the software and data, the NLM and the U.S.
 # Government do not and cannot warrant the performance or results that
@@ -15,7 +15,7 @@
 # Government disclaim all warranties, express or implied, including
 # warranties of performance, merchantability or fitness for any particular
 # purpose.
-#   
+#
 # Please cite NCBI in any work or product based on this material.
 
 """
@@ -54,7 +54,7 @@ class QuerySplittingResults:
 
 
 class PositiveInteger(int):
-    """A subclass of int that only acceppts positive integers. The value is
+    """A subclass of int that only accepts positive integers. The value is
     validated before object creation"""
     # a bug in mypy does not allow for type annotation here:
     # https://github.com/python/mypy/issues/6061
@@ -68,7 +68,7 @@ class PositiveInteger(int):
             if int_value <= 0:
                 raise ValueError()
         except ValueError as err:
-            msg = f'Must be a positive integer.'
+            msg = 'Must be a positive integer.'
             raise ValueError(msg)
         return super(cls, cls).__new__(cls, value)
 
@@ -84,7 +84,7 @@ class Percentage(int):
             if int_value < 0 or int_value > 100:
                 raise ValueError
         except ValueError:
-            msg = f'Percentage must be a positive integer between 0 and 100'
+            msg = 'Percentage must be a positive integer between 0 and 100'
             raise ValueError(msg)
         return super(cls, cls).__new__(cls, value)
 

@@ -28,13 +28,14 @@ import os, stat, subprocess, tempfile
 from collections import defaultdict
 from elastic_blast import kubernetes
 from elastic_blast.status import get_status
+from elastic_blast.constants import K8S_UNINITIALIZED_CONTEXT
 from tests.utils import gke_mock
 from tests.utils import K8S_JOB_STATUS
 
 
 def test_status(gke_mock):
     "Using mock kubectl run our actual test"
-    status = get_status(None)
+    status = get_status(K8S_UNINITIALIZED_CONTEXT)
 
     counter = defaultdict(int)
     for i in K8S_JOB_STATUS:
@@ -47,7 +48,7 @@ def test_status(gke_mock):
 def test_invalid_label():
     "Supply invalid label and should get an exception"
     try:
-        status = get_status('incorrect_label')
+        status = get_status(K8S_UNINITIALIZED_CONTEXT, 'incorrect_label')
     except ValueError as e:
         pass
     else:

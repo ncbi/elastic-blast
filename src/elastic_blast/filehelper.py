@@ -25,8 +25,8 @@ Facilitates reads and writes of text files to/from remote filesystems and read
 compressed/archived text files.
 
 Implemented variants:
-  read from local, GS, http(s)/ftp URL
-  write to local and GS
+  read from local, GS, AWS S3, http(s)/ftp URL
+  write to local, GS, and S3
   read gzip, tar/tgz/tar.gz/tar.bz2 (all files in archive merged into one)
 
 Author: Victor Joukov joukovv@ncbi.nlm.nih.gov
@@ -45,12 +45,13 @@ from botocore.exceptions import ClientError  # type: ignore
 from botocore.config import Config  # type: ignore
 from .base import QuerySplittingResults
 from .util import safe_exec, SafeExecError
-from .constants import ELB_METADATA_DIR, ELB_AWS_QUERY_LENGTH, ELB_QUERY_BATCH_DIR
+from .constants import ELB_GCP_BATCH_LIST, ELB_METADATA_DIR, ELB_QUERY_LENGTH, ELB_QUERY_BATCH_DIR
 from .constants import ELB_S3_PREFIX, ELB_GCS_PREFIX, ELB_FTP_PREFIX, ELB_HTTP_PREFIX
+from .constants import ELB_QUERY_BATCH_FILE_PREFIX
 
 
 def harvest_query_splitting_results(bucket_name: str, dry_run: bool = False, boto_cfg: Config = None) -> QuerySplittingResults:
-    """ Retrives the results for query splitting from bucket, used in 2-stage cloud
+    """ Retrieves the results for query splitting from bucket, used in 2-stage cloud
     query splitting """
     qlen = 0
     query_batches : List[str] = []
@@ -58,16 +59,26 @@ def harvest_query_splitting_results(bucket_name: str, dry_run: bool = False, bot
         logging.debug(f'dry-run: would have retrieved query splitting results from {bucket_name}')
         return QuerySplittingResults(query_length=qlen, query_batches=query_batches)
 
-    if bucket_name.startswith('s3://'):
-        qlen_file = os.path.join(bucket_name, ELB_METADATA_DIR, ELB_AWS_QUERY_LENGTH)
-        qbatches = os.path.join(bucket_name, ELB_QUERY_BATCH_DIR)
+    if bucket_name.startswith(ELB_S3_PREFIX):
+        qlen_file = os.path.join(bucket_name, ELB_METADATA_DIR, ELB_QUERY_LENGTH)
         with open_for_read(qlen_file) as ql:
             qlen = int(ql.read())
+        qbatches = os.path.join(bucket_name, ELB_QUERY_BATCH_DIR)
         bucket, key = parse_bucket_name_key(qbatches)
         s3 = boto3.resource('s3') if boto_cfg == None else boto3.resource('s3', config=boto_cfg)
         s3_bucket = s3.Bucket(bucket)
-        for obj in s3_bucket.objects.filter(Prefix=key):
+        # By adding the query batch prefix we filter out other things in query_batch directory,
+        # e.g. taxidlist.txt
+        for obj in s3_bucket.objects.filter(Prefix=os.path.join(key,ELB_QUERY_BATCH_FILE_PREFIX)):
             query_batches.append(os.path.join(ELB_S3_PREFIX, s3_bucket.name, obj.key))
+    elif bucket_name.startswith(ELB_GCS_PREFIX):
+        qlen_file = os.path.join(bucket_name, ELB_METADATA_DIR, ELB_QUERY_LENGTH)
+        with open_for_read(qlen_file) as ql:
+            qlen = int(ql.read())
+        qbatch_list_file = os.path.join(bucket_name, ELB_METADATA_DIR, ELB_GCP_BATCH_LIST)
+        with open_for_read(qbatch_list_file) as qlist:
+            for line in qlist:
+                query_batches.append(line.strip())
     else:
         raise NotImplementedError(f'Harvesting query splitting results from {bucket} not supported')
 
@@ -184,6 +195,15 @@ def check_dir_for_write(dirname: str, dry_run=False) -> None:
     except:
         raise PermissionError()
 
+
+def open_for_write_immediate(fname):
+    " Open file on GCS filesystem for write in text mode. "
+    if not fname.startswith(ELB_GCS_PREFIX):
+        raise NotImplementedError("Immediate writing to cloud storage implemented only for GS")
+    proc = subprocess.Popen(['gsutil', 'cp', '-', fname],
+                            stdin=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                            universal_newlines=True)
+    return proc.stdin
 
 def open_for_write(fname):
     """ Open file on either local (no prefix), GCS, or AWS S3

@@ -50,6 +50,11 @@ class QuerySplitMode(Enum):
     CLOUD_ONE_STAGE = auto()
     CLOUD_TWO_STAGE = auto()
 
+class AwsPricing(Enum):
+    """ Defines pricing model used by AWS """
+    ON_DEMAND = auto()
+    SPOT = auto()
+    UNSUPPORTED = auto()
 
 # Number of seconds to wait after the job that initializes the persistent
 # volume completes. This is to prevent mount errors in the subsequent BLAST k8s
@@ -88,13 +93,16 @@ ELB_UNKNOWN_NUMBER_OF_QUERY_SPLITS = -1
 
 # Ancillary ElasticBLAST "directories" and files in output bucket
 ELB_QUERY_BATCH_DIR = 'query_batches'
+ELB_QUERY_BATCH_FILE_PREFIX = 'batch_'
 ELB_METADATA_DIR = 'metadata'
 ELB_STATE_DISK_ID_FILE = 'disk-id.txt'
 ELB_LOG_DIR = 'logs'
+ELB_BACKEND_LOG = 'backends.log'
 ELB_TAXIDLIST_FILE = 'taxidlist.txt'
 ELB_META_CONFIG_FILE = 'elastic-blast-config.ini'
 ELB_AWS_JOB_IDS = 'job-ids.json'
-ELB_AWS_QUERY_LENGTH = 'query_length.txt'
+ELB_QUERY_LENGTH = 'query_length.txt'
+ELB_GCP_BATCH_LIST = 'batch_list.txt'
 
 # These values indicate that a field has not been configured by the end user
 ELB_NOT_INITIALIZED_NUM = 2**32
@@ -162,7 +170,7 @@ class MolType(Enum):
 ELB_DFLT_GCP_REGION = 'us-east4'
 ELB_DFLT_AWS_REGION = 'us-east-1'
 
-ELB_DOCKER_VERSION = '0.0.29'
+ELB_DOCKER_VERSION = '0.0.30'
 ELB_QS_DOCKER_VERSION = '0.0.2'
 
 ELB_DOCKER_IMAGE_GCP = f'gcr.io/ncbi-sandbox-blast/ncbi/elb:{ELB_DOCKER_VERSION}'
@@ -245,6 +253,9 @@ K8S_JOB_RESULTS_EXPORT = 'results-export'
 
 # Number of jobs per directory after which the jobs are submitted individually to minimize timeouts
 K8S_MAX_JOBS_PER_DIR = 100
+
+K8S_UNINITIALIZED_CONTEXT = 'uninitialized-k8s-context'
+ELB_DFLT_K8S_JANITOR_SCHEDULE = "*/5 * * * *"
 
 # extension for files containing list of query files
 QUERY_LIST_EXT = '.query-list'
