@@ -59,21 +59,12 @@ def test_get_query_split_mode():
 
 ## Mocked tests
 
+@patch(target='elastic_blast.commands.submit.split_query', new=MagicMock(return_value=(['query.fa'], 500)))
 def test_blastdb_not_found(gke_mock, mocker):
     """Test that UserReportError is raised when database is not found"""
-    def mocked_check_cluster(cfg):
-        """Mocked check cluster that simulates non-existent cluster status"""
-        return ''
-    mocker.patch('elastic_blast.commands.submit.gcp_check_cluster', side_effect=mocked_check_cluster)
-    def mock_safe_exec(cmd):
-        if isinstance(cmd, list):
-            cmd = ' '.join(cmd)
-        if cmd == 'gsutil cat gs://blast-db/latest-dir':
-            return MockedCompletedProcess(stdout='2020-20-20')
-        elif cmd == 'gsutil cat gs://blast-db/2020-20-20/blastdb-manifest.json':
-            return MockedCompletedProcess(stdout='{"nt":{"size":93.36}, "nr":{"size":227.4}}')
-        return MockedCompletedProcess()
-    mocker.patch('elastic_blast.util.safe_exec', side_effect=mock_safe_exec)
+    gke_mock.options = ['no-cluster']
+    gke_mock.cloud.storage['gs://elastic-blast-samples/queries/small/e7ebd4c9-d8a3-405c-8180-23b85f1709a7.fa'] = '>query\nACTGTTT'
+    gke_mock.cloud.storage['gs://elasticblast-tomcat/pytest/submit/blastdb-notfound'] = ''
 
     print(INI_NO_BLASTDB)
 

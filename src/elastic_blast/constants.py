@@ -33,7 +33,7 @@ class CSP(Enum):
     GCP = auto()
     AWS = auto()
     def __repr__(self):
-        return self.name
+        return f"'{self.name}'"
 
 
 class ElbCommand(Enum):
@@ -43,6 +43,13 @@ class ElbCommand(Enum):
     DELETE = 'delete'
     RUN_SUMMARY = 'run-summary'
 
+
+class ElbStatus(Enum):
+    """ Defines the status of an ElasticBLAST search """
+    SUCCESS = auto()
+    FAILURE = auto()
+    RUNNING = auto()
+    UNKNOWN = auto()
 
 class QuerySplitMode(Enum):
     """ Query split mode - client, cloud 1 stage, cloud 2 stage """
@@ -77,6 +84,7 @@ ELB_DFLT_GCP_PD_SIZE = '3000G'
 
 ELB_DFLT_GCP_MACHINE_TYPE = 'n1-standard-32'
 ELB_DFLT_AWS_MACHINE_TYPE = 'm5.8xlarge'
+ELB_AWS_ARM_INSTANCE_TYPE_REGEX = r'^a1|^[a-z][1-9]g'
 
 ELB_DFLT_GCP_NUM_CPUS = 15
 ELB_DFLT_AWS_NUM_CPUS = 16
@@ -103,6 +111,10 @@ ELB_META_CONFIG_FILE = 'elastic-blast-config.ini'
 ELB_AWS_JOB_IDS = 'job-ids.json'
 ELB_QUERY_LENGTH = 'query_length.txt'
 ELB_GCP_BATCH_LIST = 'batch_list.txt'
+
+# File names of the sentinel files which indicate status reported by janitor
+ELB_STATUS_SUCCESS = "SUCCESS.txt"
+ELB_STATUS_FAILURE = "FAILURE.txt"
 
 # These values indicate that a field has not been configured by the end user
 ELB_NOT_INITIALIZED_NUM = 2**32
@@ -170,7 +182,7 @@ class MolType(Enum):
 ELB_DFLT_GCP_REGION = 'us-east4'
 ELB_DFLT_AWS_REGION = 'us-east-1'
 
-ELB_DOCKER_VERSION = '0.0.30'
+ELB_DOCKER_VERSION = '0.0.33'
 ELB_QS_DOCKER_VERSION = '0.0.2'
 
 ELB_DOCKER_IMAGE_GCP = f'gcr.io/ncbi-sandbox-blast/ncbi/elb:{ELB_DOCKER_VERSION}'
@@ -262,3 +274,4 @@ QUERY_LIST_EXT = '.query-list'
 
 ELB_DFLT_NUM_BATCHES_FOR_TESTING = 100
 ELB_DFLT_LOGLEVEL = 'INFO'
+ELB_DFLT_LOGFILE = 'elastic-blast.log'

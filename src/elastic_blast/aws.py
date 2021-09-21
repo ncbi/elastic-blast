@@ -51,6 +51,7 @@ from .constants import ELB_DOCKER_IMAGE_AWS, INPUT_ERROR, ELB_QS_DOCKER_IMAGE_AW
 from .constants import DEPENDENCY_ERROR, TIMEOUT_ERROR
 from .constants import ELB_AWS_JOB_IDS, ELB_S3_PREFIX, ELB_GCS_PREFIX
 from .constants import ELB_DFLT_NUM_BATCHES_FOR_TESTING, ELB_UNKNOWN_NUMBER_OF_QUERY_SPLITS
+from .constants import ElbStatus
 from .filehelper import parse_bucket_name_key
 from .aws_traits import get_machine_properties, create_aws_config, get_availability_zones_for
 from .object_storage_utils import write_to_s3
@@ -84,7 +85,7 @@ def handle_aws_error(f):
 
 
 def check_cluster(cfg: ElasticBlastConfig) -> bool:
-    """ Check that cluster descibed in configuration is running
+    """ Check that cluster described in configuration is running
         Parameters:
             cfg - configuration fo cluster
         Returns:
@@ -122,6 +123,7 @@ class ElasticBlastAws(ElasticBlast):
         """ Internal constructor, converts AWS exceptions to UserReportError """
         self.boto_cfg = create_aws_config(cfg.aws.region)
         self.stack_name = self.cfg.cluster.name
+        logging.debug(f'Cloudformation stack name: {self.stack_name}')
 
         self.cf = boto3.resource('cloudformation', config=self.boto_cfg)
         self.batch = boto3.client('batch', config=self.boto_cfg)
@@ -141,8 +143,14 @@ class ElasticBlastAws(ElasticBlast):
         initialized = True
 
         # Early check before creating cluster
-        if create and self.cfg.blast.db:
-            self.db, self.db_path, self.db_label = self._get_blastdb_info()
+        if self.cfg.blast and self.cfg.blast.db:
+            try:
+                self.db, self.db_path, self.db_label = self._get_blastdb_info()
+            except:
+                # do not report database errors if a cloudformation stack
+                # will not be created, e.g.: for job submission on the cloud
+                if create:
+                    raise
 
         try:
             if not self.dry_run:
@@ -162,6 +170,8 @@ class ElasticBlastAws(ElasticBlast):
             else:
                 logging.debug(f'dry-run: would have initialized {self.stack_name}')
         except ClientError:
+            if not create:
+                logging.error(f'Cloudformation stack {self.stack_name} could not be initialized')
             initialized = False
         if not initialized and create:
             use_ssd = False
@@ -291,6 +301,7 @@ class ElasticBlastAws(ElasticBlast):
         self.job_queue_name = None
         self.blast_job_definition_name = None
         self.qs_job_definition_name = None
+        self.js_job_definition_name = None
         self.compute_env_name = None
         if not self.dry_run and self.cf_stack and \
                self.cf_stack.stack_status == 'CREATE_COMPLETE':
@@ -301,6 +312,8 @@ class ElasticBlastAws(ElasticBlast):
                     self.blast_job_definition_name = output['OutputValue']
                 elif output['OutputKey'] == 'QuerySplittingJobDefinitionName':
                     self.qs_job_definition_name = output['OutputValue']
+                elif output['OutputKey'] == 'JobSubmissionJobDefinitionName':
+                    self.js_job_definition_name = output['OutputValue']
                 elif output['OutputKey'] == 'ComputeEnvName':
                     self.compute_env_name = output['OutputValue']
 
@@ -318,6 +331,11 @@ class ElasticBlastAws(ElasticBlast):
                 logging.debug(f'QuerySplittingJobDefinitionName: {self.qs_job_definition_name}')
             else:
                 raise UserReportError(returncode=DEPENDENCY_ERROR, message='QuerySplittingJobDefinitionName could not be read from cloudformation stack')
+
+            if self.js_job_definition_name:
+                logging.debug(f'JobSubmissionJobDefinitionName: {self.js_job_definition_name}')
+            else:
+                raise UserReportError(returncode=DEPENDENCY_ERROR, message='JobSubmissionJobDefinitionName could not be read from cloudformation stack')
 
             if self.compute_env_name:
                 logging.debug(f'ComputeEnvName: {self.compute_env_name}')
@@ -461,6 +479,29 @@ class ElasticBlastAws(ElasticBlast):
         else:
             logging.debug('Spot Fleet role will be created by cloudformation')
             return ''
+
+    @handle_aws_error
+    def status(self) -> ElbStatus:
+        retval = ElbStatus.UNKNOWN
+        try:
+            counts, _ = self.check_status()
+            njobs = sum(counts.values())
+            pending = counts['pending']
+            running = counts['running']
+            succeeded = counts['succeeded']
+            failed = counts['failed']
+            logging.debug(f'NumJobs {njobs} Pending {pending} Running {running} Succeeded {succeeded} Failed {failed}')
+            if failed > 0:
+                retval = ElbStatus.FAILURE
+            elif running > 0 or pending > 0:
+                retval = ElbStatus.RUNNING
+            elif (pending + running + failed) == 0 and succeeded == njobs:
+                retval = ElbStatus.SUCCESS
+        except:
+            logging.warning('Got exception in ElasticBlastAws.status')
+            raise
+        return retval
+
 
     @handle_aws_error
     def delete(self):
@@ -617,6 +658,54 @@ class ElasticBlastAws(ElasticBlast):
 
 
     @handle_aws_error
+    def cloud_submit(self):
+        parameters = {'db': self.db,
+                      'num-vcpus': str(self.cfg.cluster.num_cpus),
+                      'mem-limit': self.cfg.blast.mem_limit,
+                      'blast-program': self.cfg.blast.program,
+                      'blast-options': self.cfg.blast.options,
+                      'bucket': self.results_bucket,
+                      'region': self.cfg.aws.region}
+
+        if self.cfg.blast.taxidlist:
+            parameters['taxidlist'] = self.cfg.blast.taxidlist
+
+        overrides = {'vcpus': self.cfg.cluster.num_cpus,
+                     'memory': int(convert_memory_to_mb(self.cfg.blast.mem_limit)),
+                     'environment': [{'name': 'ELB_CLUSTER_NAME',
+                                      'value': self.cfg.cluster.name}]
+        }
+
+        # FIXME: It may be better to make usage report part of config that
+        # ElasticBlastConfig sets from environment
+        if 'BLAST_USAGE_REPORT' in os.environ:
+            overrides['environment'].append({'name': 'BLAST_USAGE_REPORT',
+                                             'value': os.environ['BLAST_USAGE_REPORT']})
+
+        logging.debug(f'Job submission in the cloud parameters: {parameters}')
+        logging.debug(f'Job submission in the cloud overrides: {overrides}')
+        jname = f'elasticblast-{self.owner}-job-submissions'
+        if not self.dry_run:
+            logging.debug(f'Submit-jobs job definition name: {self.js_job_definition_name}')
+            if self.qs_job_id:
+                job = self.batch.submit_job(jobQueue=self.job_queue_name,
+                                            jobDefinition=self.js_job_definition_name,
+                                            jobName=jname,
+                                            parameters=parameters,
+                                            containerOverrides=overrides,
+                                            dependsOn=[{'jobId': self.qs_job_id}])
+            else:
+                job = self.batch.submit_job(jobQueue=self.job_queue_name,
+                                            jobDefinition=self.js_job_definition_name,
+                                            jobName=jname,
+                                            parameters=parameters,
+                                            containerOverrides=overrides)
+            logging.info(f'Submitted AWS Batch job {job["jobId"]} to submit search jobs')
+            self.job_ids.append(job['jobId'])
+            self.upload_job_ids()
+
+
+    @handle_aws_error
     def submit(self, query_batches: List[str], one_stage_cloud_query_split: bool) -> None:
         """ Submit query batches to cluster, converts AWS exceptions to UserReportError
             Parameters:
@@ -742,19 +831,25 @@ class ElasticBlastAws(ElasticBlast):
 
 
     def upload_job_ids(self) -> None:
-        """Save AWS Batch job ids in a metadata file in S3"""
+        """Save AWS Batch job ids in a metadata file in S3, if the metadata
+        file is present, append job ids"""
+        self._load_job_ids_from_aws()
         bucket_name, key = parse_bucket_name_key(f'{self.results_bucket}/{ELB_METADATA_DIR}/{ELB_AWS_JOB_IDS}')
         bucket = self.s3.Bucket(bucket_name)
-        if len(self.job_ids):
-            bucket.put_object(Body=json.dumps(self.job_ids).encode(), Key=key)
-        elif self.qs_job_id:
-            bucket.put_object(Body=json.dumps([self.qs_job_id]).encode(), Key=key)
+        job_ids = self.job_ids
+        if self.qs_job_id:
+            job_ids.append(self.qs_job_id)
+        job_ids = list(set(job_ids))
+        bucket.put_object(Body=json.dumps(job_ids).encode(), Key=key)
 
 
     def upload_query_length(self, query_length: int) -> None:
         """Save query length in a metadata file in S3"""
         if query_length <= 0: return
-        write_to_s3(os.path.join(self.results_bucket, ELB_METADATA_DIR, ELB_QUERY_LENGTH), str(query_length), self.boto_cfg)
+        if not self.dry_run:
+            write_to_s3(os.path.join(self.results_bucket, ELB_METADATA_DIR, ELB_QUERY_LENGTH), str(query_length), self.boto_cfg)
+        else:
+            logging.debug('dry-run: would have uploaded query length')
 
 
     def check_job_number_limit(self, queries, query_length) -> None:
@@ -780,9 +875,8 @@ class ElasticBlastAws(ElasticBlast):
             raise UserReportError(CLUSTER_ERROR, f"Cluster {self.stack_name} is not valid or not created yet")
 
     def _load_job_ids_from_aws(self):
-        """ Retrieve the list of AWS Batch job IDs from AWS
-            First it tries to get them from S3, if this isn't available, gets this data from
-            AWS Batch APIs.
+        """ Retrieve the list of AWS Batch job IDs from AWS S3. Missing file
+            in S3 means that list of job ids is empty.
             Post-condition: self.job_ids contains the list of job IDs for this search
         """
         with NamedTemporaryFile() as tmp:
@@ -791,15 +885,12 @@ class ElasticBlastAws(ElasticBlast):
             try:
                 bucket.download_file(key, tmp.name)
                 with open(tmp.name) as f_ids:
-                    self.job_ids = json.load(f_ids)
+                    self.job_ids += json.load(f_ids)
+                    self.job_ids = list(set(self.job_ids))
             except ClientError as err:
-                # if the metadata file does not exist, get job ids
-                # and save them in metadata
                 logging.debug(f'Failed to retrieve {os.path.join(self.results_bucket, ELB_METADATA_DIR, ELB_AWS_JOB_IDS)}')
-                if err.response['Error']['Code'] == '404':
-                    self.job_ids = self.get_job_ids()
-                    self.upload_job_ids()
-                else:
+                # reraise for other problems than missing file
+                if err.response['Error']['Code'] != '404':
                     raise
 
     @handle_aws_error

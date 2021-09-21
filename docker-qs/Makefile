@@ -31,7 +31,7 @@ VERSION?=0.0.2
 GCP_PROJECT?=$(shell gcloud config get-value project 2>/dev/null)
 GCP_TEST_BUCKET?=gs://elasticblast-test/query-split-run-test
 AWS_REGION?=us-east-1
-AWS_SERVER?=public.ecr.aws/i6v3i0i9
+AWS_SERVER?=public.ecr.aws/ncbi-elasticblast
 AWS_IMG?=${AWS_SERVER}/elasticblast-query-split
 
 all: gcp-build gcp-check
@@ -88,11 +88,11 @@ publish-to-ecr:
 
 .PHONY: ecr-list
 ecr-list:
-	aws ecr list-images --repository ${IMG}
+	aws ecr list-images --repository ${AWS_IMG}
 
 # N.B. Image scanning is free per https://aws.amazon.com/about-aws/whats-new/2019/10/announcing-image-scanning-for-amazon-ecr/
 .PHONY: ecr-create
 ecr-create:
-	aws ecr create-repository --repository-name ${IMG} --region ${AWS_REGION} \
+	aws ecr create-repository --repository-name ${AWS_IMG} --region ${AWS_REGION} \
 		--image-scanning-configuration scanOnPush=true \
 		--tags Key=Project,Value=BLAST Key=billingcode,Value=elastic-blast Key=Owner,Value=${USER} | tee ecr-create.json

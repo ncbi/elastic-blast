@@ -143,10 +143,7 @@ class DBSource(Enum):
     AWS = auto()
     NCBI = auto()
     def __repr__(self):
-        return self.name
-    def __str__(self):
-        """Convert value to a string"""
-        return self.name
+        return f"'{self.name}'"
 
 
 class ParamInfo(NamedTuple):

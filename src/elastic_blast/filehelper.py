@@ -33,7 +33,7 @@ Author: Victor Joukov joukovv@ncbi.nlm.nih.gov
 """
 
 import subprocess, os, io, gzip, tarfile, re, tempfile, shutil
-import logging
+import logging, ast
 import urllib.request
 from string import digits
 from random import sample
@@ -47,7 +47,7 @@ from .base import QuerySplittingResults
 from .util import safe_exec, SafeExecError
 from .constants import ELB_GCP_BATCH_LIST, ELB_METADATA_DIR, ELB_QUERY_LENGTH, ELB_QUERY_BATCH_DIR
 from .constants import ELB_S3_PREFIX, ELB_GCS_PREFIX, ELB_FTP_PREFIX, ELB_HTTP_PREFIX
-from .constants import ELB_QUERY_BATCH_FILE_PREFIX
+from .constants import ELB_QUERY_BATCH_FILE_PREFIX, ELB_META_CONFIG_FILE
 
 
 def harvest_query_splitting_results(bucket_name: str, dry_run: bool = False, boto_cfg: Config = None) -> QuerySplittingResults:
@@ -459,3 +459,22 @@ def parse_bucket_name_key(fname: str) -> Tuple[str, str]:
     bucket = parts[0]
     key = '/'.join(parts[1:])
     return bucket, key
+
+
+def _is_local_file(filename: str) -> bool:
+    """ Returns true if the file name passed to this function is locally
+    accessible """
+    if filename.startswith(ELB_S3_PREFIX) or filename.startswith(ELB_GCS_PREFIX) or \
+        filename.startswith(ELB_FTP_PREFIX) or filename.startswith(ELB_HTTP_PREFIX):
+        return False
+    return True
+
+
+def thaw_config(results_bucket: str) -> dict:
+    """ Recover a saved ElasticBLAST configuration from its results bucket """
+    filename = os.path.join(results_bucket, ELB_METADATA_DIR, ELB_META_CONFIG_FILE)
+    if _is_local_file(results_bucket):
+        # Allow this to facilitate unit testing
+        filename = results_bucket
+    with open_for_read(filename) as infile:
+        return ast.literal_eval(infile.read())

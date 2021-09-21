@@ -171,7 +171,7 @@ def test_delete_cluster_with_cleanup_no_cluster(gke_mock):
     gke_mock.set_options(['no-cluster'])
 
     cfg = get_mocked_config()
-    with pytest.raises(SafeExecError):
+    with pytest.raises(UserReportError):
         gcp.delete_cluster_with_cleanup(cfg)
     gcp.safe_exec.assert_called()
 

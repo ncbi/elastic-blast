@@ -173,7 +173,8 @@ def delete_all(k8s_ctx: str, dry_run: bool = False) -> List[str]:
 
     Raises:
         util.SafeExecError on problems with command line kubectl"""
-    commands = [f'kubectl --context={k8s_ctx} delete jobs --all',
+    commands = [f'kubectl --context={k8s_ctx} delete jobs --ignore-not-found=true -l app=setup',
+                f'kubectl --context={k8s_ctx} delete jobs --ignore-not-found=true -l app=blast',
                 f'kubectl --context={k8s_ctx} delete pvc --all',
                 f'kubectl --context={k8s_ctx} delete pv --all']
     result = []
@@ -617,7 +618,7 @@ def collect_k8s_logs(cfg: ElasticBlastConfig):
     dry_run = cfg.cluster.dry_run
     k8s_ctx = cfg.appstate.k8s_ctx
     if not k8s_ctx:
-        raise RuntimeError('kubernetes context is missing for {cluster_name}')
+        raise RuntimeError(f'kubernetes context is missing for {cfg.cluster.name}')
     # TODO use named constants for labels and containers
     # also modify corresponding YAML templates and their substitution
     get_logs(k8s_ctx, 'app=setup', [K8S_JOB_GET_BLASTDB, K8S_JOB_IMPORT_QUERY_BATCHES], dry_run)

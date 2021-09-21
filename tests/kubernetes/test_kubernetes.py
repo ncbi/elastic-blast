@@ -219,7 +219,7 @@ def test_label_persistent_disk(safe_exec_mock):
 def test_delete_all(kubectl_mock):
     """Test deleteting all jobs, persistent volume claims and persistent volumes"""
     deleted = kubernetes.delete_all(K8S_UNINITIALIZED_CONTEXT)
-    assert sorted(deleted) == sorted(K8S_JOBS + GKE_PVS)
+    assert sorted(set(deleted)) == sorted(K8S_JOBS + GKE_PVS)
     kubernetes.safe_exec.assert_called()
 
 

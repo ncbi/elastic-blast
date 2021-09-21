@@ -3,3 +3,4 @@ filelock
 boto3
 ec2_metadata==2.4.0
 requests==2.25.1
+elastic-blast

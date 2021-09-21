@@ -469,7 +469,7 @@ def test_clusterconfig_gcp():
 
 @patch(target='elastic_blast.elb_config.aws_get_machine_properties', new=MagicMock(return_value=InstanceProperties(32, 120)))
 def test_clusterconfig_aws():
-    """Test ClusterConfig defaults for GCP"""
+    """Test ClusterConfig defaults for AWS"""
     RESULTS = CloudURI('s3://test-results')
     aws_cfg = AWSConfig(region = 'test-region')
     cfg = ClusterConfig(cloud_provider = aws_cfg, results = RESULTS)
@@ -489,6 +489,30 @@ def test_clusterconfig_aws():
     errors = []
     cfg.validate(errors, ElbCommand.SUBMIT)
     assert not errors
+
+
+@patch(target='elastic_blast.elb_config.aws_get_machine_properties', new=MagicMock(return_value=InstanceProperties(32, 120)))
+def test_clusterconfig_aws_arm_instances():
+    """Test ClusterConfig defaults for AWS"""
+    RESULTS = CloudURI('s3://test-results')
+    aws_cfg = AWSConfig(region = 'test-region')
+    cfg = ClusterConfig(cloud_provider = aws_cfg, results = RESULTS, machine_type = 'r6gd.8xlarge')
+    assert cfg.name.startswith('elasticblast')
+    assert cfg.results == RESULTS
+    assert cfg.machine_type == 'r6gd.8xlarge'
+    assert cfg.pd_size == ELB_DFLT_AWS_PD_SIZE
+    assert cfg.num_cpus == ELB_DFLT_AWS_NUM_CPUS
+    assert cfg.num_nodes == ELB_DFLT_NUM_NODES
+    assert not cfg.use_preemptible
+    assert cfg.disk_type == ELB_DFLT_AWS_DISK_TYPE
+    assert not cfg.iops
+    assert cfg.bid_percentage == int(ELB_DFLT_AWS_SPOT_BID_PERCENTAGE)
+    assert not cfg.labels
+    assert not cfg.use_local_ssd
+    assert not cfg.enable_stackdriver
+    errors = []
+    cfg.validate(errors, ElbCommand.SUBMIT)
+    assert 'not supported by ElasticBLAST' in errors[0]
 
 
 @patch(target='elastic_blast.elb_config.aws_get_machine_properties', new=MagicMock(return_value=InstanceProperties(ELB_DFLT_AWS_NUM_CPUS, 120)))

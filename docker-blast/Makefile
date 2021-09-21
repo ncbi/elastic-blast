@@ -29,7 +29,7 @@ IMG?=ncbi/elb
 GCP_IMG?=gcr.io/ncbi-sandbox-blast/${IMG}
 AWS_SERVER?=public.ecr.aws/i6v3i0i9
 AWS_IMG?=${AWS_SERVER}/elasticblast-elb
-VERSION?=0.0.30
+VERSION?=0.0.33
 
 ifeq (, $(shell which vmtouch 2>/dev/null))
 NOVMTOUCH?=--no-vmtouch
@@ -54,6 +54,16 @@ publish: build
 	docker push ${IMG}:${VERSION}
 	docker push ${IMG}:latest
 
+
+setup.cfg_cloud:
+	rsync -a ../setup.py ../setup.cfg_cloud ../src ../bin ../requirements ${PWD}/
+	sed -i~ -e '/^value = $${VERSION}/d;' setup.cfg_cloud
+	echo "value = $(shell git describe --tags --abbrev=0)" >> setup.cfg_cloud
+
+.PHONY: clean-local-sources
+clean-local-sources:
+	rm -rf setup.py setup.cfg_cloud src bin requirements
+
 .PHONY: gcp-build
 gcp-build:
 	gcloud builds submit --config=cloudbuild.yaml --substitutions=TAG_NAME="${VERSION}",_IMG="${GCP_IMG}" .
@@ -61,6 +71,19 @@ gcp-build:
 .PHONY: aws-build
 aws-build:
 	gcloud builds submit --config=awscloudbuild.yaml --substitutions=TAG_NAME="${VERSION}",_IMG="${AWS_IMG}",_SERVER="${AWS_SERVER}",_AWS_ECR_PASSWD="`aws ecr-public get-login-password --region us-east-1`" .
+
+
+# Use the targets below to build imges using local elastic-blast sources
+.PHONY: gcp-build-from-local-sources
+gcp-build-from-local-sources: setup.cfg_cloud
+	gcloud builds submit --config=cloudbuild.yaml --substitutions=TAG_NAME="${VERSION}",_IMG="${GCP_IMG}",_DOCKERFILE='Dockerfile-build-from-local-sources' .
+	$(MAKE) clean-local-sources
+
+.PHONY: aws-build-from-local-sources
+aws-build-from-local-sources: setup.cfg_cloud
+	gcloud builds submit --config=awscloudbuild.yaml --substitutions=TAG_NAME="${VERSION}",_IMG="${AWS_IMG}",_SERVER="${AWS_SERVER}",_AWS_ECR_PASSWD="`aws ecr-public get-login-password --region us-east-1`",_DOCKERFILE='Dockerfile-build-from-local-sources' .
+	$(MAKE) clean-local-sources
+
 
 .PHONY: clean 
 clean:

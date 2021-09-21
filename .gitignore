@@ -41,3 +41,5 @@ creds.sh
 iam-policy.json
 clouseau*
 submit-and-wait-for-results.sh
+aws-docker-login.txt
+elb-run-report.csv

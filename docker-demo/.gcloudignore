@@ -1,0 +1,7 @@
+.gcloudignore
+.gitignore
+.git
+*~
+Makefile
+test
+typescript

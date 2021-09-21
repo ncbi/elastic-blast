@@ -1,0 +1,15 @@
+steps:
+- name: 'gcr.io/${PROJECT_ID}/${_IMG}:${_TAG}'
+  args: ['gcloud', 'version']
+- name: 'gcr.io/${PROJECT_ID}/${_IMG}:${_TAG}'
+  args: ['kubectl', 'version', '--client=true']
+- name: 'gcr.io/${PROJECT_ID}/${_IMG}:${_TAG}'
+  args: ['elastic-blast', '--version']
+- name: 'gcr.io/${PROJECT_ID}/${_IMG}:${_TAG}'
+  args: ['aws', '--version']
+- name: 'gcr.io/${PROJECT_ID}/${_IMG}:${_TAG}'
+  args: ['aws', 's3', '--no-sign-request', 'ls', 's3://ncbi-blast-databases/']
+
+substitutions:
+  _IMG:
+  _TAG:

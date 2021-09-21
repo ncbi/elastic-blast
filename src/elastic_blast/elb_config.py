@@ -72,7 +72,7 @@ from .constants import CFG_TIMEOUT_BLAST_K8S_JOB
 from .constants import INPUT_ERROR, ELB_NOT_INITIALIZED_MEM, ELB_NOT_INITIALIZED_NUM
 from .constants import GCP_MAX_LABEL_LENGTH, AWS_MAX_TAG_LENGTH
 from .constants import GCP_MAX_NUM_LABELS, AWS_MAX_NUM_LABELS
-from .constants import SYSTEM_MEMORY_RESERVE
+from .constants import SYSTEM_MEMORY_RESERVE, ELB_AWS_ARM_INSTANCE_TYPE_REGEX
 from .constants import ELB_DFLT_AWS_NUM_CPUS, ELB_DFLT_GCP_NUM_CPUS
 from .constants import ELB_S3_PREFIX, ELB_GCS_PREFIX
 from .util import validate_gcp_string, validate_aws_region
@@ -296,7 +296,6 @@ class BlastConfig(ConfigParserToDataclassMapper):
             errors.append(f'Incorrect BLAST options: {str(err)} in "{self.options}"')
 
 
-
 @dataclass
 class ClusterConfig(ConfigParserToDataclassMapper):
     """ElasticBLAST cluster config"""
@@ -384,6 +383,10 @@ class ClusterConfig(ConfigParserToDataclassMapper):
 
         if self.machine_type.lower() == 'optimal':
             logging.warn("Optimal AWS instance type is NOT FULLY TESTED - for internal development ONLY")
+
+        if re.search(ELB_AWS_ARM_INSTANCE_TYPE_REGEX, self.machine_type):
+            msg = f'You specified "{self.machine_type}" cluster.machine-type, which is not supported by ElasticBLAST. Please change the cluster.machine-type before trying again.'
+            errors.append(msg)
 
 
 @dataclass

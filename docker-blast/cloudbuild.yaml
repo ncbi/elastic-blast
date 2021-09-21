@@ -1,4 +1,7 @@
 steps:
 - name: 'docker'
-  args: [ 'build', '-t', '${_IMG}:$TAG_NAME', '-t', '${_IMG}:latest', '.' ]
+  args: [ 'build', '-t', '${_IMG}:$TAG_NAME', '-t', '${_IMG}:latest', '-f', '${_DOCKERFILE}', '.' ]
 images: ['${_IMG}:$TAG_NAME', '${_IMG}:latest']
+
+substitutions:
+  _DOCKERFILE: 'Dockerfile'

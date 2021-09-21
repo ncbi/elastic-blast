@@ -163,6 +163,7 @@ def submit(args, cfg, clean_up_stack):
     query_split_mode = get_query_split_mode(cfg, query_files)
     logging.debug(f'Query split mode {query_split_mode.name}')
 
+    # query splitting
     if query_split_mode == QuerySplitMode.CLIENT:
         clean_up_stack.append(cleanup_temp_bucket_dirs)
         queries, query_length = split_query(query_files, cfg)
@@ -181,17 +182,27 @@ def submit(args, cfg, clean_up_stack):
     elastic_blast = ElasticBlastFactory(cfg, True, clean_up_stack)
     # check_memory_requirements(cfg)  # FIXME: EB-281, EB-313
     upload_split_query_to_bucket(cfg, clean_up_stack, dry_run)
-    if query_split_mode == QuerySplitMode.CLOUD_ONE_STAGE:
+
+    # query splitting
+    if query_split_mode == QuerySplitMode.CLOUD_ONE_STAGE or \
+        query_split_mode == QuerySplitMode.CLIENT:
         elastic_blast.upload_query_length(query_length)
     elif query_split_mode == QuerySplitMode.CLOUD_TWO_STAGE:
         elastic_blast.cloud_query_split(query_files)
-        elastic_blast.wait_for_cloud_query_split()
         if 'ELB_NO_SEARCH' in os.environ: return 0
-        qs_res = harvest_query_splitting_results(cfg.cluster.results, dry_run)
-        queries = qs_res.query_batches
-        query_length = qs_res.query_length
-    elastic_blast.check_job_number_limit(queries, query_length)
-    elastic_blast.submit(queries, query_split_mode == QuerySplitMode.CLOUD_ONE_STAGE)
+        if cfg.cloud_provider.cloud != CSP.AWS or 'ELB_DISABLE_JOB_SUBMISSION_ON_THE_CLOUD' in os.environ:
+            elastic_blast.wait_for_cloud_query_split()
+            qs_res = harvest_query_splitting_results(cfg.cluster.results, dry_run)
+            queries = qs_res.query_batches
+            query_length = qs_res.query_length
+
+    # job submission
+    if cfg.cloud_provider.cloud == CSP.AWS and \
+        not 'ELB_DISABLE_JOB_SUBMISSION_ON_THE_CLOUD' in os.environ:
+        elastic_blast.cloud_submit()
+    else:
+        elastic_blast.check_job_number_limit(queries, query_length)
+        elastic_blast.submit(queries, query_split_mode == QuerySplitMode.CLOUD_ONE_STAGE)
     return 0
 
 

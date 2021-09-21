@@ -1,0 +1,10 @@
+steps:
+- name: '${_IMG}'
+  args: ['elastic-blast', '--version']
+- name: '${_IMG}'
+  env:
+    - 'ELB_GCP_PROJECT=ncbi-sandbox-blast'
+    - 'ELB_GCP_REGION=us-east4'
+    - 'ELB_GCP_ZONE=us-east4-a'
+    - 'ELB_RESULTS=gs://elasticblast-test/'
+  #args: ['/usr/bin/elastic-blast-janitor.sh']

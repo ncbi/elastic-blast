@@ -51,9 +51,3 @@ Requirements for building ElasticBLAST
 In addition to the requirements listed in the page below, [AWS Command Line Interface](https://aws.amazon.com/cli/) is required.
 
 https://blast.ncbi.nlm.nih.gov/doc/elastic-blast/requirements.html
-
-Bug affecting GCP implementation
---------------------------------
-
-The current GCP implementation can leak cloud resources, potentially resulting in excess user charges. We are working to update the code and expect a fix soon. In the interim, we suggest using our AWS implementation, or for those who wish to use GCP, we have provided a [workaround](share/tools/cleanup-stale-gcp-resources.py) that, when applied, addresses this issue and eliminates the risk of excess user charges. For more information, see https://blast.ncbi.nlm.nih.gov/doc/elastic-blast/gcp-issues.html (Message date: July 21, 2021)
-

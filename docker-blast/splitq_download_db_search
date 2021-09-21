@@ -283,7 +283,7 @@ def vmtouch_database(args):
 
 
 def download_taxidlist(args):
-    if not args.taxidlist:
+    if not args.taxidlist or args.taxidlist == 'NONE':
         return
     creds = ' --no-sign-request' if args.no_creds else ''
     if dry_run:

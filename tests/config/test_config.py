@@ -267,7 +267,7 @@ class ElbConfigLibTester(unittest.TestCase):
         sp = ElbSupportedPrograms()
         for p in ['BLASTp', 'blastx', 'PSIBLAST', 'rpsBLAST', 'rpstblastn']:
             self.assertEqual(sp.get_db_mol_type(p), MolType.PROTEIN)
-        for p in ['blastn', 'megablast', 'tBLASTn', 'TBLASTX']:
+        for p in ['blastn', 'tBLASTn', 'TBLASTX']:
             self.assertEqual(sp.get_db_mol_type(p), MolType.NUCLEOTIDE)
 
     def test_invalid_db_mol_type(self):
@@ -280,7 +280,7 @@ class ElbConfigLibTester(unittest.TestCase):
         sp = ElbSupportedPrograms()
         for p in ['BLASTp', 'tblastn', 'PSIBLAST', 'rpsBLAST']:
             self.assertEqual(sp.get_query_mol_type(p), MolType.PROTEIN)
-        for p in ['blastn', 'megablast', 'BLASTx', 'TBLASTX', 'rpstblastn']:
+        for p in ['blastn', 'BLASTx', 'TBLASTX', 'rpstblastn']:
             self.assertEqual(sp.get_query_mol_type(p), MolType.NUCLEOTIDE)
 
     def test_invalid_query_mol_type(self):

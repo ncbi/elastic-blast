@@ -27,6 +27,7 @@ Created: Tue 03 Aug 2021 06:54:30 PM EDT
 
 from typing import Any, List
 from .elb_config import ElasticBlastConfig
+from .constants import ElbStatus
 from abc import ABCMeta, abstractmethod
 
 class ElasticBlast(metaclass=ABCMeta):
@@ -58,6 +59,16 @@ class ElasticBlast(metaclass=ABCMeta):
     def check_job_number_limit(self, queries, query_length) -> None:
         """ Check that number of jobs generated does not exceed platform maximum
             If the platform-specific maximum is exceeded throws UserReportError(INPUT_ERROR) """
+        pass
+
+    @abstractmethod
+    def status(self) -> ElbStatus:
+        """ Return the status of an ElasticBLAST search """
+        pass
+
+    @abstractmethod
+    def delete(self) -> ElbStatus:
+        """ Delete all resources allocated for an ElasticBLAST search """
         pass
 
     @abstractmethod

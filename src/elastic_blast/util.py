@@ -42,7 +42,7 @@ from typing import List, Union, Callable
 from .constants import MolType, GCS_DFLT_BUCKET
 from .constants import DEPENDENCY_ERROR, AWS_MAX_TAG_LENGTH, GCP_MAX_LABEL_LENGTH
 from .constants import CSP, AWS_MAX_JOBNAME_LENGTH
-from .constants import ELB_DFLT_LOGLEVEL
+from .constants import ELB_DFLT_LOGLEVEL, ELB_DFLT_LOGFILE
 from .base import DBSource
 
 class ElbSupportedPrograms:
@@ -53,7 +53,6 @@ class ElbSupportedPrograms:
     _programs = [
         'blastp',
         'blastn',
-        'megablast',
         'blastx',
         'psiblast',
         'rpsblast',
@@ -77,7 +76,7 @@ class ElbSupportedPrograms:
             raise NotImplementedError(f'Invalid BLAST program "{program}"')
 
         retval = MolType.UNKNOWN
-        if p == 'blastn' or p == 'megablast' or p == 'tblastn' or p == 'tblastx':
+        if p == 'blastn' or p == 'tblastn' or p == 'tblastx':
             retval = MolType.NUCLEOTIDE
         elif re.search(r'^blast[px]$', p) or re.search(r'^(psi|rps)blast$', p) or p == 'rpstblastn':
             retval = MolType.PROTEIN
@@ -95,7 +94,7 @@ class ElbSupportedPrograms:
             raise NotImplementedError(f'Invalid BLAST program "{program}"')
 
         retval = MolType.UNKNOWN
-        if p in ['blastn', 'megablast', 'blastx', 'tblastx', 'rpstblastn']:
+        if p in ['blastn', 'blastx', 'tblastx', 'rpstblastn']:
             retval = MolType.NUCLEOTIDE
         elif p in ['blastp', 'tblastn', 'psiblast', 'rpsblast']:
             retval = MolType.PROTEIN
@@ -124,7 +123,6 @@ def get_query_batch_size(program: str) -> int:
         "blastp":       10000,
         "blastn":       5000000,
         "blastx":       20000,
-        "megablast":    5000000,
         "psiblast":     100000,
         "rpsblast":     100000,
         "rpstblastn":   100000,
@@ -308,6 +306,12 @@ def config_logging(args: argparse.Namespace) -> None:
             args.loglevel = os.environ['ELB_LOGLEVEL']
         else:
             args.loglevel = ELB_DFLT_LOGLEVEL
+
+    if not hasattr(args, 'logfile'):
+        if 'ELB_LOGFILE' in os.environ:
+            args.logfile = os.environ['ELB_LOGFILE']
+        else:
+            args.logfile = ELB_DFLT_LOGFILE
 
     if args.logfile == 'stderr':
         logger = logging.getLogger()

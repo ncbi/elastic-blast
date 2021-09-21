@@ -58,6 +58,7 @@ from elastic_blast.util import UserReportError
 from elastic_blast.filehelper import parse_bucket_name_key
 from elastic_blast.base import InstanceProperties, DBSource
 from elastic_blast.elb_config import ElasticBlastConfig, PositiveInteger
+from tests.utils import aws_credentials
 
 from botocore.exceptions import ClientError #type: ignore
 from unittest.mock import call
@@ -66,29 +67,6 @@ import pytest
 
 TEST_DATA_DIR = os.path.join(os.path.dirname(__file__), '..', 'config', 'data')
 TEST_CONFIG_DATA_DIR = os.path.join(os.path.dirname(__file__), 'data')
-
-
-@pytest.fixture
-def aws_credentials():
-    """Credentials for mocked AWS services. This fixture ensures that we are
-    not accidentally creating resources in real AWS accounts."""
-
-    # Setup
-    # save AWS-related variables before modifying environment
-    saved_vars = {key: os.environ[key] for key in os.environ if key.startswith('AWS')}
-
-    os.environ['AWS_ACCESS_KEY_ID'] = 'testing'
-    os.environ['AWS_SECRET_ACCESS_KEY'] = 'testing'
-    os.environ['AWS_SESSION_TOKEN'] = 'testing'
-    os.environ['AWS_ACCT'] = 'testing'
-    os.environ['AWS_DEFAULT_REGION'] = ELB_DFLT_AWS_REGION
-
-    yield
-
-    # Cleanup
-    # bring back pre-test environment
-    for i in saved_vars:
-        os.environ[i] = saved_vars[i]
 
 
 @pytest.fixture

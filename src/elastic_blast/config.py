@@ -199,7 +199,7 @@ def _validate_csp(cfg: configparser.ConfigParser) -> None:
 def report_config_error(msg: List[str]) -> None:
     """Raise UserReportError with given error message."""
     err_msg = '\n'.join(['Elastic-BLAST configuration error(s):'] + msg + [
-        'Configuration can be set in a config file provided with --cfg option or environment variables. Please, see documentation for details.'])
+        'Configuration can be set in a config file provided with --cfg option, environment variables, or command line options. Please, see documentation for details.'])
     raise UserReportError(returncode=INPUT_ERROR, message=err_msg)
 
 

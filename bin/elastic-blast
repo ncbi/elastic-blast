@@ -42,12 +42,11 @@ from elastic_blast import constants
 from elastic_blast.gcp import check_prerequisites
 from elastic_blast.config import configure
 from elastic_blast.elb_config import ElasticBlastConfig
-from elastic_blast.constants import ELB_METADATA_DIR, ELB_META_CONFIG_FILE, ElbCommand
-from elastic_blast.constants import ELB_DFLT_LOGLEVEL
+from elastic_blast.constants import ElbCommand
+from elastic_blast.constants import ELB_DFLT_LOGLEVEL, ELB_DFLT_LOGFILE
 from elastic_blast.filehelper import open_for_write
 
 
-DFLT_LOGFILE = 'elastic-blast.log'
 DESC = r"""This application facilitates running BLAST on large amounts of query sequence data
 on the cloud"""
 
@@ -156,8 +155,8 @@ def create_arg_parser():
                         help="Bucket URI where to save the output from ElasticBLAST")
 
     app_opts = common_opts_parser.add_argument_group('Application options')
-    app_opts.add_argument("--logfile", default=DFLT_LOGFILE, type=str,
-                                    help=f"Default: {DFLT_LOGFILE}")
+    app_opts.add_argument("--logfile", default=argparse.SUPPRESS, type=str,
+                                    help=f"Default: {ELB_DFLT_LOGFILE}")
     app_opts.add_argument("--loglevel", default=argparse.SUPPRESS,
                                     help=f"Default: {ELB_DFLT_LOGLEVEL}",
                                     choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"])

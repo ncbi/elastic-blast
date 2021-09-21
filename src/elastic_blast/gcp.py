@@ -48,6 +48,7 @@ from .constants import ELB_QUERY_BATCH_DIR, ELB_DFLT_MIN_NUM_NODES
 from .constants import K8S_JOB_BLAST, K8S_JOB_GET_BLASTDB, K8S_JOB_IMPORT_QUERY_BATCHES
 from .constants import K8S_JOB_LOAD_BLASTDB_INTO_RAM, K8S_JOB_RESULTS_EXPORT, K8S_UNINITIALIZED_CONTEXT
 from .constants import ELB_DOCKER_IMAGE_GCP, ELB_QUERY_LENGTH, INPUT_ERROR
+from .constants import ElbStatus
 from .elb_config import ElasticBlastConfig
 from .elasticblast import ElasticBlast
 
@@ -211,6 +212,11 @@ class ElasticBlastGcp(ElasticBlast):
         if 'ELB_DISABLE_AUTO_SHUTDOWN' not in os.environ:
             kubernetes.submit_janitor_cronjob(cfg)
 
+    def status(self) -> ElbStatus:
+        pass
+
+    def delete(self):
+        pass
 
 def enable_gcp_api(cfg: ElasticBlastConfig):
     """ Enable GCP APIs if they are not already enabled 
@@ -364,8 +370,12 @@ def delete_cluster_with_cleanup(cfg: ElasticBlastConfig) -> None:
     while True:
         status = check_cluster(cfg)
         if not status:
-            logging.debug(f'No cluster with name "{cfg.cluster.name}" was found.')
-            return
+            msg = f'Cluster {cfg.cluster.name} was not found'
+            if cfg.cluster.dry_run:
+                logging.error(msg)
+                return
+            else:
+                raise UserReportError(returncode=CLUSTER_ERROR, message=msg)
         logging.debug(f'Cluster status "{status}"')
 
         if status == 'RUNNING' or status == 'RUNNING_WITH_ERROR':

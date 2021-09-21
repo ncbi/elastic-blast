@@ -57,13 +57,21 @@ attempts=0
 
 while [ $attempts -lt $timeout_minutes ]; do
     $ROOT_DIR/elastic-blast status --verbose --cfg $CFG $DRY_RUN | tee $TMP
-    #set +e
-    if grep '^Pending 0' $TMP && grep '^Running 0' $TMP; then
-        break
-    fi
+
+    num_failed=`grep '^Failed ' $TMP | cut -f 2 -d ' '`;
+    num_pending=`grep '^Pending ' $TMP | cut -f 2 -d ' '`;
+    num_succeeded=`grep '^Succeeded ' $TMP | cut -f 2 -d ' '`;
+    num_running=`grep '^Running ' $TMP | cut -f 2 -d ' '`;
+    num_jobs=$(($num_failed + $num_pending + $num_succeeded + $num_running))
+
+    [ $num_jobs -eq 0 ] && continue # Jobs have not been submitted yet
+
+    [ $num_failed -gt 0 ] && break  # If there's a failure, break out of the loop
+
+    [ $num_pending -eq 0 ] && [ $num_running -eq 0 ] && break  # ElasticBLAST is done successfully
+
     attempt=$((attempts+1))
     sleep 60
-    #set -e
 done
 
 export PATH=$PATH:$ROOT_DIR

@@ -1,0 +1,52 @@
+#                           PUBLIC DOMAIN NOTICE
+#              National Center for Biotechnology Information
+#  
+# This software is a "United States Government Work" under the
+# terms of the United States Copyright Act.  It was written as part of
+# the authors' official duties as United States Government employees and
+# thus cannot be copyrighted.  This software is freely available
+# to the public for use.  The National Library of Medicine and the U.S.
+# Government have not placed any restriction on its use or reproduction.
+#   
+# Although all reasonable efforts have been taken to ensure the accuracy
+# and reliability of the software and data, the NLM and the U.S.
+# Government do not and cannot warrant the performance or results that
+# may be obtained by using this software or data.  The NLM and the U.S.
+# Government disclaim all warranties, express or implied, including
+# warranties of performance, merchantability or fitness for any particular
+# purpose.
+#   
+# Please cite NCBI in any work or product based on this material.
+
+FROM google/cloud-sdk:alpine
+
+ARG version
+
+LABEL Description="NCBI ElasticBLAST Janitor Module"
+LABEL Version=${version}
+LABEL Vendor="NCBI/NLM/NIH"
+LABEL Maintainer=camacho@ncbi.nlm.nih.gov
+
+COPY elastic-blast-janitor.sh /usr/bin/
+
+RUN chmod +x /usr/bin/elastic-blast-janitor.sh && \
+    apk -U upgrade && \
+    apk add --no-cache bash python3 py3-pip py3-wheel curl && \
+    pip3 install --no-cache-dir --upgrade pip && \
+	curl -LO https://storage.googleapis.com/kubernetes-release/release/`curl -s https://storage.googleapis.com/kubernetes-release/release/stable.txt`/bin/linux/amd64/kubectl && \
+	chmod +x ./kubectl && \
+	mv kubectl /usr/bin/ && \
+    mkdir /var/elastic-blast && \
+    rm -rf /var/cache/apk/*
+
+COPY src/ /var/elastic-blast/src/
+COPY bin/ /var/elastic-blast/bin/
+COPY requirements/ /var/elastic-blast/requirements/
+COPY setup.py /var/elastic-blast/setup.py
+COPY setup.cfg_cloud /var/elastic-blast/setup.cfg
+
+WORKDIR /var/elastic-blast
+
+RUN pip3 install . -r requirements/test.txt
+
+CMD ["/usr/bin/elastic-blast-janitor.sh"]

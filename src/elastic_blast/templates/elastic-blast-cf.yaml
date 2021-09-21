@@ -625,6 +625,46 @@ Resources:
         Owner: !Ref Owner
         Name: !Join [-, [elasticblast, !Ref Owner, !Ref RandomToken]]
 
+  JobSubmissionJobDefinition:
+    Type: AWS::Batch::JobDefinition
+    Properties:
+      Type: container
+      JobDefinitionName: !Join [-, [elasticblast-submit-jobs, !Ref Owner, !Ref RandomToken]]
+      Parameters:
+        taxidlist: NONE
+      ContainerProperties:
+        Image: !Ref DockerImageBlast
+        Vcpus: 1
+        Memory: 80000
+        Command: ["submit_jobs.py",
+                  "--program", "Ref::blast-program",
+                  "--db", "Ref::db",
+                  "--blast-options", "Ref::blast-options",
+                  "--results", "Ref::bucket",
+                  "--num-cpus", "Ref::num-vcpus",
+                  "--mem-limit", "Ref::mem-limit",
+                  "--taxidlist", "Ref::taxidlist",
+                  "--region", "Ref::region"
+        ]
+        JobRoleArn: !If
+          - CreateJobRole
+          - !GetAtt CreatedBatchJobRole.Arn
+          - !Ref JobRole
+      RetryStrategy:
+        Attempts: 3
+        EvaluateOnExit:
+        # retry on everything except out of memory errors
+        - OnReason: OutOfMemoryError*
+          Action: EXIT
+        - OnReason: "*"
+          Action: RETRY
+      PropagateTags: true
+      Tags:
+        Project: BLAST
+        billingcode: elastic-blast
+        Owner: !Ref Owner
+        Name: !Join [-, [elasticblast, !Ref Owner, !Ref RandomToken]]
+
   BlastSearchJobDefinition:
     Type: AWS::Batch::JobDefinition
     Properties:
@@ -767,8 +807,12 @@ Resources:
           Principal:
             Service: ecs-tasks.amazonaws.com
           Action: sts:AssumeRole
+      # FIXME: Many policies are likely too wide
       ManagedPolicyArns:
       - arn:aws:iam::aws:policy/AmazonS3FullAccess
+      - arn:aws:iam::aws:policy/AmazonEC2FullAccess
+      - arn:aws:iam::aws:policy/AWSBatchFullAccess
+      - arn:aws:iam::aws:policy/AWSCloudFormationFullAccess
       Tags:
         - Key: Name
           Value: !Join [-, [elasticblast, !Ref Owner, !Ref RandomToken]]
@@ -818,3 +862,6 @@ Outputs:
   QuerySplittingJobDefinitionName:
     Description: ElasticBLAST job definition to split queries
     Value: !Ref QuerySplittingJobDefinition
+  JobSubmissionJobDefinitionName:
+    Description: ElasticBLAST job definition to submit search jobs on the Cloudformation
+    Value: !Ref JobSubmissionJobDefinition

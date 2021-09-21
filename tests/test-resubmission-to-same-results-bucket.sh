@@ -73,8 +73,8 @@ if ! grep -qi aws $CFG; then
     gsutil -qm rm -r ${ELB_RESULTS}
 else
     aws s3 rm ${ELB_RESULTS}/ --recursive
+    $ROOT_DIR/elastic-blast delete --cfg $CFG --loglevel DEBUG --logfile $logfile $DRY_RUN
 fi
-$ROOT_DIR/elastic-blast delete --cfg $CFG --loglevel DEBUG --logfile $logfile $DRY_RUN
 
 # Do the final error check: this string must be in the logfile
 echo Check the error message
