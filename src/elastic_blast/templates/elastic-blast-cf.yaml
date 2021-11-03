@@ -11,8 +11,32 @@ Parameters:
     Description: Docker image for ElasticBLAST query splitting module
     Type: String
 
+  DockerImageJobSubmission:
+    Description: Docker image for ElasticBLAST query splitting module
+    Type: String
+
   Owner:
     Description: User who creates/runs this application
+    Type: String
+
+  ElbResults:
+    Description: ElasticBLAST results bucket
+    Type: String
+
+  JanitorSchedule:
+    Description: Cron expression to determine when to run the ElasticBLAST Janitor module. Use an empty string to disable.
+    Type: String
+
+  JanitorTemplateUrl:
+    Description: URL for the ElasticBLAST Janitor CloudFormation template.
+    Type: String
+
+  JanitorLambdaDeploymentS3Bucket:
+    Description: Bucket where the janitor lambda function deployment resides.
+    Type: String
+
+  JanitorLambdaDeploymentS3Key:
+    Description: Key within the bucket where the janitor lambda function deployment resides.
     Type: String
 
   MaxCpus:
@@ -121,6 +145,7 @@ Parameters:
     Type: String
     Default: 'false'
     AllowedValues: ['true', 'false']
+
 Conditions:
   CreateSecurityGroup: !Equals
     - !Ref SecurityGrp
@@ -133,6 +158,7 @@ Conditions:
   CreateBatchServiceRole: !Equals [!Ref BatchServiceRole, '']
   CreateJobRole: !Equals [!Ref JobRole, '']
   CreateSpotFleetRole: !Equals [!Ref SpotFleetRole, '']
+  SetUpJanitor: !Not [!Equals [!Ref JanitorSchedule, '']]
   KeyPairProvided: !Not [!Equals [!Ref EC2KeyPair, '']]
   SpotInstances: !Equals [!Ref UseSpotInstances, 'True']
   CreateSubnet2: !And
@@ -632,8 +658,10 @@ Resources:
       JobDefinitionName: !Join [-, [elasticblast-submit-jobs, !Ref Owner, !Ref RandomToken]]
       Parameters:
         taxidlist: NONE
+        logfile: stderr
+        loglevel: INFO
       ContainerProperties:
-        Image: !Ref DockerImageBlast
+        Image: !Ref DockerImageJobSubmission
         Vcpus: 1
         Memory: 80000
         Command: ["submit_jobs.py",
@@ -644,7 +672,9 @@ Resources:
                   "--num-cpus", "Ref::num-vcpus",
                   "--mem-limit", "Ref::mem-limit",
                   "--taxidlist", "Ref::taxidlist",
-                  "--region", "Ref::region"
+                  "--region", "Ref::region",
+                  "--loglevel", "Ref::loglevel",
+                  "--logfile", "Ref::logfile"
         ]
         JobRoleArn: !If
           - CreateJobRole
@@ -842,6 +872,28 @@ Resources:
       Tags:
         - Key: Name
           Value: !Join [-, [elasticblast, !Ref Owner, !Ref RandomToken]]
+        - Key: Project
+          Value: BLAST
+        - Key: Owner
+          Value: !Ref Owner
+        - Key: billingcode
+          Value: elastic-blast
+
+  JanitorStack:
+    Type: "AWS::CloudFormation::Stack"
+    Condition: SetUpJanitor
+    Properties:
+      TemplateURL: !Ref JanitorTemplateUrl
+      Parameters:
+        StackName: !Ref 'AWS::StackName'
+        JanitorSchedule: !Ref JanitorSchedule
+        Owner: !Ref Owner
+        S3Bucket: !Ref JanitorLambdaDeploymentS3Bucket
+        S3Key: !Ref JanitorLambdaDeploymentS3Key
+        ElbResults: !Ref ElbResults
+      Tags:
+        - Key: Name
+          Value: !Join [-, [elasticblast, !Ref Owner, !Ref RandomToken, 'janitor']]
         - Key: Project
           Value: BLAST
         - Key: Owner

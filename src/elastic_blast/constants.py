@@ -46,10 +46,17 @@ class ElbCommand(Enum):
 
 class ElbStatus(Enum):
     """ Defines the status of an ElasticBLAST search """
+    CREATING = auto()
+    SUBMITTING = auto()
     SUCCESS = auto()
     FAILURE = auto()
     RUNNING = auto()
     UNKNOWN = auto()
+
+    def __str__(self):
+        """ Convert value to a string """
+        return self.name
+
 
 class QuerySplitMode(Enum):
     """ Query split mode - client, cloud 1 stage, cloud 2 stage """
@@ -63,10 +70,15 @@ class AwsPricing(Enum):
     SPOT = auto()
     UNSUPPORTED = auto()
 
+class ElbExecutionMode(Enum):
+    """ Defines execution mode of some cluster operations """
+    WAIT = auto()
+    NOWAIT = auto()
+
 # Number of seconds to wait after the job that initializes the persistent
 # volume completes. This is to prevent mount errors in the subsequent BLAST k8s
 # jobs
-ELB_PAUSE_AFTER_INIT_PV = 120
+ELB_PAUSE_AFTER_INIT_PV = 150
 
 # How much RAM is recommended relative to the BLASTDB size
 ELB_BLASTDB_MEMORY_MARGIN = 1.1
@@ -75,6 +87,9 @@ ELB_BLASTDB_MEMORY_MARGIN = 1.1
 # AWS Batch) in GB
 SYSTEM_MEMORY_RESERVE = 2 # FIXME: Interim value so that release 0.0.25 can go through
 
+# Memory to reserve for BLAST hits in GB
+MEMORY_FOR_BLAST_HITS = 2
+
 # Default BLAST output format
 ELB_DFLT_OUTFMT = 11
 
@@ -82,7 +97,7 @@ ELB_DFLT_USE_PREEMPTIBLE = False
 
 ELB_DFLT_GCP_PD_SIZE = '3000G'
 
-ELB_DFLT_GCP_MACHINE_TYPE = 'n1-standard-32'
+ELB_DFLT_GCP_MACHINE_TYPE = 'n1-highmem-32'
 ELB_DFLT_AWS_MACHINE_TYPE = 'm5.8xlarge'
 ELB_AWS_ARM_INSTANCE_TYPE_REGEX = r'^a1|^[a-z][1-9]g'
 
@@ -98,6 +113,7 @@ ELB_HTTP_PREFIX = 'http'
 ELB_FTP_PREFIX = 'ftp://'
 
 ELB_UNKNOWN_NUMBER_OF_QUERY_SPLITS = -1
+ELB_UNKNOWN_MAX_NUMBER_OF_CONCURRENT_JOBS = -1
 
 # Ancillary ElasticBLAST "directories" and files in output bucket
 ELB_QUERY_BATCH_DIR = 'query_batches'
@@ -111,10 +127,8 @@ ELB_META_CONFIG_FILE = 'elastic-blast-config.ini'
 ELB_AWS_JOB_IDS = 'job-ids.json'
 ELB_QUERY_LENGTH = 'query_length.txt'
 ELB_GCP_BATCH_LIST = 'batch_list.txt'
-
-# File names of the sentinel files which indicate status reported by janitor
-ELB_STATUS_SUCCESS = "SUCCESS.txt"
-ELB_STATUS_FAILURE = "FAILURE.txt"
+# this file contents should match the number of lines in ELB_GCP_BATCH_LIST 
+ELB_NUM_JOBS_SUBMITTED = 'num_jobs_submitted.txt'
 
 # These values indicate that a field has not been configured by the end user
 ELB_NOT_INITIALIZED_NUM = 2**32
@@ -182,20 +196,27 @@ class MolType(Enum):
 ELB_DFLT_GCP_REGION = 'us-east4'
 ELB_DFLT_AWS_REGION = 'us-east-1'
 
-ELB_DOCKER_VERSION = '0.0.33'
-ELB_QS_DOCKER_VERSION = '0.0.2'
+ELB_DOCKER_VERSION = '1.0.0'
+ELB_QS_DOCKER_VERSION = '0.0.4'
+ELB_JANITOR_DOCKER_VERSION = '0.0.3'
+ELB_JOB_SUBMIT_DOCKER_VERSION = '0.1.3'
 
 ELB_DOCKER_IMAGE_GCP = f'gcr.io/ncbi-sandbox-blast/ncbi/elb:{ELB_DOCKER_VERSION}'
 ELB_DOCKER_IMAGE_AWS = f'public.ecr.aws/ncbi-elasticblast/elasticblast-elb:{ELB_DOCKER_VERSION}'
+
+ELB_QS_DOCKER_IMAGE_GCP = f'gcr.io/ncbi-sandbox-blast/ncbi/elasticblast-query-split:{ELB_QS_DOCKER_VERSION}'
+ELB_QS_DOCKER_IMAGE_AWS = f'public.ecr.aws/ncbi-elasticblast/elasticblast-query-split:{ELB_QS_DOCKER_VERSION}'
+
+ELB_JANITOR_DOCKER_IMAGE_GCP = f'gcr.io/ncbi-sandbox-blast/ncbi/elasticblast-janitor:{ELB_JANITOR_DOCKER_VERSION}'
+
+ELB_CJS_DOCKER_IMAGE_GCP = f'gcr.io/ncbi-sandbox-blast/ncbi/elasticblast-job-submit:{ELB_JOB_SUBMIT_DOCKER_VERSION}'
+ELB_CJS_DOCKER_IMAGE_AWS = f'public.ecr.aws/ncbi-elasticblast/elasticblast-job-submit:{ELB_JOB_SUBMIT_DOCKER_VERSION}'
+
 ELB_DFLT_AWS_DISK_TYPE = 'gp3'
 ELB_DFLT_AWS_PD_SIZE = '1000G'
 # Only relevant if the disk-type is set to io2
 ELB_DFLT_AWS_PROVISIONED_IOPS = '2000'
 ELB_DFLT_AWS_SPOT_BID_PERCENTAGE = '100'
-
-# Work in progress
-ELB_QS_DOCKER_IMAGE_GCP = f'gcr.io/ncbi-sandbox-blast/ncbi/elastic-blast-query-splitting:{ELB_QS_DOCKER_VERSION}'
-ELB_QS_DOCKER_IMAGE_AWS = f'public.ecr.aws/ncbi-elasticblast/elasticblast-query-split:{ELB_QS_DOCKER_VERSION}'
 
 # Config sections
 CFG_CLOUD_PROVIDER = 'cloud-provider'
@@ -219,6 +240,7 @@ CFG_CP_AWS_JOB_ROLE = 'aws-job-role'
 CFG_CP_AWS_INSTANCE_ROLE = 'aws-instance-role'
 CFG_CP_AWS_BATCH_SERVICE_ROLE = 'aws-batch-service-role'
 CFG_CP_AWS_SPOT_FLEET_ROLE = 'aws-spot-fleet-role'
+CFG_CP_AWS_AUTO_SHUTDOWN_ROLE = 'aws-auto-shutdown-role'
 # Cluster
 CFG_CLUSTER_DRY_RUN = 'dry-run'
 CFG_CLUSTER_NAME = 'name'
@@ -255,11 +277,14 @@ APP_STATE = 'app-state'
 APP_STATE_DISK_ID = 'disk-id'
 APP_STATE_RESULTS_MD5 = 'results-md5'
 
+AWS_ROLE_PREFIX = 'arn:aws:iam::'
+
 # Kubernetes job names
 
 K8S_JOB_GET_BLASTDB = 'get-blastdb'
 K8S_JOB_LOAD_BLASTDB_INTO_RAM = 'load-blastdb-into-ram'
 K8S_JOB_IMPORT_QUERY_BATCHES = 'import-query-batches'
+K8S_JOB_SUBMIT_JOBS = 'submit-jobs'
 K8S_JOB_BLAST = 'blast'
 K8S_JOB_RESULTS_EXPORT = 'results-export'
 
@@ -267,7 +292,27 @@ K8S_JOB_RESULTS_EXPORT = 'results-export'
 K8S_MAX_JOBS_PER_DIR = 100
 
 K8S_UNINITIALIZED_CONTEXT = 'uninitialized-k8s-context'
-ELB_DFLT_K8S_JANITOR_SCHEDULE = "*/5 * * * *"
+
+# GKE status names
+GKE_CLUSTER_STATUS_PROVISIONING = 'PROVISIONING'
+GKE_CLUSTER_STATUS_RECONCILING = 'RECONCILING'
+GKE_CLUSTER_STATUS_RUNNING = 'RUNNING'
+GKE_CLUSTER_STATUS_RUNNING_WITH_ERROR = 'RUNNING_WITH_ERROR'
+GKE_CLUSTER_STATUS_STOPPING = 'STOPPING'
+GKE_CLUSTER_STATUS_ERROR = 'ERROR'
+
+# File names of the sentinel files which indicate status reported by janitor
+ELB_STATUS_SUCCESS = "SUCCESS.txt"
+ELB_STATUS_FAILURE = "FAILURE.txt"
+
+# https://kubernetes.io/docs/concepts/workloads/controllers/cron-jobs/#cron-schedule-syntax
+ELB_DFLT_JANITOR_SCHEDULE_GCP = "*/5 * * * *"
+# https://docs.aws.amazon.com/eventbridge/latest/userguide/eb-create-rule-schedule.html
+ELB_DFLT_JANITOR_SCHEDULE_AWS = "cron(*/5 * * * ? *)"
+
+ELB_AWS_JANITOR_LAMBDA_DEPLOYMENT_BUCKET = 'elb-camacho'
+ELB_AWS_JANITOR_LAMBDA_DEPLOYMENT_KEY = 'functions/'
+ELB_AWS_JANITOR_CFN_TEMPLATE = 'https://elb-camacho.s3.amazonaws.com/templates/elastic-blast-janitor-cf.yaml'
 
 # extension for files containing list of query files
 QUERY_LIST_EXT = '.query-list'

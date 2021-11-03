@@ -36,7 +36,7 @@ import json
 import os
 import io
 from dataclasses import dataclass, field
-from unittest.mock import MagicMock
+from unittest.mock import MagicMock, patch
 from botocore.exceptions import ClientError
 from elastic_blast.util import SafeExecError
 from elastic_blast import config
@@ -49,6 +49,62 @@ import pytest
 # name of bucket without write permissions, used for tests where bucket exits
 # but is not writable
 NOT_WRITABLE_BUCKET = 'not-writable-bucket'
+DB_METADATA_PROT = """{
+  "dbname": "swissprot",
+  "version": "1.1",
+  "dbtype": "Protein",
+  "description": "Non-redundant UniProtKB/SwissProt sequences",
+  "number-of-letters": 180911227,
+  "number-of-sequences": 477327,
+  "files": [
+    "gs://blast-db/2021-09-28-01-05-02/swissprot.ppi",
+    "gs://blast-db/2021-09-28-01-05-02/swissprot.pos",
+    "gs://blast-db/2021-09-28-01-05-02/swissprot.pog",
+    "gs://blast-db/2021-09-28-01-05-02/swissprot.phr",
+    "gs://blast-db/2021-09-28-01-05-02/swissprot.ppd",
+    "gs://blast-db/2021-09-28-01-05-02/swissprot.psq",
+    "gs://blast-db/2021-09-28-01-05-02/swissprot.pto",
+    "gs://blast-db/2021-09-28-01-05-02/swissprot.pin",
+    "gs://blast-db/2021-09-28-01-05-02/swissprot.pot",
+    "gs://blast-db/2021-09-28-01-05-02/swissprot.ptf",
+    "gs://blast-db/2021-09-28-01-05-02/swissprot.pdb"
+  ],
+  "last-updated": "2021-09-19T00:00:00",
+  "bytes-total": 353839003,
+  "bytes-to-cache": 185207299,
+  "number-of-volumes": 1
+}
+"""
+DB_METADATA_PROT_FILE_NAME = 'testdb-prot-metadata.json'
+
+DB_METADATA_NUCL = """{
+  "dbname": "testdb",
+  "version": "1.1",
+  "dbtype": "Nucleotide",
+  "description": "Non-redundant UniProtKB/SwissProt sequences",
+  "number-of-letters": 180911227,
+  "number-of-sequences": 477327,
+  "files": [
+    "gs://blast-db/2021-09-28-01-05-02/swissprot.ppi",
+    "gs://blast-db/2021-09-28-01-05-02/swissprot.pos",
+    "gs://blast-db/2021-09-28-01-05-02/swissprot.pog",
+    "gs://blast-db/2021-09-28-01-05-02/swissprot.phr",
+    "gs://blast-db/2021-09-28-01-05-02/swissprot.ppd",
+    "gs://blast-db/2021-09-28-01-05-02/swissprot.psq",
+    "gs://blast-db/2021-09-28-01-05-02/swissprot.pto",
+    "gs://blast-db/2021-09-28-01-05-02/swissprot.pin",
+    "gs://blast-db/2021-09-28-01-05-02/swissprot.pot",
+    "gs://blast-db/2021-09-28-01-05-02/swissprot.ptf",
+    "gs://blast-db/2021-09-28-01-05-02/swissprot.pdb"
+  ],
+  "last-updated": "2021-09-19T00:00:00",
+  "bytes-total": 353839003,
+  "bytes-to-cache": 185207299,
+  "number-of-volumes": 1
+}
+"""
+DB_METADATA_NUCL_FILE_NAME = 'testdb-nucl-metadata.json'
+
 
 class MockedCompletedProcess:
     """Fake subprocess.CompletedProcess class used for mocking return
@@ -108,17 +164,31 @@ def gke_mock(mocker):
     mock.cloud.storage['s3://test-results'] = ''
     mock.cloud.storage[f's3://{NOT_WRITABLE_BUCKET}'] = ''
 
+    # Mocked NCBI database metadata
+    mock.cloud.storage['gs://blast-db/latest-dir'] = '000'
+    mock.cloud.storage[f'gs://blast-db/000/{DB_METADATA_PROT_FILE_NAME}'] = DB_METADATA_PROT
+    mock.cloud.storage[f'gs://blast-db/000/{DB_METADATA_NUCL_FILE_NAME}'] = DB_METADATA_NUCL
+    mock.cloud.storage['s3://ncbi-blast-databases/latest-dir'] = '000'
+    mock.cloud.storage[f's3://ncbi-blast-databases/000/{DB_METADATA_PROT_FILE_NAME}'] = DB_METADATA_PROT
+    mock.cloud.storage[f's3://ncbi-blast-databases/000/{DB_METADATA_NUCL_FILE_NAME}'] = DB_METADATA_NUCL
+
+    # User database metadata
+    mock.cloud.storage[f'gs://test-bucket/{DB_METADATA_PROT_FILE_NAME}'] = DB_METADATA_PROT
+    mock.cloud.storage[f'gs://test-bucket/{DB_METADATA_NUCL_FILE_NAME}'] = DB_METADATA_NUCL
+    mock.cloud.storage[f's3://test-bucket/{DB_METADATA_PROT_FILE_NAME}'] = DB_METADATA_PROT
+    mock.cloud.storage[f's3://test-bucket/{DB_METADATA_NUCL_FILE_NAME}'] = DB_METADATA_NUCL
+
     # we need gcp.safe_exec instead of util.safe exec here, because
     # safe_exec is imported in gcp.py with 'from util import safe_exec'
     # and safe_exec in gcp is seen as local, python is funny this way
     mocker.patch('elastic_blast.gcp.safe_exec', side_effect=mock.mocked_safe_exec)
     mocker.patch('elastic_blast.kubernetes.safe_exec', side_effect=mock.mocked_safe_exec)
-    mocker.patch('elastic_blast.status.safe_exec', side_effect=mock.mocked_safe_exec)
     mocker.patch('elastic_blast.util.safe_exec', side_effect=mock.mocked_safe_exec)
     mocker.patch('elastic_blast.filehelper.safe_exec', side_effect=mock.mocked_safe_exec)
 #    mocker.patch('subprocess.Popen', new=MagicMock(return_value=MockedCompletedProcess()))
     mocker.patch('subprocess.Popen', side_effect=mock.mocked_popen)
     mocker.patch('boto3.resource', side_effect=mock.mocked_resource)
+    mocker.patch('boto3.client', side_effect=mock.mocked_client)
     mocker.patch('botocore.exceptions.ClientError.__init__', new=MagicMock(return_value=None))
 
     yield mock
@@ -143,7 +213,7 @@ def get_mocked_config() -> ElasticBlastConfig:
                              gcp_region = GCP_REGION,
                              gcp_zone = GCP_ZONE,
                              program = 'blastn',
-                             db = 'test-db',
+                             db = 'testdb',
                              queries = 'test-queries.fa',
                              results = 'gs://elasticblast-blastadm',
                              task = ElbCommand.SUBMIT)
@@ -296,7 +366,7 @@ def mocked_safe_exec(cmd: Union[List[str], str], cloud_state: CloudResources = N
         if cmd.endswith('latest-dir'):
             return MockedCompletedProcess(stdout='xxxx')
         elif cmd.endswith('blastdb-manifest.json'):
-            manifest = {'nr': {'size': 25}, 'nt': {'size': 25}, 'pdbnt': {'size': 25}}
+            manifest = {'nr': {'size': 25}, 'nt': {'size': 25}, 'pdbnt': {'size': 25}, 'testdb': {'size': 25}}
             return MockedCompletedProcess(stdout=json.dumps(manifest))
         else:
             return MockedCompletedProcess(stdout='',stderr='',returncode=0)
@@ -414,7 +484,15 @@ class GKEMock:
         elif resource == 'cloudformation':
             return MockedCloudformationResource()
         else:
-            raise NotImplementedError(f'boto3 mock for {resource} is not implemented')
+            raise NotImplementedError(f'boto3 mock for {resource} resource is not implemented')
+
+
+    def mocked_client(self, client, config=None):
+        """Mocked boto3.resource function"""
+        if client == 's3':
+            return MockedS3Client(self.cloud.storage)
+        else:
+            raise NotImplementedError(f'boto3 mock for {client} client is not implemented')
 
 
 @pytest.fixture
@@ -463,6 +541,41 @@ class MockedS3Resource:
         obj = MockedS3Object(bucket, key)
         obj.storage = self.storage
         return obj
+
+
+class MockedStream(str):
+    """A string stream class needed for mocked downloads from S3, used by
+    filehelper.open_for_read"""
+    def __init__(self, data):
+        """Initialize an object"""
+        self.data = data
+        self.cl = False
+
+    def close(self):
+        """Close stream"""
+        pass
+
+    def read(self, pos):
+        """Read from the stream"""
+        if not self.cl:
+            self.cl = True
+            return self.data.encode()
+        else:
+            return b''
+
+
+class MockedS3Client:
+    """Mocked boto3 S3 client object"""
+    def __init__(self, cloud_storage):
+        """Initialize object"""
+        self.storage = cloud_storage
+
+    def get_object(self, Bucket, Key):
+        """Get an S3 object"""
+        key = f's3://{Bucket}/{Key}'
+        if key not in self.storage:
+            raise
+        return {'Body': MockedStream(self.storage[key])}
 
 
 class MockedCloudformationStack:

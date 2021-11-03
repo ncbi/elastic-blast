@@ -32,8 +32,8 @@ def validTime(dt):
         return False
 
 
-def isNumber(n):
-    return type(n) == int or type(n) == float
+def isPositiveNumber(n):
+    return (type(n) == int or type(n) == float) and n > 0
 
 # GCP machine info
 GCP_MACHINES = {
@@ -71,38 +71,52 @@ def getMachineProperties(machineType):
 # it is supposed to be a function of one argument returning True
 # if the match is successful. If the type is type, it is tested
 # that concrete leaf (of the JSON checked) is of this type.
-machineType = os.getenv('ELB_MACHINE_TYPE', "n1-standard-32")
-ncpu, nram = getMachineProperties(machineType)
 sample = {
   "version": "1.0",
   "clusterInfo": {
-    "provider": "GCP",
-    "numMachines": int(os.getenv('ELB_NUM_NODES', '1')),
-    "numVCPUsPerMachine": ncpu,
-    "RamPerMachine": nram,
-    "machine-name": machineType,
-    "region": "us-east4",
-    "zone": "us-east4-b",
-    "storageType": "persistentDisk"
+    "provider": lambda x: x == "GCP" or x == "AWS",
   },
   "runtime": {
-    "wallClock": isNumber,
-    "blastdbSetup": {
-      "startTime": validTime,
-      "endTime": validTime
-    },
-    "blast": {
-      "startTime": validTime,
-      "endTime": validTime
-    }
   },
-  "blastData": {
-    "queryLength": lambda x: type(x) == int and x > 0,
-    "databaseLength": lambda x: type(x) == int and x > 0
-  },
-  "bases_per_second_per_cpu": isNumber,
   "exitCode": 0
 }
+#machineType = os.getenv('ELB_MACHINE_TYPE', "n1-highmem-32")
+#ncpu, nram = getMachineProperties(machineType)
+#sample = {
+#  "version": "1.0",
+#  "clusterInfo": {
+#    "provider": lambda x: x == "GCP" or x == "AWS",
+#    "numMachines": int(os.getenv('ELB_NUM_NODES', '1')),
+#    "numVCPUsPerMachine": ncpu,
+#    "RamPerMachine": nram,
+#    "machine-name": machineType,
+#    "region": "us-east4",
+#    "zone": "us-east4-b",
+#    "storageType": "persistentDisk"
+#  },
+#  "runtime": {
+#    "wallClock": isPositiveNumber,
+#    "blastdbSetup": {
+#      "num": isPositiveNumber,
+#      "totalTime": isPositiveNumber,
+#      "maxTime": isPositiveNumber,
+#      "minTime": isPositiveNumber
+#    },
+#    "blast": {
+#      "num": isPositiveNumber,
+#      "totalTime": isPositiveNumber,
+#      "maxTime": isPositiveNumber,
+#      "minTime": isPositiveNumber
+#    }
+#  },
+#  "blastData": {
+#    "queryLength": lambda x: type(x) == int and x > 0,
+#    "databaseNumSeq": lambda x: type(x) == int and x > 0,
+#    "databaseLength": lambda x: type(x) == int and x > 0
+#  },
+#  "lettersPerSecondPerCpu": isPositiveNumber,
+#  "exitCode": 0
+#}
 
 
 def dfsWalk(obj, visit, path=[]):

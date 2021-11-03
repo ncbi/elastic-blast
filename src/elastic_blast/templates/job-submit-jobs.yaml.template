@@ -1,0 +1,37 @@
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: submit-jobs
+  labels:
+    app: setup
+spec:
+  template:
+    metadata:
+      labels:
+        app: setup
+    spec:
+      volumes:
+      - name: workspace
+        emptyDir: {}
+      containers:
+      - name: ${K8S_JOB_SUBMIT_JOBS}
+        image: ${ELB_DOCKER_IMAGE}
+        imagePullPolicy: IfNotPresent
+        env:
+        - name: ELB_GCP_PROJECT
+          value: "${ELB_GCP_PROJECT}"
+        - name: ELB_GCP_ZONE
+          value: "${ELB_GCP_ZONE}"
+        - name: ELB_RESULTS
+          value: "${ELB_RESULTS}"
+        - name: ELB_CLUSTER_NAME
+          value: "${ELB_CLUSTER_NAME}"
+        - name: ELB_NUM_NODES
+          value: "${ELB_NUM_NODES}"
+        workingDir: /workspace
+        volumeMounts:
+        - name: workspace
+          mountPath: /workspace
+      restartPolicy: Never
+  backoffLimit: 4

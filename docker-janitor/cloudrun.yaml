@@ -3,8 +3,16 @@ steps:
   args: ['elastic-blast', '--version']
 - name: '${_IMG}'
   env:
-    - 'ELB_GCP_PROJECT=ncbi-sandbox-blast'
-    - 'ELB_GCP_REGION=us-east4'
-    - 'ELB_GCP_ZONE=us-east4-a'
-    - 'ELB_RESULTS=gs://elasticblast-test/'
-  #args: ['/usr/bin/elastic-blast-janitor.sh']
+    - 'ELB_GCP_PROJECT=${_ELB_GCP_PROJECT}'
+    - 'ELB_GCP_REGION=${_ELB_GCP_REGION}'
+    - 'ELB_GCP_ZONE=${_ELB_GCP_ZONE}'
+    - 'ELB_RESULTS=${_ELB_RESULTS}'
+    - 'ELB_CLUSTER_NAME=${_ELB_CLUSTER_NAME}'
+  args: ['/bin/bash', '-x', '/usr/bin/elastic-blast-janitor.sh']
+
+substitutions:
+  _ELB_GCP_PROJECT: 'ncbi-sandbox-blast'
+  _ELB_GCP_REGION: 'us-east4'
+  _ELB_GCP_ZONE: 'us-east4-a'
+  _ELB_RESULTS: 'gs://elasticblast-test'
+  _ELB_CLUSTER_NAME: 'elb-test-cluster'

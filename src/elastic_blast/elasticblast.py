@@ -25,10 +25,15 @@ Author: Victor Joukov (joukovv@ncbi.nlm.nih.gov)
 Created: Tue 03 Aug 2021 06:54:30 PM EDT
 """
 
-from typing import Any, List
+import logging
+import os
+from abc import ABCMeta, abstractmethod
+from typing import Any, List, Tuple, Dict
+
+from .constants import ELB_QUERY_BATCH_DIR
+from .filehelper import copy_to_bucket, remove_bucket_key, cleanup_temp_bucket_dirs
 from .elb_config import ElasticBlastConfig
 from .constants import ElbStatus
-from abc import ABCMeta, abstractmethod
 
 class ElasticBlast(metaclass=ABCMeta):
     """ Base class for core ElasticBLAST functionality. """
@@ -36,6 +41,10 @@ class ElasticBlast(metaclass=ABCMeta):
         self.cfg = cfg
         self.cleanup_stack = cleanup_stack if cleanup_stack else []
         self.dry_run = self.cfg.cluster.dry_run
+        # If we request no search for debugging purposes we can't engage
+        # cloud job submission
+        self.cloud_job_submission = 'ELB_DISABLE_JOB_SUBMISSION_ON_THE_CLOUD' not in os.environ and \
+            'ELB_NO_SEARCH' not in os.environ
 
     @abstractmethod
     def cloud_query_split(self, query_files: List[str]) -> None:
@@ -43,39 +52,47 @@ class ElasticBlast(metaclass=ABCMeta):
             Parameters:
                 query_files - list of files containing query sequence data to split
         """
-        self.query_files = query_files
 
     @abstractmethod
     def wait_for_cloud_query_split(self) -> None:
-        """ Wait for cloud query job comletion """
-        pass
+        """ Wait for cloud query split job completion """
 
     @abstractmethod
     def upload_query_length(self, query_length: int) -> None:
         """ Save query length in a metadata file in cloud storage """
-        pass
-
-    @abstractmethod
-    def check_job_number_limit(self, queries, query_length) -> None:
-        """ Check that number of jobs generated does not exceed platform maximum
-            If the platform-specific maximum is exceeded throws UserReportError(INPUT_ERROR) """
-        pass
 
     @abstractmethod
     def status(self) -> ElbStatus:
         """ Return the status of an ElasticBLAST search """
-        pass
 
     @abstractmethod
-    def delete(self) -> ElbStatus:
-        """ Delete all resources allocated for an ElasticBLAST search """
-        pass
-
-    @abstractmethod
-    def submit(self, query_batches: List[str], one_stage_cloud_query_split: bool) -> None:
-        """ Submit query batches to cluster, converts AWS exceptions to UserReportError
+    def submit(self, query_batches: List[str], query_length, one_stage_cloud_query_split: bool) -> None:
+        """ Submit query batches to cluster
             Parameters:
                 query_batches               - list of bucket names of queries to submit
+                query_length                - total query length
                 one_stage_cloud_query_split - do the query split in the cloud as a part
                                               of executing a regular job """
-        pass
+
+    @abstractmethod
+    def check_status(self, extended=False) -> Tuple[Dict[str, int], str]:
+        """ Check execution status
+            Parameters:
+                extended - do we need verbose information about jobs
+            Returns:
+                tuple of
+                    counts - job counts for all job states
+                    verbose_result - detailed info about jobs"""
+
+    @abstractmethod
+    def delete(self) -> None:
+        """ Delete cluster and associated resources and workfiles """
+
+    def upload_workfiles(self):
+        """ Upload workfiles - query batches, taxidslist etc to their
+            appropriate places in the results bucket """
+        self.cleanup_stack.append(lambda: logging.debug('Before copying split jobs to bucket'))
+        if not self.cloud_job_submission:
+            self.cleanup_stack.append(cleanup_temp_bucket_dirs)
+        copy_to_bucket(self.dry_run)
+        self.cleanup_stack.append(lambda: logging.debug('After copying split jobs to bucket'))

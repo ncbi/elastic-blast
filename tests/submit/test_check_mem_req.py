@@ -26,14 +26,31 @@ Author: Victor Joukov joukovv@ncbi.nlm.nih.gov
 """
 
 import pytest
+from unittest.mock import patch, MagicMock
 from elastic_blast.constants import ELB_DFLT_GCP_MACHINE_TYPE
 from tests.utils import MockedCompletedProcess
 import elastic_blast
 from elastic_blast.commands.submit import check_memory_requirements
 from elastic_blast.elb_config import ElasticBlastConfig
 from elastic_blast.constants import ElbCommand
+from elastic_blast.db_metadata import DbMetadata
+from tests.utils import gke_mock
 
-def test_check_memory_requirements(mocker):
+DB_METADATA = DbMetadata(version = '1',
+                         dbname = 'some-name',
+                         dbtype = 'Protein',
+                         description = 'A test database',
+                         number_of_letters = 25,
+                         number_of_sequences = 25,
+                         files = [],
+                         last_updated = 'some-date',
+                         bytes_total = 25,
+                         bytes_to_cache = 25,
+                         number_of_volumes = 1)
+
+
+@patch(target='elastic_blast.elb_config.get_db_metadata', new=MagicMock(return_value=DB_METADATA))
+def test_check_memory_requirements(gke_mock, mocker):
     def mock_safe_exec(cmd):
         if isinstance(cmd, list):
             cmd = ' '.join(cmd)
@@ -53,6 +70,6 @@ def test_check_memory_requirements(mocker):
 
     mocker.patch('elastic_blast.util.safe_exec', side_effect=mock_safe_exec)
     check_memory_requirements(cfg)
-    cfg.blast.db_mem_margin = 2.0
+    cfg.blast.db_mem_margin = 3.0
     with pytest.raises(RuntimeError):
         check_memory_requirements(cfg)

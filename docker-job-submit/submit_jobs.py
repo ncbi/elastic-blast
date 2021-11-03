@@ -1,4 +1,4 @@
-#!/usr/bin/env -S python3 -u
+#!/usr/bin/env python3
 #                           PUBLIC DOMAIN NOTICE
 #              National Center for Biotechnology Information
 #
@@ -34,6 +34,7 @@ from elastic_blast.aws import ElasticBlastAws
 from elastic_blast.elb_config import ElasticBlastConfig
 from elastic_blast.util import config_logging
 from elastic_blast.base import MemoryStr
+from elastic_blast import VERSION
 
 DESC = 'Helper script to submit ElasticBLAST jobs remotely'
 
@@ -43,6 +44,8 @@ def main():
     args = parser.parse_args()
 
     config_logging(args)
+    logging.info(f"ElasticBLAST submit_jobs.py {VERSION}")
+    logging.debug(f'AWS region: {args.region}')
 
     cfg = ElasticBlastConfig(aws_region = args.region,
                              program = args.program,
@@ -65,7 +68,7 @@ def main():
     logging.info(f'Bucket: {bucket}')
     qr = harvest_query_splitting_results(bucket)
     logging.debug(f'Submitting jobs for query batches: {" ".join(qr.query_batches)}')
-    eb.submit(qr.query_batches, False)
+    eb.client_submit(qr.query_batches, False)
 
 
 def create_arg_parser():

@@ -1,0 +1,12 @@
+steps:
+- name: '${_IMG}'
+  args: ['elastic-blast', '--version']
+- name: '${_IMG}'
+  env:
+    - 'ELB_RESULTS=${_ELB_RESULTS}'
+    - 'ELB_CLUSTER_NAME=${_ELB_CLUSTER_NAME}'
+  args: ['/usr/bin/submit_jobs.py', '--help']
+
+substitutions:
+  _ELB_RESULTS: 's3://elasticblast-test'
+  _ELB_CLUSTER_NAME: 'elb-test-cluster'

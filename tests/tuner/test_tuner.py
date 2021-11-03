@@ -25,90 +25,45 @@ Unit tests for tuner module
 
 import json
 import os
+import math
 from unittest.mock import MagicMock, patch
-from elastic_blast.tuner import get_db_data, MolType, DbData, SeqData, get_mt_mode
+from elastic_blast.tuner import MolType, DbData, SeqData, get_mt_mode
 from elastic_blast.tuner import MTMode, get_num_cpus, get_batch_length
 from elastic_blast.tuner import aws_get_mem_limit, gcp_get_mem_limit
 from elastic_blast.tuner import aws_get_machine_type, gcp_get_machine_type
+from elastic_blast.tuner import get_mem_limit
+from elastic_blast.tuner import MAX_NUM_THREADS_AWS, MAX_NUM_THREADS_GCP
 from elastic_blast.filehelper import open_for_read
 from elastic_blast.base import DBSource
-from elastic_blast.constants import ELB_BLASTDB_MEMORY_MARGIN
+from elastic_blast.constants import ELB_BLASTDB_MEMORY_MARGIN, SYSTEM_MEMORY_RESERVE
+from elastic_blast.constants import CSP, INPUT_ERROR, MEMORY_FOR_BLAST_HITS
 from elastic_blast.util import UserReportError, get_query_batch_size
 from elastic_blast.base import MemoryStr, InstanceProperties
+from elastic_blast.db_metadata import DbMetadata
+from elastic_blast.gcp_traits import get_machine_properties as gcp_get_machine_properties
+from elastic_blast.aws_traits import get_machine_properties as aws_get_machine_properties
 import pytest
 
 
 TEST_DATA_DIR = os.path.join(os.path.dirname(__file__), 'data')
 
 
-@pytest.fixture
-def mocked_db_metadata(mocker):
-    """A fixture that always opens a fake database metadata file"""
-    TEST_METADATA_FILE = f'{TEST_DATA_DIR}/nr-aws.json'
-    with open(f'{TEST_DATA_DIR}/latest-dir') as f_latest_dir, open(TEST_METADATA_FILE) as f_db_metadata:
-
-        def mocked_open_for_read(filename):
-            """Mocked open_for_read funtion that always opens the same local
-            database metadatafile and a fake latest-dir file"""
-            if filename.endswith('latest-dir'):
-                return f_latest_dir
-            else:
-                # check that metadata file name was constructed correctly
-                if not filename.startswith('s3://') and \
-                       not filename.startswith('gs://') and \
-                       not filename.startswith('https://'):
-                    raise RuntimeError('Incorrect URI for database metadata file')
-                if not filename.endswith('.json'):
-                    raise RuntimeError('No json extension for database metadata file')
-                return f_db_metadata
-
-        mocker.patch('elastic_blast.tuner.open_for_read', side_effect=mocked_open_for_read)
-        yield TEST_METADATA_FILE
+def test_db_data_from_db_metadata():
+    """Test creation of an DbData object"""
+    db_metadata = DbMetadata(version = '1',
+                             dbname = 'testdb',
+                             dbtype = 'Nucleotide',
+                             description = 'A test database',
+                             number_of_letters = 25,
+                             number_of_sequences = 5,
+                             files = [],
+                             last_updated = 'a date',
+                             bytes_total = 125,
+                             bytes_to_cache = 100,
+                             number_of_volumes = 1)
+    db_data = DbData.from_metadata(db_metadata)
 
 
-@pytest.fixture
-def mocked_db_metadata_not_found(mocker):
-    """A fixture that never finds any metadata file"""
-    TEST_METADATA_FILE = f'{TEST_DATA_DIR}/nr-aws.json'
-    with open(f'{TEST_DATA_DIR}/latest-dir') as f_latest_dir:
-
-        def mocked_open_for_read(filename):
-            """Mocked open_for_read funtion that never finds any metadata file"""
-            if filename.endswith('latest-dir'):
-                return f_latest_dir
-            else:
-                raise RuntimeError(f'File {filename} not found')
-
-        mocker.patch('elastic_blast.tuner.open_for_read', side_effect=mocked_open_for_read)
-        yield
-
-
-def test_get_db_data(mocked_db_metadata):
-    """Test getting blast database memory requirements"""
-    db = get_db_data('nr', MolType.PROTEIN, DBSource.AWS)
-    with open(mocked_db_metadata) as f:
-        db_metadata = json.load(f)
-    assert db.length == int(db_metadata['number-of-letters'])
-    assert db.moltype == MolType(db_metadata['dbtype'].lower()[:4])
-
-
-def test_get_db_data_user_db(mocked_db_metadata):
-    """Test getting blast database memory requirements"""
-    db = get_db_data('s3://some-bucket/userdb', MolType.PROTEIN, DBSource.AWS)
-    with open(mocked_db_metadata) as f:
-        db_metadata = json.load(f)
-    assert db.length == int(db_metadata['number-of-letters'])
-    assert db.moltype == MolType(db_metadata['dbtype'].lower()[:4])
-
-
-def test_get_db_data_missing_db(mocked_db_metadata_not_found):
-    """Test get_blastdb_mem_requirements with a non-exstient database"""
-    with pytest.raises(UserReportError):
-        get_db_data('s3://some-bucket/non-existent-db', MolType.NUCLEOTIDE, DBSource.AWS)
-
-    with pytest.raises(UserReportError):
-        get_db_data('this-db-does-not-exist', MolType.PROTEIN, DBSource.GCP)
-        
 def test_get_mt_mode():
     """Test computing BLAST search MT mode"""
     db = DbData(length = 10000000, moltype = MolType.PROTEIN, bytes_to_cache_gb = 1)
@@ -143,8 +98,12 @@ def test_MTMode():
 def test_get_num_cpus():
     """Test computing number of cpus for a BLAST search"""
     query = SeqData(length = 85000, moltype = MolType.PROTEIN)
-    assert get_num_cpus(program = 'blastp', mt_mode = MTMode.ZERO, query = query) == 16
-    assert get_num_cpus(program = 'blastx', mt_mode = MTMode.ONE, query = query) == 3
+    assert get_num_cpus(cloud_provider = CSP.AWS, program = 'blastp', mt_mode = MTMode.ZERO, query = query) == MAX_NUM_THREADS_AWS
+    assert get_num_cpus(cloud_provider = CSP.GCP, program = 'blastp', mt_mode = MTMode.ZERO, query = query) == MAX_NUM_THREADS_GCP
+    assert get_num_cpus(cloud_provider = CSP.AWS, program = 'blastx', mt_mode = MTMode.ONE, query = query) == 9
+    query = SeqData(length = 50000000, moltype = MolType.NUCLEOTIDE)
+    assert get_num_cpus(cloud_provider = CSP.AWS, program = 'tblastn', mt_mode = MTMode.ONE, query = query) == MAX_NUM_THREADS_AWS
+    assert get_num_cpus(cloud_provider = CSP.GCP, program = 'tblastn', mt_mode = MTMode.ONE, query = query) == MAX_NUM_THREADS_GCP
 
 
 def test_get_batch_length():
@@ -164,29 +123,72 @@ def test_aws_get_mem_limit():
     NUM_CPUS=2
     db = DbData(length=20000, moltype=MolType.PROTEIN, bytes_to_cache_gb=60)
 
-    # when db_factor == 0.0 and with_optimal is False, memory is divided
-    # equally between all jobs running on an instance type
-    assert aws_get_mem_limit(num_cpus=NUM_CPUS, machine_type='some-instance-type', db=db, db_factor=0.0).asGB() == 7.9
+    # in the simplest invocation memory is divided equally between all jobs
+    # running on an instance type
+    assert aws_get_mem_limit(num_cpus=NUM_CPUS, machine_type='some-instance-type') == 7.8
 
-    # when db_factor > 0.0 and with_optimal is False,
-    # db.bytes_to_cache * db_factor is returned
+    # when db_factor > 0.0 db.bytes_to_cache * db_factor is returned
     DB_FACTOR = 1.2
-    assert abs(aws_get_mem_limit(num_cpus=NUM_CPUS, machine_type='some-instance-type', db=db, db_factor=DB_FACTOR).asGB() - db.bytes_to_cache_gb * DB_FACTOR) < 1
+    assert abs(aws_get_mem_limit(num_cpus=NUM_CPUS, machine_type='some-instance-type', db=db, db_factor=DB_FACTOR) - db.bytes_to_cache_gb * DB_FACTOR) < 1
 
-    # when with_optimal is True 60G is returned if db.bytes_to_cache >= 60G,
-    # otherwise db.bytes_to_cache_gb + 2G
+    # db must be provided, if db_factor > 0.0
+    with pytest.raises(ValueError):
+        aws_get_mem_limit(num_cpus=NUM_CPUS, machine_type='some-instance-type', db_factor=DB_FACTOR)
+
+    # when machine_type == 'optimal' 60G is returned if db.bytes_to_cache >= 60G,
+    # otherwise db.bytes_to_cache_gb + MEMORY_FOR_BLAST_HITS
     db.bytes_to_cache_gb = 60
-    assert aws_get_mem_limit(num_cpus=NUM_CPUS, machine_type='optimal', db=db, db_factor=0.0) == MemoryStr('60G')
+    assert aws_get_mem_limit(num_cpus=NUM_CPUS, machine_type='optimal', db=db, db_factor=0.0) == 60
 
     db.bytes_to_cache_gb = 20
-    assert aws_get_mem_limit(num_cpus=NUM_CPUS, machine_type='optimal', db=db, db_factor=0.0) == MemoryStr('22G')
+    assert aws_get_mem_limit(num_cpus=NUM_CPUS, machine_type='optimal', db=db, db_factor=0.0) == db.bytes_to_cache_gb + MEMORY_FOR_BLAST_HITS
+
+    # db must be provided when machine_type == 'optimal'
+    with pytest.raises(ValueError):
+        aws_get_mem_limit(num_cpus=NUM_CPUS, machine_type='optimal')
 
 
 def test_gcp_get_mem_limit():
     """Test getting search job memory limit for GCP"""
-    db = DbData(length=20000, moltype=MolType.PROTEIN, bytes_to_cache_gb=60)
-    DB_FACTOR = 1.2
-    assert abs(gcp_get_mem_limit(db, DB_FACTOR).asGB() - db.bytes_to_cache_gb * DB_FACTOR) < 1
+    MACHINE_TYPE = 'n1-standard-32'
+    props = gcp_get_machine_properties(MACHINE_TYPE)
+    assert gcp_get_mem_limit(MACHINE_TYPE) == props.memory - SYSTEM_MEMORY_RESERVE
+
+
+@patch(target='elastic_blast.tuner.aws_get_machine_properties', new=MagicMock(return_value=InstanceProperties(32, 128)))
+@patch(target=__name__ + '.aws_get_machine_properties', new=MagicMock(return_value=InstanceProperties(32, 128)))
+def test_get_mem_limit():
+    """Test get_mem_limit wrapper"""
+    NUM_CPUS = 4
+
+    # for GCP
+    machine_type = 'n1-standard-32'
+    props = gcp_get_machine_properties(machine_type)
+    assert get_mem_limit(CSP.GCP, machine_type, NUM_CPUS).asGB() == props.memory - SYSTEM_MEMORY_RESERVE
+
+    #for AWS
+    machine_type = 'm5.x8large'
+    props = aws_get_machine_properties(machine_type)
+    assert abs(get_mem_limit(CSP.AWS, machine_type, NUM_CPUS).asGB() - \
+        (props.memory - SYSTEM_MEMORY_RESERVE) / math.floor(props.ncpus / NUM_CPUS)) < 0.1
+
+
+def test_get_mem_limit_instance_too_small():
+    """Test that getting memory limit for an instance that has too little RAM
+    for elastic-blast results in an exception"""
+    # for GCP
+    with pytest.raises(UserReportError) as err:
+        get_mem_limit(CSP.GCP, 'n1-highcpu-2', 1)
+    assert err.value.returncode == INPUT_ERROR
+    assert 'does not have enough memory' in err.value.message
+
+    # for AWS
+    with patch(target='elastic_blast.tuner.aws_get_machine_properties', new=MagicMock(return_value=InstanceProperties(1, 0.5))):
+        with pytest.raises(UserReportError) as err:
+            get_mem_limit(CSP.AWS, 'some-instance-with-small-memory', 1)
+    assert err.value.returncode == INPUT_ERROR
+    assert 'does not have enough memory' in err.value.message
+
 
 class MockedEc2Client:
     """Mocked boto3 ec2 client"""

@@ -32,10 +32,10 @@ from elastic_blast import VERSION
 from elastic_blast.config import configure
 from elastic_blast.util import ElbSupportedPrograms, UserReportError
 from elastic_blast.util import get_query_batch_size, config_logging
-from elastic_blast.tuner import get_db_data, SeqData, MTMode, MolType
+from elastic_blast.tuner import DbData, SeqData, MTMode, MolType
 from elastic_blast.tuner import get_mt_mode, get_num_cpus, get_batch_length
-from elastic_blast.tuner import aws_get_machine_type, aws_get_mem_limit
-from elastic_blast.tuner import gcp_get_machine_type, gcp_get_mem_limit
+from elastic_blast.tuner import aws_get_machine_type, get_mem_limit
+from elastic_blast.tuner import gcp_get_machine_type
 from elastic_blast.base import DBSource, PositiveInteger, MemoryStr
 from elastic_blast.constants import CFG_CLOUD_PROVIDER, CFG_CP_AWS_REGION, CFG_CP_GCP_REGION
 from elastic_blast.constants import ELB_DFLT_GCP_REGION, ELB_DFLT_AWS_REGION
@@ -44,7 +44,8 @@ from elastic_blast.constants import CFG_BLAST_DB, CFG_BLAST_PROGRAM, CFG_BLAST_B
 from elastic_blast.constants import CFG_BLAST_OPTIONS, CFG_CLUSTER_NUM_CPUS
 from elastic_blast.constants import CFG_CLUSTER_MACHINE_TYPE
 from elastic_blast.constants import CFG_BLAST_MEM_LIMIT
-from elastic_blast.constants import MolType, INPUT_ERROR, CSP
+from elastic_blast.constants import MolType, INPUT_ERROR, CSP, BLASTDB_ERROR
+from elastic_blast.db_metadata import get_db_metadata
 
 
 DESC = r"""This application's purpose is to provide suggestions to run help run
@@ -58,7 +59,6 @@ def main():
         parser = create_arg_parser()
         args = parser.parse_args()
         config_logging(args)
-        cfg = configure(args)
 
         options = '' if args.options is None else args.options
         SECTIONS = [ CFG_CLOUD_PROVIDER, CFG_BLAST, CFG_CLUSTER ]
@@ -74,8 +74,13 @@ def main():
             db_mem_limit_factor = args.db_mem_limit_factor
 
         if args.db is not None:
-            db_data = get_db_data(args.db, sp.get_db_mol_type(args.program),
-                                  db_source)
+            try:
+                db_metadata = get_db_metadata(args.db, sp.get_db_mol_type(args.program),
+                                              db_source)
+            except FileNotFoundError:
+                raise UserReportError(returncode=BLASTDB_ERROR,
+                                      message=f'Metadata for BLAST database "{args.db}" was not found or database molecular type is not the same as required by BLAST program: "{args.program}"')
+            db_data = DbData.from_metadata(db_metadata)
             conf[CFG_BLAST][CFG_BLAST_DB] = args.db
 
         if not args.region:
@@ -94,7 +99,9 @@ def main():
         mt_mode = get_mt_mode(args.program, args.options, db_data, query_data)
         options += f' {mt_mode}'
 
-        num_cpus = get_num_cpus(program = args.program, mt_mode = mt_mode,
+        num_cpus = get_num_cpus(cloud_provider = cloud_provider,
+                                program = args.program,
+                                mt_mode = mt_mode,
                                 query = query_data)
         conf[CFG_BLAST][CFG_BLAST_PROGRAM] = args.program
         conf[CFG_BLAST][CFG_BLAST_BATCH_LEN] = str(get_batch_length(program = args.program,
@@ -126,16 +133,13 @@ def main():
 
         conf[CFG_CLUSTER][CFG_CLUSTER_MACHINE_TYPE] = machine_type
 
-        if cloud_provider == CSP.AWS:
-            mem_limit = aws_get_mem_limit(num_cpus = num_cpus,
-                                          machine_type = machine_type,
-                                          db = db_data,
-                                          db_factor = db_mem_limit_factor)
-        else:
-            # Currently one job per instance is assumed in GCP
-            mem_limit = gcp_get_mem_limit(db = db_data,
-                                          db_factor = db_mem_limit_factor)
-        conf[CFG_BLAST][CFG_BLAST_MEM_LIMIT] = mem_limit
+        conf[CFG_BLAST][CFG_BLAST_MEM_LIMIT] = get_mem_limit(
+                                                cloud_provider = cloud_provider,
+                                                num_cpus = num_cpus,
+                                                machine_type = machine_type,
+                                                db = db_data,
+                                                db_factor = db_mem_limit_factor)
+
 
         for section in SECTIONS:
             print(f'[{section}]', file=args.out)

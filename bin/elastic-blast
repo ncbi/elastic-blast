@@ -44,7 +44,7 @@ from elastic_blast.config import configure
 from elastic_blast.elb_config import ElasticBlastConfig
 from elastic_blast.constants import ElbCommand
 from elastic_blast.constants import ELB_DFLT_LOGLEVEL, ELB_DFLT_LOGFILE
-from elastic_blast.filehelper import open_for_write
+from elastic_blast.constants import CFG_CLOUD_PROVIDER, CFG_CP_GCP_PROJECT
 
 
 DESC = r"""This application facilitates running BLAST on large amounts of query sequence data
@@ -72,10 +72,11 @@ def main():
         config_logging(args)
         cfg = configure(args)
         logging.info(f"ElasticBLAST {args.subcommand} {VERSION}")
+        if CFG_CP_GCP_PROJECT in cfg[CFG_CLOUD_PROVIDER]:
+            check_prerequisites()
         task = ElbCommand(args.subcommand.lower())
         cfg = ElasticBlastConfig(cfg, args.dry_run, task=task)
         logging.debug(pformat(cfg.asdict()))
-        check_prerequisites(cfg)
         #TODO: use cfg only when args.wait, args.sync, and args.run_label are replicated in cfg
         return args.func(args, cfg, clean_up_stack)
     except (SafeExecError, UserReportError) as e:

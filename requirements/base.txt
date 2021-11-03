@@ -5,4 +5,5 @@ pex
 boto3
 awslimitchecker
 tenacity
+dataclasses_json
 types-pkg-resources

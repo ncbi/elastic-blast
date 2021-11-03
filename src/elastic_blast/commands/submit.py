@@ -30,20 +30,18 @@ import math
 from timeit import default_timer as timer
 from typing import List, Tuple
 from pprint import pformat
-from elastic_blast.elasticblast import ElasticBlast
+from elastic_blast import elasticblast
+from elastic_blast.elasticblast_factory import ElasticBlastFactory
 
 from elastic_blast.resources.quotas.quota_check import check_resource_quotas
-from elastic_blast.aws import ElasticBlastAws
 from elastic_blast.aws import check_cluster as aws_check_cluster
-from elastic_blast.filehelper import open_for_read, open_for_read_iter, copy_to_bucket, open_for_write_immediate
+from elastic_blast.filehelper import open_for_read, open_for_read_iter, open_for_write_immediate
 from elastic_blast.filehelper import check_for_read, check_dir_for_write, cleanup_temp_bucket_dirs
 from elastic_blast.filehelper import get_length, harvest_query_splitting_results
 from elastic_blast.object_storage_utils import write_to_s3
 from elastic_blast.split import FASTAReader
-from elastic_blast.gcp import ElasticBlastGcp
 from elastic_blast.gcp import enable_gcp_api
 from elastic_blast.gcp import check_cluster as gcp_check_cluster
-from elastic_blast.gcp import remove_split_query
 from elastic_blast.gcp_traits import get_machine_properties
 from elastic_blast.util import get_blastdb_size, UserReportError
 from elastic_blast.constants import ELB_AWS_JOB_IDS, ELB_METADATA_DIR, ELB_STATE_DISK_ID_FILE, QuerySplitMode
@@ -54,16 +52,6 @@ from elastic_blast.constants import ELB_S3_PREFIX, ELB_GCS_PREFIX
 from elastic_blast.taxonomy import setup_taxid_filtering
 from elastic_blast.config import validate_cloud_storage_object_uri
 from elastic_blast.elb_config import ElasticBlastConfig
-
-
-def ElasticBlastFactory(cfg: ElasticBlastConfig, create: bool, cleanup_stack):
-    if cfg.cloud_provider.cloud == CSP.AWS:
-        elastic_blast: ElasticBlast = ElasticBlastAws(cfg, create, cleanup_stack)
-    elif cfg.cloud_provider.cloud == CSP.GCP:
-        elastic_blast = ElasticBlastGcp(cfg, create, cleanup_stack)
-    else:
-        raise NotImplementedError(f'Provider {cfg.cloud_provider.cloud} is not supported yet')
-    return elastic_blast
 
 
 def get_query_split_mode(cfg: ElasticBlastConfig, query_files):
@@ -181,28 +169,22 @@ def submit(args, cfg, clean_up_stack):
 
     elastic_blast = ElasticBlastFactory(cfg, True, clean_up_stack)
     # check_memory_requirements(cfg)  # FIXME: EB-281, EB-313
-    upload_split_query_to_bucket(cfg, clean_up_stack, dry_run)
+    elastic_blast.upload_workfiles()
 
     # query splitting
-    if query_split_mode == QuerySplitMode.CLOUD_ONE_STAGE or \
-        query_split_mode == QuerySplitMode.CLIENT:
+    if query_split_mode in (QuerySplitMode.CLOUD_ONE_STAGE, QuerySplitMode.CLIENT):
         elastic_blast.upload_query_length(query_length)
     elif query_split_mode == QuerySplitMode.CLOUD_TWO_STAGE:
         elastic_blast.cloud_query_split(query_files)
         if 'ELB_NO_SEARCH' in os.environ: return 0
-        if cfg.cloud_provider.cloud != CSP.AWS or 'ELB_DISABLE_JOB_SUBMISSION_ON_THE_CLOUD' in os.environ:
+        if not elastic_blast.cloud_job_submission:
             elastic_blast.wait_for_cloud_query_split()
             qs_res = harvest_query_splitting_results(cfg.cluster.results, dry_run)
             queries = qs_res.query_batches
             query_length = qs_res.query_length
 
     # job submission
-    if cfg.cloud_provider.cloud == CSP.AWS and \
-        not 'ELB_DISABLE_JOB_SUBMISSION_ON_THE_CLOUD' in os.environ:
-        elastic_blast.cloud_submit()
-    else:
-        elastic_blast.check_job_number_limit(queries, query_length)
-        elastic_blast.submit(queries, query_split_mode == QuerySplitMode.CLOUD_ONE_STAGE)
+    elastic_blast.submit(queries, query_length, query_split_mode == QuerySplitMode.CLOUD_ONE_STAGE)
     return 0
 
 
@@ -256,14 +238,6 @@ def check_submit_data(query_files: List[str], cfg: ElasticBlastConfig) -> None:
         raise UserReportError(PERMISSIONS_ERROR, f'Cannot write into bucket {bucket}')
 
 
-def upload_split_query_to_bucket(cfg: ElasticBlastConfig, clean_up_stack, dry_run):
-    """ Upload split query to bucket """
-    clean_up_stack.append(lambda: logging.debug('Before copying split jobs to bucket'))
-    clean_up_stack.append(lambda: remove_split_query(cfg))
-    copy_to_bucket(dry_run)
-    clean_up_stack.append(lambda: logging.debug('After copying split jobs to bucket'))
-
-
 def split_query(query_files: List[str], cfg: ElasticBlastConfig) -> Tuple[List[str], int]:
     """ Split query and provide callback for clean up of the intermediate split queries
         Parameters:
@@ -273,6 +247,8 @@ def split_query(query_files: List[str], cfg: ElasticBlastConfig) -> Tuple[List[s
     """
     dry_run = cfg.cluster.dry_run
     logging.info('Splitting queries into batches')
+    num_concurrent_blast_jobs = cfg.get_max_number_of_concurrent_blast_jobs()
+    logging.debug(f'Maximum number of concurrent BLAST jobs: {num_concurrent_blast_jobs}')
     batch_len = cfg.blast.batch_len
     out_path = os.path.join(cfg.cluster.results, ELB_QUERY_BATCH_DIR)
     start = timer()
@@ -284,6 +260,13 @@ def split_query(query_files: List[str], cfg: ElasticBlastConfig) -> Tuple[List[s
         reader = FASTAReader(open_for_read_iter(query_files), batch_len, out_path)
         query_length, queries = reader.read_and_cut()
         logging.info(f'{len(queries)} batches, {query_length} base/residue total')
+        if len(queries) < num_concurrent_blast_jobs:
+            adjusted_batch_len = int(query_length/num_concurrent_blast_jobs)
+            msg = f'The provided elastic-blast configuration is sub-optimal as the query was split into {len(queries)} batch(es) and elastic-blast can run up to {num_concurrent_blast_jobs} concurrent BLAST jobs. elastic-blast changed the batch-len parameter to {adjusted_batch_len} to maximize resource utilization and improve performance.'
+            logging.info(msg)
+            reader = FASTAReader(open_for_read_iter(query_files), adjusted_batch_len, out_path)
+            query_length, queries = reader.read_and_cut()
+            logging.info(f'Re-computed {len(queries)} batches, {query_length} base/residue total')
     end = timer()
     logging.debug(f'RUNTIME split-queries {end-start} seconds')
     return (queries, query_length)

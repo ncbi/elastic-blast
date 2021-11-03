@@ -34,21 +34,20 @@ import io
 import re
 import logging
 import sys
-from typing import List, NamedTuple, Any
+from typing import List
 from tempfile import TemporaryDirectory, NamedTemporaryFile
+from unittest import mock
 from unittest.mock import patch, MagicMock
 import contextlib
-import argparse
 from pathlib import Path
 import shlex
 from botocore.exceptions import ClientError
 from elastic_blast import constants
-from elastic_blast.util import safe_exec, UserReportError, config_logging
+from elastic_blast.util import safe_exec, ElbSupportedPrograms
 from elastic_blast.base import InstanceProperties, QuerySplittingResults
 from tests.utils import gke_mock, aws_credentials, NOT_WRITABLE_BUCKET
-from tests.utils import MockedCompletedProcess
 # TODO: refactor bin/elastic-blast to a sub-module inside the elastic_blast module
-from .elastic_blast_app import main, create_arg_parser
+from .elastic_blast_app import main
 
 import pytest
 
@@ -118,9 +117,10 @@ def app_mocks(caplog, aws_credentials, gke_mock, mocker):
     mocker.patch('tests.app.elastic_blast_app.clean_up', new=MagicMock(return_value=[]))
     mocker.patch('elastic_blast.commands.submit.check_resource_quotas', new=MagicMock(return_value=None))
     mocker.patch('elastic_blast.commands.submit.write_to_s3', new=MagicMock(return_value=None))
-    mocker.patch('elastic_blast.commands.submit.copy_to_bucket', new=MagicMock(return_value=None))
+    mocker.patch('elastic_blast.elasticblast.copy_to_bucket', new=MagicMock(return_value=None))
     mocker.patch(target='elastic_blast.elb_config.aws_get_machine_properties', new=MagicMock(return_value=InstanceProperties(4, 32)))
-    mocker.patch('elastic_blast.commands.submit.ElasticBlastAws', new=MagicMock(return_value=MagicMock()))
+    mocker.patch('elastic_blast.elasticblast_factory.ElasticBlastAws', new=MagicMock(return_value=MagicMock()))
+    mocker.patch(target='elastic_blast.tuner.aws_get_machine_properties', new=MagicMock(return_value=InstanceProperties(4, 32)))
     mocker.patch('elastic_blast.commands.submit.harvest_query_splitting_results', new=MagicMock(return_value=QuerySplittingResults(query_length=5, query_batches=['batch_0.fa'])))
 
     yield SetupObjects(caplog = caplog, gke_mock = gke_mock)
@@ -224,7 +224,7 @@ def client_query_split():
     else:
         del os.environ[ELB_USE_CLIENT_SPLIT]
 
-
+@mock.patch.dict(os.environ, {'ELB_DISABLE_JOB_SUBMISSION_ON_THE_CLOUD': '1'})
 def test_too_many_k8s_jobs_client_split(app_mocks, client_query_split):
     """Test that providing a configuration that generates k8s jobs that exceed the limit produces 
     a sensible error message and exit code.
@@ -401,7 +401,7 @@ def test_non_existent_option(app_mocks):
 
 
 def test_wrong_input_query(app_mocks):
-    cmd = f'elastic-blast submit --query invalid-file --db nt --cfg {os.path.join(TEST_DATA_DIR, "good_conf.ini")}'
+    cmd = f'elastic-blast submit --query invalid-file --db testdb --cfg {os.path.join(TEST_DATA_DIR, "good_conf.ini")}'
     with patch.object(sys, 'argv', shlex.split(cmd)):
         with contextlib.redirect_stderr(io.StringIO()) as stderr:
             returncode = main()
@@ -424,7 +424,7 @@ gcp-zone = us-east4-b
 program = blastn
 results = gs://{NOT_WRITABLE_BUCKET}
 queries = gs://test-bucket/test-query.fa
-db = nt
+db = testdb
 """
 
     with NamedTemporaryFile() as f:
@@ -432,7 +432,7 @@ db = nt
         f.flush()
         f.seek(0)
 
-        cmd = f'elastic-blast submit --query {os.path.join(TEST_DATA_DIR, "query.fa")} --db nt --cfg {f.name}'
+        cmd = f'elastic-blast submit --query {os.path.join(TEST_DATA_DIR, "query.fa")} --db testdb --cfg {f.name}'
         with patch.object(sys, 'argv', shlex.split(cmd)):
             with contextlib.redirect_stderr(io.StringIO()) as stderr:
                 returncode = main()
@@ -446,7 +446,7 @@ db = nt
 
 def test_no_results_bucket(app_mocks):
     """Test that non-existent results bucket is properly reported"""
-    cmd = f'elastic-blast submit --query {os.path.join(TEST_DATA_DIR, "query.fa")} --db nt --cfg {os.path.join(TEST_DATA_DIR, "bad_bucket_conf.ini")}'
+    cmd = f'elastic-blast submit --query {os.path.join(TEST_DATA_DIR, "query.fa")} --db testdb --cfg {os.path.join(TEST_DATA_DIR, "bad_bucket_conf.ini")}'
     with patch.object(sys, 'argv', shlex.split(cmd)):
         with contextlib.redirect_stderr(io.StringIO()) as stderr:
             returncode = main()
@@ -579,24 +579,42 @@ def test_dependency_error():
 # FIXME: set PATH in a fixture, make sure that real gcloud is never called
 def test_cluster_error():
     p = safe_exec('which gcloud')
-    gcloud_exepath = p.stdout.decode()
+    gcloud_exepath = p.stdout.decode().strip()
     p = safe_exec('which gsutil')
-    gsutil_exepath = p.stdout.decode()
+    gsutil_exepath = p.stdout.decode().strip()
     spy_file = os.path.join(os.getcwd(), 'spy_file.txt')
 
     gcloud = f"""\
-#!/bin/sh
+#!/bin/bash
+echo "gcloud $@" >>{spy_file}
 if [ "${1} ${2} ${3}" == "container clusters list" ]; then
 echo STOPPING
 else
-echo `{gcloud_exepath} $@`
+TMP=`mktemp`
+res=`{gcloud_exepath} $@` > $TMP
+exit_code=$?
+cat $TMP >>{spy_file}
+echo "Exit code $exit_code" >>{spy_file} 
+cat $TMP
+exit $exit_code
 fi"""
     gsutil = f"""\
-#!/bin/sh
+#!/bin/bash
+echo "gsutil $@" >>{spy_file}
 if [ "${1} ${2}" == "-q stat" ]; then
-exit 1
+   if [[ ${3} == *"nt-nucl-metadata.json" ]] ; then
+   exit 0
 else
-echo `{gsutil_exepath} $@`
+exit 1
+fi
+else
+TMP=`mktemp`
+{gsutil_exepath} $@ > $TMP
+exit_code=$?
+cat $TMP >>{spy_file}
+echo "Exit code $exit_code" >>{spy_file} 
+cat $TMP
+exit $exit_code
 fi"""
     env = dict(os.environ)
     with TemporaryDirectory() as d:
@@ -630,9 +648,9 @@ fi"""
             '--cfg', fn_config,
             '--logfile', 'stderr'],
             env=env, stderr=subprocess.PIPE)
-        assert p.returncode == constants.CLUSTER_ERROR
         msg = p.stderr.decode()
         print(msg)
+        assert p.returncode == constants.CLUSTER_ERROR
         assert 'Traceback' not in msg
         assert 'Previous instance of cluster' in msg
         assert 'is still STOPPING' in msg
@@ -643,9 +661,9 @@ fi"""
             '--cfg', fn_config,
             '--logfile', 'stderr'],
             env=env, stderr=subprocess.PIPE)
-        assert p.returncode == constants.CLUSTER_ERROR
         msg = p.stderr.decode()
         print(msg)
+        assert p.returncode == constants.CLUSTER_ERROR
         assert 'Traceback' not in msg
     run_elastic_blast(['delete', '--cfg', fn_config])
 
@@ -675,7 +693,7 @@ machine-type = m5.large
 
 [blast]
 program = blastp
-db = some-db
+db = testdb
 queries = some-queries
 mem-limit = 900G
 results = s3://some-bucket
@@ -708,7 +726,7 @@ machine-type = m5.large
 [blast]
 num-cpus = 8
 program = blastp
-db = some-db
+db = testdb
 queries = some-queries
 mem-limit = 900G
 results = s3://some-bucket
@@ -725,3 +743,189 @@ results = s3://some-bucket
                 returncode = main()
             assert returncode == constants.INPUT_ERROR
             assert re.search(r'Unrecognized configuration parameter [\w"-]* in section [\w"-]*', stderr.getvalue())
+
+
+DB_METADATA = """{
+  "dbname": "swissprot",
+  "version": "1.1",
+  "dbtype": "Protein",
+  "description": "Non-redundant UniProtKB/SwissProt sequences",
+  "number-of-letters": 180911227,
+  "number-of-sequences": 477327,
+  "files": [
+    "gs://blast-db/2021-09-28-01-05-02/swissprot.ppi",
+    "gs://blast-db/2021-09-28-01-05-02/swissprot.pos",
+    "gs://blast-db/2021-09-28-01-05-02/swissprot.pog",
+    "gs://blast-db/2021-09-28-01-05-02/swissprot.phr",
+    "gs://blast-db/2021-09-28-01-05-02/swissprot.ppd",
+    "gs://blast-db/2021-09-28-01-05-02/swissprot.psq",
+    "gs://blast-db/2021-09-28-01-05-02/swissprot.pto",
+    "gs://blast-db/2021-09-28-01-05-02/swissprot.pin",
+    "gs://blast-db/2021-09-28-01-05-02/swissprot.pot",
+    "gs://blast-db/2021-09-28-01-05-02/swissprot.ptf",
+    "gs://blast-db/2021-09-28-01-05-02/swissprot.pdb"
+  ],
+  "last-updated": "2021-09-19T00:00:00",
+  "bytes-total": 353839003,
+  "bytes-to-cache": 999185207299,
+  "number-of-volumes": 1
+}
+"""
+
+def test_database_too_large(app_mocks):
+    """Test that a database too large to fit in an instance RAM will be reported"""
+    DB = 'gs://bucket/testdb'
+    app_mocks.gke_mock.cloud.storage[f'{DB}-prot-metadata.json'] = DB_METADATA
+
+    conf = f"""[cloud-provider]
+aws-region = us-east-1
+
+[cluster]
+machine-type = m5.large
+
+[blast]
+program = blastp
+db = {DB}
+queries = some-queries
+results = s3://some-bucket
+"""
+
+    with NamedTemporaryFile() as f:
+        f.write(conf.encode())
+        f.flush()
+        f.seek(0)
+
+        cmd = f'elastic-blast submit --cfg {f.name}'
+        with patch.object(sys, 'argv', shlex.split(cmd)):
+            with contextlib.redirect_stderr(io.StringIO()) as stderr:
+                returncode = main()
+            assert returncode == constants.INPUT_ERROR
+            assert re.search(r'BLAST database [\w/:"-]* memory requirements exceed', stderr.getvalue())
+
+
+def test_missing_ncbi_database_metadata(app_mocks):
+    """Test that a missing NCBI database metadata file results in an error"""
+
+    conf = f"""[cloud-provider]
+aws-region = us-east-1
+
+[blast]
+program = blastp
+db = db-no-metadata
+queries = s3://test-bucket/test-query.fa
+results = s3://test-results
+"""
+
+    with NamedTemporaryFile() as f:
+        f.write(conf.encode())
+        f.flush()
+        f.seek(0)
+
+        cmd = f'elastic-blast submit --cfg {f.name}'
+        with patch.object(sys, 'argv', shlex.split(cmd)):
+            with contextlib.redirect_stderr(io.StringIO()) as stderr:
+                returncode = main()
+
+    assert returncode == constants.BLASTDB_ERROR
+    assert 'Traceback' not in stderr.getvalue()
+
+    msg = app_mocks.caplog.text
+    assert 'Traceback' not in msg
+    assert 'Metadata for BLAST database' in msg
+
+
+def test_missing_user_database_metadata(app_mocks):
+    """Test that a missing user database metadata file is fine"""
+
+    conf = f"""[cloud-provider]
+aws-region = us-east-1
+
+[blast]
+program = blastp
+db = s3://some-db
+queries = s3://test-bucket/test-query.fa
+results = s3://test-results
+"""
+
+    with NamedTemporaryFile() as f:
+        f.write(conf.encode())
+        f.flush()
+        f.seek(0)
+
+        cmd = f'elastic-blast submit --cfg {f.name}'
+        with patch.object(sys, 'argv', shlex.split(cmd)):
+            with contextlib.redirect_stderr(io.StringIO()) as stderr:
+                returncode = main()
+
+    assert returncode == 0
+    assert 'Traceback' not in stderr.getvalue()
+
+    msg = app_mocks.caplog.text
+    assert 'Traceback' not in msg
+    assert 'ERROR' not in msg
+
+
+def test_incorrect_db_mol_type(app_mocks):
+    """Test that incorrect BLAST database molecule type is reported"""
+
+    DB = 'prot-db'
+    DB_MOL_TYPE = 'Protein'
+    PROGRAM = 'blastn'
+
+    DB_METADATA = '{' + f"""
+      "dbname": "{DB}",
+      "version": "1.1",
+      "dbtype": "{DB_MOL_TYPE}",
+      "description": "Some large database",
+      "number-of-letters": 180911227,
+      "number-of-sequences": 477327,
+      "files": [
+        "gs://blast-db/2021-09-28-01-05-02/largedb.ppi",
+        "gs://blast-db/2021-09-28-01-05-02/largedb.pos",
+        "gs://blast-db/2021-09-28-01-05-02/largedb.pog",
+        "gs://blast-db/2021-09-28-01-05-02/largedb.phr",
+        "gs://blast-db/2021-09-28-01-05-02/largedb.ppd",
+        "gs://blast-db/2021-09-28-01-05-02/largedb.psq",
+        "gs://blast-db/2021-09-28-01-05-02/largedb.pto",
+        "gs://blast-db/2021-09-28-01-05-02/largedb.pin",
+        "gs://blast-db/2021-09-28-01-05-02/largedb.pot",
+        "gs://blast-db/2021-09-28-01-05-02/largedb.ptf",
+        "gs://blast-db/2021-09-28-01-05-02/largedb.pdb"
+      ],
+      "last-updated": "2021-09-19T00:00:00",
+      "bytes-total": 353839003,
+      "bytes-to-cache": 185207299,
+      "number-of-volumes": 1
+""" + '}'
+
+    app_mocks.gke_mock.cloud.storage[f's3://ncbi-blast-databases/000/{DB}-{DB_MOL_TYPE.lower()[:4]}-metadata.json'] = DB_METADATA
+    assert constants.MolType[DB_MOL_TYPE.upper()] != ElbSupportedPrograms().get_db_mol_type(PROGRAM)
+
+    conf = f"""[cloud-provider]
+aws-region = us-east-1
+
+[blast]
+program = {PROGRAM}
+db = {DB}
+queries = s3://test-bucket/test-query.fa
+results = s3://test-results
+"""
+
+    with NamedTemporaryFile() as f:
+        f.write(conf.encode())
+        f.flush()
+        f.seek(0)
+
+        cmd = f'elastic-blast submit --cfg {f.name}'
+        with patch.object(sys, 'argv', shlex.split(cmd)):
+            with contextlib.redirect_stderr(io.StringIO()) as stderr:
+                returncode = main()
+
+    assert returncode == constants.BLASTDB_ERROR
+    assert 'Traceback' not in stderr.getvalue()
+
+    msg = app_mocks.caplog.text
+    assert 'Traceback' not in msg
+    assert 'database molecular type' in msg
+
+

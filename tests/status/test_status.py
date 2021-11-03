@@ -19,37 +19,27 @@
 # Please cite NCBI in any work or product based on this material.
 
 """
-test_status.py - unit test for status.py module
+test_status.py - unit test for ElasticBlastGcp check_status method
 
 Author: Victor Joukov joukovv@ncbi.nlm.nih.gov
 """
 
-import os, stat, subprocess, tempfile
-from collections import defaultdict
-from elastic_blast import kubernetes
-from elastic_blast.status import get_status
-from elastic_blast.constants import K8S_UNINITIALIZED_CONTEXT
-from tests.utils import gke_mock
-from tests.utils import K8S_JOB_STATUS
+import os
+from argparse import Namespace
+from elastic_blast.config import configure
+from elastic_blast.elb_config import ElasticBlastConfig
 
+from elastic_blast.gcp import ElasticBlastGcp
+from elastic_blast.constants import ElbCommand
+from tests.utils import gke_mock
+
+DATA_DIR = os.path.join(os.path.dirname(__file__), 'data')
+INI = os.path.join(DATA_DIR, 'status-test.ini')
 
 def test_status(gke_mock):
     "Using mock kubectl run our actual test"
-    status = get_status(K8S_UNINITIALIZED_CONTEXT)
-
-    counter = defaultdict(int)
-    for i in K8S_JOB_STATUS:
-        counter[i] += 1
-    
-    assert status == (counter['Pending'], counter['Running'],
-                      counter['Succeeded'], counter['Failed'])
-
-
-def test_invalid_label():
-    "Supply invalid label and should get an exception"
-    try:
-        status = get_status(K8S_UNINITIALIZED_CONTEXT, 'incorrect_label')
-    except ValueError as e:
-        pass
-    else:
-        assert False
+    args = Namespace(cfg=INI)
+    cfg = ElasticBlastConfig(configure(args), task = ElbCommand.STATUS)
+    elastic_blast = ElasticBlastGcp(cfg)
+    counters, _ = elastic_blast.check_status()
+    assert counters ==  {'failed': 1, 'succeeded': 1, 'pending': 1, 'running': 1}

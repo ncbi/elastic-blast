@@ -37,7 +37,7 @@ from typing import List, Optional
 from .util import safe_exec, gcp_get_blastdb_latest_path, ElbSupportedPrograms, SafeExecError
 from .util import get_blastdb_info
 from .subst import substitute_params
-from .constants import ELB_PAUSE_AFTER_INIT_PV, ELB_DOCKER_IMAGE_GCP, ELB_QS_DOCKER_IMAGE_GCP
+from .constants import ELB_JANITOR_DOCKER_IMAGE_GCP, ELB_NUM_JOBS_SUBMITTED, ELB_PAUSE_AFTER_INIT_PV, ELB_DOCKER_IMAGE_GCP, ELB_QS_DOCKER_IMAGE_GCP, K8S_JOB_SUBMIT_JOBS
 from .constants import K8S_JOB_BLAST, K8S_JOB_GET_BLASTDB
 from .constants import K8S_JOB_IMPORT_QUERY_BATCHES, K8S_JOB_LOAD_BLASTDB_INTO_RAM, K8S_JOB_RESULTS_EXPORT
 from .constants import ELB_K8S_JOB_SUBMISSION_MAX_WAIT
@@ -45,7 +45,9 @@ from .constants import ELB_K8S_JOB_SUBMISSION_MIN_WAIT
 from .constants import ELB_K8S_JOB_SUBMISSION_MAX_RETRIES
 from .constants import ELB_K8S_JOB_SUBMISSION_TIMEOUT, ELB_METADATA_DIR
 from .constants import K8S_MAX_JOBS_PER_DIR, ELB_STATE_DISK_ID_FILE, ELB_QUERY_BATCH_DIR
-from .constants import ELB_DFLT_K8S_JANITOR_SCHEDULE
+from .constants import ELB_CJS_DOCKER_IMAGE_GCP
+from .constants import ElbExecutionMode
+from .constants import ELB_DFLT_JANITOR_SCHEDULE_GCP
 from .filehelper import upload_file_to_gcs
 from .elb_config import ElasticBlastConfig
 
@@ -131,7 +133,7 @@ def submit_jobs(k8s_ctx: str, path: pathlib.Path, dry_run=False) -> List[str]:
 
     Raises:
         util.SafeExecError on problems with command line kubectl
-        RuntimeError is path does not exist or provided directory is empty"""
+        RuntimeError if path does not exist or provided directory is empty"""
     retval = list()
     if not path.exists():
         raise RuntimeError(f'Path with kubernetes jobs "{path}" does not exist')
@@ -266,6 +268,8 @@ def _job_succeeded(k8s_ctx: str, k8s_job_file: pathlib.Path, dry_run: bool = Fal
     elif final_status == 'Failed' and 'failed' in json_output['status']:
         n = int(json_output['status']['failed'])
         logging.error(f'Job {k8s_job_file} failed {n} time(s)')
+        # EB-1236, EB-1243: This exception is not caught anywhere - either catch it in caller,
+        # or throw UserReportError instead
         raise RuntimeError(f'Job {k8s_job_file} failed {n} time(s)')
     return int(retval) == 1
 
@@ -290,13 +294,13 @@ def _ensure_successful_job(k8s_ctx: str, k8s_job_file: pathlib.Path, dry_run: bo
         raise RuntimeError(f'{k8s_job_file} failed: {p.stderr.decode()}')
 
 
-def initialize_storage(cfg: ElasticBlastConfig, query_files) -> None:
+def initialize_storage(cfg: ElasticBlastConfig, query_files: List[str] = [], wait=ElbExecutionMode.WAIT) -> None:
     """ Initialize storage for ElasticBLAST cluster """
     use_local_ssd = cfg.cluster.use_local_ssd
     if use_local_ssd:
         initialize_local_ssd(cfg)
     else:
-        initialize_persistent_disk(cfg, query_files)
+        initialize_persistent_disk(cfg, query_files, wait)
         label_persistent_disk(cfg)
 
 
@@ -326,6 +330,7 @@ def initialize_local_ssd(cfg: ElasticBlastConfig) -> None:
         'K8S_JOB_GET_BLASTDB' : K8S_JOB_GET_BLASTDB,
         'K8S_JOB_LOAD_BLASTDB_INTO_RAM' : K8S_JOB_LOAD_BLASTDB_INTO_RAM,
         'K8S_JOB_IMPORT_QUERY_BATCHES' : K8S_JOB_IMPORT_QUERY_BATCHES,
+        'K8S_JOB_SUBMIT_JOBS' : K8S_JOB_SUBMIT_JOBS,
         'K8S_JOB_BLAST' : K8S_JOB_BLAST,
         'K8S_JOB_RESULTS_EXPORT' : K8S_JOB_RESULTS_EXPORT
     }
@@ -385,7 +390,7 @@ def initialize_local_ssd(cfg: ElasticBlastConfig) -> None:
                 safe_exec(cmd)
 
 
-def initialize_persistent_disk(cfg: ElasticBlastConfig, query_files: List[str] = []) -> None:
+def initialize_persistent_disk(cfg: ElasticBlastConfig, query_files: List[str] = [], wait=ElbExecutionMode.WAIT) -> None:
     """ Initialize Persistent Disk for ElasticBLAST execution
     Arguments:
         cfg - configuration to get parameters from
@@ -420,7 +425,7 @@ def initialize_persistent_disk(cfg: ElasticBlastConfig, query_files: List[str] =
         copy_only = '0'
     else:
         # Case of QuerySplitMode.CLIENT
-        # We request copy of already split queries from $BUCKET/query_batches to
+        # We request copy of already split queries from $ELB_RESULTS/query_batches to
         # persistent volume
         # input_query is irrelevant in this case
         input_query = 'None'
@@ -437,11 +442,12 @@ def initialize_persistent_disk(cfg: ElasticBlastConfig, query_files: List[str] =
     init_blastdb_minutes_timeout = cfg.timeouts.init_pv
 
     subs = {
+        # For cloud query split
         'INPUT_QUERY' : input_query,
         'BATCH_LEN' : str(cfg.blast.batch_len),
         'COPY_ONLY' : copy_only,
         'ELB_IMAGE_QS' : ELB_QS_DOCKER_IMAGE_GCP,
-
+        # For disk initialization query and database download
         'QUERY_BATCHES': query_batches,
         'ELB_PD_SIZE': pd_size,
         'ELB_CLUSTER_NAME': cluster_name,
@@ -450,14 +456,12 @@ def initialize_persistent_disk(cfg: ElasticBlastConfig, query_files: List[str] =
         'ELB_TAX_DB_PATH': taxdb_path,
         'ELB_DB_MOL_TYPE': str(ElbSupportedPrograms().get_db_mol_type(program)),
         'ELB_BLASTDB_SRC': cfg.blast.db_source.name,
-        'BUCKET': results_bucket,
+        'ELB_RESULTS': results_bucket,
         'ELB_DOCKER_IMAGE': ELB_DOCKER_IMAGE_GCP,
         'ELB_TAXIDLIST'     : cfg.blast.taxidlist if cfg.blast.taxidlist is not None else '',
+        # Container names
         'K8S_JOB_GET_BLASTDB' : K8S_JOB_GET_BLASTDB,
-        'K8S_JOB_LOAD_BLASTDB_INTO_RAM' : K8S_JOB_LOAD_BLASTDB_INTO_RAM,
-        'K8S_JOB_IMPORT_QUERY_BATCHES' : K8S_JOB_IMPORT_QUERY_BATCHES,
-        'K8S_JOB_BLAST' : K8S_JOB_BLAST,
-        'K8S_JOB_RESULTS_EXPORT' : K8S_JOB_RESULTS_EXPORT
+        'K8S_JOB_IMPORT_QUERY_BATCHES' : K8S_JOB_IMPORT_QUERY_BATCHES
     }
 
     with TemporaryDirectory() as d:
@@ -511,6 +515,9 @@ def initialize_persistent_disk(cfg: ElasticBlastConfig, query_files: List[str] =
         elif not dry_run:
             logging.error('Failed to get disk ID')
 
+        if wait != ElbExecutionMode.WAIT:
+            return
+
         _wait_for_job(k8s_ctx, job_init_pv, init_blastdb_minutes_timeout,
                       dry_run=dry_run)
         end = timer()
@@ -522,12 +529,12 @@ def initialize_persistent_disk(cfg: ElasticBlastConfig, query_files: List[str] =
                 logging.info(cmd)
             else:
                 get_logs(k8s_ctx, 'app=setup', 
-                        [K8S_JOB_GET_BLASTDB, K8S_JOB_IMPORT_QUERY_BATCHES], 
+                        [K8S_JOB_GET_BLASTDB, K8S_JOB_IMPORT_QUERY_BATCHES, K8S_JOB_SUBMIT_JOBS], 
                         dry_run)
                 safe_exec(cmd)
         # ${LOGDATETIME} setup_pd end >>${ELB_LOGFILE}
 
-        # Interim fix to prevent mouont errors on BLAST k8s jobs (EB-239?, EB-282?)
+        # Interim fix to prevent mount errors on BLAST k8s jobs (EB-239?, EB-282?)
         if not dry_run:
             secs2sleep = int(os.getenv('ELB_PAUSE_AFTER_INIT_PV', str(ELB_PAUSE_AFTER_INIT_PV)))
             time.sleep(secs2sleep)
@@ -557,6 +564,7 @@ def label_persistent_disk(cfg: ElasticBlastConfig) -> None:
             if parts[0] == pv_claim:
                 pd_name = parts[1]
         if not pd_name:
+            logging.debug(f'kubectl get pv returned\n{output}')
             raise LookupError(f"Disk with claim '{pv_claim}' can't be found in cluster '{cluster_name}'")
     zone = cfg.gcp.zone
     cmd = f'gcloud compute disks update {pd_name} --update-labels {labels} --zone {zone} --project {cfg.gcp.project}'
@@ -621,7 +629,7 @@ def collect_k8s_logs(cfg: ElasticBlastConfig):
         raise RuntimeError(f'kubernetes context is missing for {cfg.cluster.name}')
     # TODO use named constants for labels and containers
     # also modify corresponding YAML templates and their substitution
-    get_logs(k8s_ctx, 'app=setup', [K8S_JOB_GET_BLASTDB, K8S_JOB_IMPORT_QUERY_BATCHES], dry_run)
+    get_logs(k8s_ctx, 'app=setup', [K8S_JOB_GET_BLASTDB, K8S_JOB_IMPORT_QUERY_BATCHES, K8S_JOB_SUBMIT_JOBS], dry_run)
     get_logs(k8s_ctx, 'app=blast', [K8S_JOB_BLAST, K8S_JOB_RESULTS_EXPORT], dry_run)
 
 
@@ -629,18 +637,19 @@ def submit_janitor_cronjob(cfg: ElasticBlastConfig):
     """ Creates a k8s cronjob to delete GCP cluster once the jobs are done """
     dry_run = cfg.cluster.dry_run
 
-    janitor_schedule_cron = ELB_DFLT_K8S_JANITOR_SCHEDULE
+    janitor_schedule = ELB_DFLT_JANITOR_SCHEDULE_GCP
     if 'ELB_JANITOR_SCHEDULE' in os.environ:
-        janitor_schedule_cron = os.environ['ELB_JANITOR_SCHEDULE']
-        logging.debug(f'Overriding janitor schedule to "{janitor_schedule_cron}"')
+        janitor_schedule = os.environ['ELB_JANITOR_SCHEDULE']
+        logging.debug(f'Overriding janitor schedule to "{janitor_schedule}"')
 
     subs = {
+        'ELB_DOCKER_IMAGE'      : ELB_JANITOR_DOCKER_IMAGE_GCP,
         'ELB_GCP_PROJECT'       : cfg.gcp.project,
         'ELB_GCP_REGION'        : cfg.gcp.region,
         'ELB_GCP_ZONE'          : cfg.gcp.zone,
         'ELB_RESULTS'           : cfg.cluster.results,
         'ELB_CLUSTER_NAME'      : cfg.cluster.name,
-        'ELB_JANITOR_SCHEDULE'  : janitor_schedule_cron
+        'ELB_JANITOR_SCHEDULE'  : janitor_schedule
     }
     logging.debug("Submitting ElasticBLAST janitor cronjob")
     with TemporaryDirectory() as d:
@@ -656,6 +665,33 @@ def submit_janitor_cronjob(cfg: ElasticBlastConfig):
         with open(cronjob_yaml, 'wt') as f:
             f.write(substitute_params(resource_string('elastic_blast', 'templates/elb-janitor-cronjob.yaml.template').decode(), subs))
         cmd = f"kubectl --context={cfg.appstate.k8s_ctx} apply -f {cronjob_yaml}"
+        if dry_run:
+            logging.info(cmd)
+        else:
+            safe_exec(cmd)
+
+
+def submit_job_submission_job(cfg: ElasticBlastConfig):
+    """ Creates a k8s job to submit BLAST jobs """
+    dry_run = cfg.cluster.dry_run
+
+    subs = {
+        'K8S_JOB_SUBMIT_JOBS'  : K8S_JOB_SUBMIT_JOBS,
+        'ELB_DOCKER_IMAGE'     : ELB_CJS_DOCKER_IMAGE_GCP,
+        'ELB_GCP_PROJECT'      : cfg.gcp.project,
+        'ELB_GCP_ZONE'         : cfg.gcp.zone,
+        'ELB_RESULTS'          : cfg.cluster.results,
+        'ELB_CLUSTER_NAME'     : cfg.cluster.name,
+        # For autoscaling
+        'ELB_NUM_NODES' : str(cfg.cluster.num_nodes),
+    }
+    logging.debug("Submitting job submission job")
+    with TemporaryDirectory() as d:
+        set_extraction_path(d)
+        job_yaml = os.path.join(d, 'job-submit-jobs.yaml')
+        with open(job_yaml, 'wt') as f:
+            f.write(substitute_params(resource_string('elastic_blast', 'templates/job-submit-jobs.yaml.template').decode(), subs))
+        cmd = f"kubectl --context={cfg.appstate.k8s_ctx} apply -f {job_yaml}"
         if dry_run:
             logging.info(cmd)
         else:

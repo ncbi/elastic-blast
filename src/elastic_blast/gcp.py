@@ -27,28 +27,37 @@ Authors: Greg Boratyn boratyng@ncbi.nlm.nih.gov
 
 import os
 from pathlib import Path
+from subprocess import check_call
 from tempfile import TemporaryDirectory
 import time
 import logging
 import json
 from timeit import default_timer as timer
-from typing import Any, Optional, List
+from typing import Any, DefaultDict, Dict, Optional, List, Tuple
 import uuid
+from collections import defaultdict
 from tenacity import retry, stop_after_attempt, wait_exponential
 
-from .filehelper import open_for_write_immediate
+from .base import MemoryStr, QuerySplittingResults
+
+from .subst import substitute_params
+
+from .filehelper import open_for_write_immediate, open_for_read
 from .jobs import read_job_template, write_job_files
-from .util import ElbSupportedPrograms, get_blastdb_info, get_usage_reporting, safe_exec, UserReportError, SafeExecError
-from .util import validate_gcp_disk_name
+from .util import ElbSupportedPrograms, safe_exec, UserReportError, SafeExecError
+from .util import validate_gcp_disk_name, get_blastdb_info, get_usage_reporting
 
 from . import kubernetes
-from .constants import CLUSTER_ERROR, GCP_APIS, ELB_METADATA_DIR, ELB_LOG_DIR
+from .constants import CLUSTER_ERROR, ELB_NUM_JOBS_SUBMITTED, GCP_APIS, ELB_METADATA_DIR, ELB_LOG_DIR, K8S_JOB_SUBMIT_JOBS
 from .constants import ELB_STATE_DISK_ID_FILE, CSP, DEPENDENCY_ERROR
 from .constants import ELB_QUERY_BATCH_DIR, ELB_DFLT_MIN_NUM_NODES
 from .constants import K8S_JOB_BLAST, K8S_JOB_GET_BLASTDB, K8S_JOB_IMPORT_QUERY_BATCHES
 from .constants import K8S_JOB_LOAD_BLASTDB_INTO_RAM, K8S_JOB_RESULTS_EXPORT, K8S_UNINITIALIZED_CONTEXT
 from .constants import ELB_DOCKER_IMAGE_GCP, ELB_QUERY_LENGTH, INPUT_ERROR
-from .constants import ElbStatus
+from .constants import ElbExecutionMode, ElbStatus
+from .constants import GKE_CLUSTER_STATUS_PROVISIONING, GKE_CLUSTER_STATUS_RECONCILING
+from .constants import GKE_CLUSTER_STATUS_RUNNING, GKE_CLUSTER_STATUS_RUNNING_WITH_ERROR
+from .constants import GKE_CLUSTER_STATUS_STOPPING, GKE_CLUSTER_STATUS_ERROR
 from .elb_config import ElasticBlastConfig
 from .elasticblast import ElasticBlast
 
@@ -58,20 +67,26 @@ class ElasticBlastGcp(ElasticBlast):
         super().__init__(cfg, create, cleanup_stack)
         self.query_files: List[str] = []
         self.cluster_initialized = False
+        self.apis_enabled = False
+        self.cached_status = None
+        self.cached_counts: DefaultDict[str, int] = defaultdict(int)
+        self.cached_result = ''
 
     def cloud_query_split(self, query_files: List[str]) -> None:
         """ Submit the query sequences for splitting to the cloud.
+            Initialize cluster with cloud split job
             Parameters:
                 query_files     - list files containing query sequence data to split
         """
-        self.query_files = query_files
-
-    def wait_for_cloud_query_split(self) -> None:
-        """ Initialize cluster with cloud split job """
         if self.dry_run:
             return
+        self.query_files = query_files
         self._initialize_cluster()
         self.cluster_initialized = True
+
+    def wait_for_cloud_query_split(self) -> None:
+        """ No wait needed in GCP implementation """
+        pass
 
     def upload_query_length(self, query_length: int) -> None:
         """ Save query length in a metadata file in GS """
@@ -82,8 +97,11 @@ class ElasticBlastGcp(ElasticBlast):
         # Note: if cloud split is used this file is uploaded
         # by the run script in the 1st stage
 
-    def check_job_number_limit(self, queries, query_length) -> None:
+    def _check_job_number_limit(self, queries: Optional[List[str]], query_length) -> None:
         """ Check that resulting number of jobs does not exceed Kubernetes limit """
+        if not queries:
+            # Nothing to check, the job number is still unknown
+            return
         k8s_job_limit = kubernetes.get_maximum_number_of_allowed_k8s_jobs(self.dry_run)
         if len(queries) > k8s_job_limit:
             batch_len = self.cfg.blast.batch_len
@@ -92,19 +110,32 @@ class ElasticBlastGcp(ElasticBlast):
                   f' Please increase the batch-len parameter to at least {suggested_batch_len}.'
             raise UserReportError(INPUT_ERROR, msg)
 
-    def submit(self, query_batches: List[str], one_stage_cloud_query_split: bool) -> None:
-        """ Submit query batches to cluster, converts AWS exceptions to UserReportError
+    def submit(self, query_batches: List[str], query_length, one_stage_cloud_query_split: bool) -> None:
+        """ Submit query batches to cluster
             Parameters:
                 query_batches               - list of bucket names of queries to submit
+                query_length                - total query length
                 one_stage_cloud_query_split - do the query split in the cloud as a part
                                               of executing a regular job """
         # Can't use one stage cloud split for GCP, should never happen
         assert(not one_stage_cloud_query_split)
+        self._check_job_number_limit(query_batches, query_length)
         if not self.cluster_initialized:
-            self.query_files = []
+            self.query_files = []  # No cloud split
             self._initialize_cluster()
             self.cluster_initialized = True
-        self._generate_and_submit_jobs(query_batches)
+        if self.cloud_job_submission:
+            kubernetes.submit_job_submission_job(self.cfg)
+        else:
+            self._generate_and_submit_jobs(query_batches)
+            logging.info('Enable autoscaling')
+            cmd = f'gcloud container clusters update {self.cfg.cluster.name} --enable-autoscaling --node-pool default-pool --min-nodes 0 --max-nodes {self.cfg.cluster.num_nodes} --project {self.cfg.gcp.project} --zone {self.cfg.gcp.zone}'
+            if self.dry_run:
+                logging.info(cmd)
+            else:
+                safe_exec(cmd)
+            logging.info('Done enabling autoscaling')
+
         # Sync mode disabled per EB-700
         #if args.sync:
         #    while True:
@@ -132,32 +163,122 @@ class ElasticBlastGcp(ElasticBlast):
         self.cleanup_stack.clear()
         self.cleanup_stack.append(lambda: kubernetes.collect_k8s_logs(self.cfg))
 
+    def check_status(self, extended=False) -> Tuple[Dict[str, int], str]:
+        """ Check job status, if anything wrong with cluster return empty
+            result.
+        """
+        try:
+            return self._check_status(extended)
+        except SafeExecError as err:
+            # cluster is not valid, return empty result
+            logging.info(err.message.strip())
+            return defaultdict(int), ''
+
+    def _check_status(self, extended=False) -> Tuple[Dict[str, int], str]:
+        if self.cached_status:
+            return self.cached_counts, self.cached_result
+        counts: DefaultDict[str, int] = defaultdict(int)
+        self._enable_gcp_apis()
+
+        gke_status = check_cluster(self.cfg)
+        if not gke_status:
+            if self.dry_run:
+                return {}, str(ElbStatus.SUBMITTING)
+            else:
+                raise SafeExecError(returncode=CLUSTER_ERROR,
+                                message=f'Cluster {self.cfg.cluster.name} was not found')
+
+        logging.debug(f'GKE status: {gke_status}')
+        if gke_status in [GKE_CLUSTER_STATUS_RECONCILING, GKE_CLUSTER_STATUS_PROVISIONING]:
+            return {}, str(ElbStatus.SUBMITTING)
+
+        if gke_status == GKE_CLUSTER_STATUS_STOPPING:
+            return {}, 'DELETING'
+
+        k8s_ctx = self._get_gke_credentials()
+        selector = 'app=blast'
+        kubectl = f'kubectl --context={k8s_ctx}'
+
+        # if we need name of the job in the future add NAME:.metadata.name to custom-columns
+        # get status of jobs (pending/running, succeeded, failed)
+        cmd = f'{kubectl} get jobs -o custom-columns=STATUS:.status.conditions[0].type -l {selector}'.split()
+        if self.dry_run:
+            logging.debug(cmd)
+        else:
+            proc = safe_exec(cmd)
+            for line in proc.stdout.decode().split('\n'):
+                if not line or line.startswith('STATUS'):
+                    continue
+                if line.startswith('Complete'):
+                    counts['succeeded'] += 1
+                elif line.startswith('Failed'):
+                    counts['failed'] += 1
+                else:
+                    counts['pending'] += 1
+                
+        # get number of running pods
+        cmd = f'{kubectl} get pods -o custom-columns=STATUS:.status.phase -l {selector}'.split()
+        if self.dry_run:
+            logging.info(cmd)
+        else:
+            proc = safe_exec(cmd)
+            for line in proc.stdout.decode().split('\n'):
+                if line == 'Running':
+                    counts['running'] += 1
+
+        # correct number of pending jobs: running jobs were counted twice,
+        # as running and pending
+        counts['pending'] -= counts['running']
+
+        return counts, ''
+
+    def delete(self):
+        enable_gcp_api(self.cfg)
+        delete_cluster_with_cleanup(self.cfg)
 
     def _initialize_cluster(self):
         """ Creates a k8s cluster, connects to it and initializes the persistent disk """
         cfg, query_files, clean_up_stack = self.cfg, self.query_files, self.cleanup_stack
+        pd_size = MemoryStr(cfg.cluster.pd_size).asGB()
+        disk_limit, disk_usage = self.get_disk_quota()
+        if pd_size > disk_limit - disk_usage:
+            raise UserReportError(INPUT_ERROR, f'Requested disk size {pd_size}G is larger than allowed ({disk_limit - disk_usage}G) for region {cfg.gcp.region}\n'
+                'Please adjust parameter [cluster] pd-size or run your request in another region')
         logging.info('Starting cluster')
         clean_up_stack.append(lambda: logging.debug('Before creating cluster'))
         clean_up_stack.append(lambda: delete_cluster_with_cleanup(cfg))
         clean_up_stack.append(lambda: kubernetes.collect_k8s_logs(cfg))
+        subs = self.job_substitutions()
+        if self.cloud_job_submission:
+            job_template = read_job_template(cfg=cfg)
+            s = substitute_params(job_template, subs)
+            bucket_job_template = os.path.join(cfg.cluster.results, ELB_METADATA_DIR, 'job.yaml.template')
+            with open_for_write_immediate(bucket_job_template) as f:
+                f.write(s)
         start_cluster(cfg)
         clean_up_stack.append(lambda: logging.debug('After creating cluster'))
 
-        cfg.appstate.k8s_ctx = get_gke_credentials(cfg)
+        self._get_gke_credentials()
 
         logging.info('Initializing storage')
         clean_up_stack.append(lambda: logging.debug('Before initializing storage'))
-        kubernetes.initialize_storage(cfg, query_files)
+        kubernetes.initialize_storage(cfg, query_files,
+            ElbExecutionMode.NOWAIT if self.cloud_job_submission else ElbExecutionMode.WAIT)
         clean_up_stack.append(lambda: logging.debug('After initializing storage'))
 
+        if 'ELB_DISABLE_AUTO_SHUTDOWN' in os.environ:
+            logging.debug('Disabling janitor')
+        else:
+            kubernetes.submit_janitor_cronjob(cfg)
 
-    def _generate_and_submit_jobs(self, queries: List[str]):
-        cfg, clean_up_stack = self.cfg, self.cleanup_stack
+
+    def job_substitutions(self) -> Dict[str, str]:
+        """ Prepare substitution dictionary for job generation """
+        cfg = self.cfg
         usage_reporting = get_usage_reporting()
 
         db, _, db_label = get_blastdb_info(cfg.blast.db)
 
-        # Job generation
         blast_program = cfg.blast.program
 
         # prepare substitution for current template
@@ -171,7 +292,7 @@ class ElasticBlastGcp(ElasticBlast):
             'ELB_BLAST_OPTIONS': cfg.blast.options,
             # FIXME: EB-210
             'ELB_BLAST_TIMEOUT': str(cfg.timeouts.blast_k8s * 60),
-            'BUCKET': cfg.cluster.results,
+            'ELB_RESULTS': cfg.cluster.results,
             'ELB_NUM_CPUS': str(cfg.cluster.num_cpus),
             'ELB_DB_MOL_TYPE': str(ElbSupportedPrograms().get_db_mol_type(blast_program)),
             'ELB_DOCKER_IMAGE': ELB_DOCKER_IMAGE_GCP,
@@ -181,10 +302,16 @@ class ElasticBlastGcp(ElasticBlast):
             'K8S_JOB_GET_BLASTDB' : K8S_JOB_GET_BLASTDB,
             'K8S_JOB_LOAD_BLASTDB_INTO_RAM' : K8S_JOB_LOAD_BLASTDB_INTO_RAM,
             'K8S_JOB_IMPORT_QUERY_BATCHES' : K8S_JOB_IMPORT_QUERY_BATCHES,
+            'K8S_JOB_SUBMIT_JOBS' : K8S_JOB_SUBMIT_JOBS,
             'K8S_JOB_BLAST' : K8S_JOB_BLAST,
             'K8S_JOB_RESULTS_EXPORT' : K8S_JOB_RESULTS_EXPORT
         }
+        return subs
 
+
+    def _generate_and_submit_jobs(self, queries: List[str]):
+        cfg, clean_up_stack = self.cfg, self.cleanup_stack
+        subs = self.job_substitutions()
         job_template_text = read_job_template(cfg=cfg)
         with TemporaryDirectory() as job_path:
             job_files = write_job_files(job_path, 'batch_', job_template_text, queries, **subs)
@@ -203,23 +330,124 @@ class ElasticBlastGcp(ElasticBlast):
             # Should never happen, cfg.appstate.k8s_ctx should always be initialized properly
             # by the time of this call 
             assert(cfg.appstate.k8s_ctx)
+            start = timer()
             job_names = kubernetes.submit_jobs(cfg.appstate.k8s_ctx, Path(job_path), dry_run=self.dry_run)
+            end = timer()
+            logging.debug(f'RUNTIME submit-jobs {end-start} seconds')
+            logging.debug(f'SPEED to submit-jobs {len(job_names)/(end-start):.2f} jobs/second')
             clean_up_stack.append(lambda: logging.debug('After submission computational jobs'))
             if job_names:
                 logging.debug(f'Job #1 name: {job_names[0]}')
-
-        # Allow this to permit invocation of run-summary before deletion of all metadata
-        if 'ELB_DISABLE_AUTO_SHUTDOWN' not in os.environ:
-            kubernetes.submit_janitor_cronjob(cfg)
+            # Signal janitor job to start checking for results
+            with open_for_write_immediate(os.path.join(cfg.cluster.results, ELB_METADATA_DIR, ELB_NUM_JOBS_SUBMITTED)) as f:
+                f.write(str(len(job_names)))
 
     def status(self) -> ElbStatus:
-        pass
+        # We cache only status from gone cluster - it can't change anymore
+        if self.cached_status:
+            return self.cached_status
+        self._enable_gcp_apis()
+        status = self._status_from_results()
+        if status != ElbStatus.UNKNOWN:
+            return status
+        try:
+            self._get_gke_credentials()
+            counts, _ = self._check_status()
+            if not counts:
+                # empty counts is a result of GKE in PROVISIONING or
+                # RECONCILING state
+                status = ElbStatus.RUNNING
+            elif counts['failed'] > 0:
+                status = ElbStatus.FAILURE
+            elif counts['running'] > 0 or counts['pending'] > 0:
+                status = ElbStatus.RUNNING
+            elif counts['succeeded']:
+                status = ElbStatus.SUCCESS
+            else:
+                # TODO: check init-pv and submit-jobs status
+                status = ElbStatus.SUBMITTING
+        except SafeExecError as err:
+            # Cluster is gone, check results bucket for metadata
+            results_status = self._status_from_results()
+            if results_status == ElbStatus.UNKNOWN:
+                msg = err.message.rstrip().replace('\n', ' | ')
+                logging.debug(f'kubectl error: {msg}')
+                # if the cluster exists, assume it is initializing
+                cluster_name = self.cfg.cluster.name
+                if check_cluster(self.cfg):
+                    message = f'The cluster "{cluster_name}" exists, but is not responding. It may be still initializing, please try checking status again in a few minutes.'
+                else:
+                    message = f'The cluster "{cluster_name}" was not found'
+                raise UserReportError(CLUSTER_ERROR, message)
+            logging.info(err.message.strip())
+            return results_status
+        return status
 
-    def delete(self):
-        pass
+    def _parse_results_status(self, text):
+        for line in text.split('\n'):
+            parts = line .split()
+            if len(parts) != 2:
+                continue
+            try:
+                count = int(parts[1])
+                self.cached_counts[parts[0].lower()] = count
+            except ValueError:
+                pass
+    
+    def _status_from_results(self):
+        cfg = self.cfg
+        status = ElbStatus.UNKNOWN
+        with open_for_read(os.path.join(cfg.cluster.results, ELB_METADATA_DIR, 'FAILURE.txt')) as f:
+            res = f.read()
+            if len(res):
+                status = ElbStatus.FAILURE
+                self.cached_status = status
+                self.cached_result = res
+                return status
+        with open_for_read(os.path.join(cfg.cluster.results, ELB_METADATA_DIR, 'DONE.txt')) as f:
+            done = f.read()
+            if len(done):
+                status = ElbStatus.SUCCESS
+                self.cached_status = status
+                self._parse_results_status(done)
+        return status
+
+    def get_disk_quota(self) -> Tuple[float, float]:
+        """ Get the Persistent Disk SSD quota (SSD_TOTAL_GB)
+            Returns tuple of limit and usage in GB """
+        cmd = f'gcloud compute regions describe {self.cfg.gcp.region} --project {self.cfg.gcp.project} --format json'
+        limit = 1e9
+        usage = 0.0
+        if self.cfg.cluster.dry_run:
+            logging.info(cmd)
+        else:
+            # The execution of this command requires serviceusage.quotas.get permission
+            # so it can be unsuccessful for some users
+            p = safe_exec(cmd)
+            if p.stdout:
+                res = json.loads(p.stdout.decode())
+                if 'quotas' in res:
+                    for quota in res['quotas']:
+                        if quota['metric'] == 'SSD_TOTAL_GB':
+                            limit = float(quota['limit'])
+                            usage = float(quota['usage'])
+                            break
+        return limit, usage
+
+    def _enable_gcp_apis(self) -> None:
+        """ Enables GCP APIs only once per object initialization """
+        if not self.apis_enabled:
+            enable_gcp_api(self.cfg)
+            self.apis_enabled = True
+
+    def _get_gke_credentials(self) -> str:
+        """ Memoized get_gke_credentials """
+        if not self.cfg.appstate.k8s_ctx:
+            self.cfg.appstate.k8s_ctx = get_gke_credentials(self.cfg)
+        return self.cfg.appstate.k8s_ctx
 
 def enable_gcp_api(cfg: ElasticBlastConfig):
-    """ Enable GCP APIs if they are not already enabled 
+    """ Enable GCP APIs if they are not already enabled
     parameters:
         cfg: configuration object
     raises:
@@ -378,20 +606,20 @@ def delete_cluster_with_cleanup(cfg: ElasticBlastConfig) -> None:
                 raise UserReportError(returncode=CLUSTER_ERROR, message=msg)
         logging.debug(f'Cluster status "{status}"')
 
-        if status == 'RUNNING' or status == 'RUNNING_WITH_ERROR':
+        if status == GKE_CLUSTER_STATUS_RUNNING or status == GKE_CLUSTER_STATUS_RUNNING_WITH_ERROR:
             break
         # if error, there is something wrong with the cluster, kubernetes will
         # likely not work
-        if status == 'ERROR':
+        if status == GKE_CLUSTER_STATUS_ERROR:
             try_kubernetes = False
             break
         # if cluster is provisioning or undergoing software updates, wait
         # until it is active,
-        if status == 'PROVISIONING' or status == 'RECONCILING':
+        if status == GKE_CLUSTER_STATUS_PROVISIONING or status == GKE_CLUSTER_STATUS_RECONCILING:
             time.sleep(10)
             continue
         # if cluster is already being deleted, nothing to do, exit with an error
-        if status == 'STOPPING':
+        if status == GKE_CLUSTER_STATUS_STOPPING:
             raise UserReportError(returncode=CLUSTER_ERROR,
                                   message=f"cluster '{cfg.cluster.name}' is already being deleted")
 
@@ -450,7 +678,6 @@ def delete_cluster_with_cleanup(cfg: ElasticBlastConfig) -> None:
                     delete_disk(i, cfg)
         except Exception as e:
             logging.error(getattr(e, 'message', repr(e)))
-
             # if the above failed, try deleting each disk unconditionally to
             # minimize resource leak
             for i in pds:
@@ -462,15 +689,19 @@ def delete_cluster_with_cleanup(cfg: ElasticBlastConfig) -> None:
             disks = get_disks(cfg, dry_run)
             for i in pds:
                 if i in disks:
-                    msg = f'ElasticBLAST was not able to delete persistent disk "{i}". Leaving  it may cause additional charges from the cloud provider. You can verify that the disk still exists using this command:\ngcloud compute disks list --project {cfg.gcp.project} | grep {i}\nand delete it with:\ngcloud compute disks delete {i} --project {cfg.gcp.project}'
+                    msg = f'ElasticBLAST was not able to delete persistent disk "{i}". ' \
+                        'Leaving it may cause additional charges from the cloud provider. ' \
+                        'You can verify that the disk still exists using this command:\n' \
+                        f'gcloud compute disks list --project {cfg.gcp.project} | grep {i}\n' \
+                        f'and delete it with:\ngcloud compute disks delete {i} --project {cfg.gcp.project} --zone {cfg.gcp.zone}'
                     logging.error(msg)
                     # Remove the exception for now, as we want to delete the cluster always!
                     #raise UserReportError(returncode=CLUSTER_ERROR, msg)
 
     remove_split_query(cfg)
     delete_cluster(cfg)
-    remove_ancillary_data(cfg, ELB_LOG_DIR)
-    remove_ancillary_data(cfg, ELB_METADATA_DIR)
+    _remove_ancillary_data(cfg, ELB_LOG_DIR)
+    _remove_ancillary_data(cfg, ELB_METADATA_DIR)
 
 
 def get_gke_clusters(cfg: ElasticBlastConfig) -> List[str]:
@@ -586,12 +817,6 @@ def start_cluster(cfg: ElasticBlastConfig):
 
     actual_params.append('--num-nodes')
     actual_params.append(str(ELB_DFLT_MIN_NUM_NODES))
-    # Autoscaling configuration
-    actual_params.append('--enable-autoscaling')
-    actual_params.append('--min-nodes')
-    actual_params.append(str(ELB_DFLT_MIN_NUM_NODES))
-    actual_params.append('--max-nodes')
-    actual_params.append(str(num_nodes))
 
     if use_preemptible:
         actual_params.append('--preemptible')
@@ -667,61 +892,50 @@ def delete_cluster(cfg: ElasticBlastConfig):
     return cluster_name
 
 
-def check_prerequisites(cfg: ElasticBlastConfig) -> None:
+def check_prerequisites() -> None:
     """ Check that necessary tools, gcloud, gsutil, and kubectl
     are available if necessary.
     If execution of one of these tools is unsuccessful
     it will throw UserReportError exception."""
-    if cfg.cloud_provider.cloud == CSP.GCP:
-        try:
-            safe_exec('gcloud --version')
-        except SafeExecError as e:
-            message = f"Required pre-requisite 'gcloud' doesn't work, check installation of GCP SDK.\nDetails: {e.message}"
-            raise UserReportError(DEPENDENCY_ERROR, message)
-        try:
-            # client=true prevents kubectl from addressing server which can be down at the moment
-            safe_exec('kubectl version --client=true')
-        except SafeExecError as e:
-            message = f"Required pre-requisite 'kubectl' doesn't work, check Kubernetes installation.\nDetails: {e.message}"
-            raise UserReportError(DEPENDENCY_ERROR, message)
-    # FIXME: query files supplied in query-list files should be checked too
-    # when EB-780 is done
-    # For status checking and cluster deletion blast config is not required.
-    queries = cfg.blast.queries_arg if cfg.blast else None
-    if (queries and len([i for i in queries.split() if i.startswith('gs://')])) or \
-           cfg.cluster.results.startswith('gs://'):
-        # Check we have gsutil available
-        try:
-            safe_exec('gsutil --version')
-        except SafeExecError as e:
-            message = f"Required pre-requisite 'gsutil' doesn't work, check installation of GCP SDK.\nDetails: {e.message}\nNote: this is because your query is located on GS, you may try another location"
-            raise UserReportError(DEPENDENCY_ERROR, message)
+    try:
+        safe_exec('gcloud --version')
+    except SafeExecError as e:
+        message = f"Required pre-requisite 'gcloud' doesn't work, check installation of GCP SDK.\nDetails: {e.message}"
+        raise UserReportError(DEPENDENCY_ERROR, message)
+    try:
+        # client=true prevents kubectl from addressing server which can be down at the moment
+        safe_exec('kubectl version --client=true')
+    except SafeExecError as e:
+        message = f"Required pre-requisite 'kubectl' doesn't work, check Kubernetes installation.\nDetails: {e.message}"
+        raise UserReportError(DEPENDENCY_ERROR, message)
+    # Check we have gsutil available
+    try:
+        safe_exec('gsutil --version')
+    except SafeExecError as e:
+        message = f"Required pre-requisite 'gsutil' doesn't work, check installation of GCP SDK.\nDetails: {e.message}\nNote: this is because your query is located on GS, you may try another location"
+        raise UserReportError(DEPENDENCY_ERROR, message)
 
 
 def remove_split_query(cfg: ElasticBlastConfig) -> None:
     """ Remove split query from user's results bucket """
-    remove_ancillary_data(cfg, ELB_QUERY_BATCH_DIR)
+    _remove_ancillary_data(cfg, ELB_QUERY_BATCH_DIR)
 
 
-def remove_ancillary_data(cfg: ElasticBlastConfig, bucket_prefix: str) -> None:
+def _remove_ancillary_data(cfg: ElasticBlastConfig, bucket_prefix: str) -> None:
     """ Removes ancillary data from the end user's result bucket
     cfg: Configuration object
     bucket_prefix: path that follows the users' bucket name (looks like a file system directory)
     """
     dry_run = cfg.cluster.dry_run
-    if cfg.cloud_provider.cloud == CSP.GCP:
-        out_path = os.path.join(cfg.cluster.results, bucket_prefix, '*')
-        cmd = f'gsutil -mq rm {out_path}'
-        if dry_run:
-            logging.info(cmd)
-        else:
-            # This command is a part of clean-up process, there is no benefit in reporting
-            # its failure except logging it
-            try:
-                safe_exec(cmd)
-            except SafeExecError as e:
-                message = e.message.strip().translate(str.maketrans('\n', '|'))
-                logging.warning(message)
-    elif cfg.cloud_provider.cloud == CSP.AWS:
-        # TODO: implement clean up of S3 bucket from split queries here. EB-508
-        pass
+    out_path = os.path.join(cfg.cluster.results, bucket_prefix, '*')
+    cmd = f'gsutil -mq rm {out_path}'
+    if dry_run:
+        logging.info(cmd)
+    else:
+        # This command is a part of clean-up process, there is no benefit in reporting
+        # its failure except logging it
+        try:
+            safe_exec(cmd)
+        except SafeExecError as e:
+            message = e.message.strip().translate(str.maketrans('\n', '|'))
+            logging.warning(message)

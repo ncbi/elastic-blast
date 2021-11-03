@@ -29,6 +29,7 @@ import re
 from tempfile import NamedTemporaryFile
 from urllib.error import HTTPError
 import time
+from unittest.mock import MagicMock, patch
 
 from elastic_blast import taxonomy
 from elastic_blast import constants
@@ -38,6 +39,7 @@ from elastic_blast.constants import ELB_QUERY_BATCH_DIR, ELB_TAXIDLIST_FILE
 from elastic_blast.constants import ElbCommand
 from elastic_blast.elb_config import ElasticBlastConfig
 from elastic_blast.base import InstanceProperties
+from tests.utils import gke_mock
 
 import pytest
 
@@ -67,19 +69,20 @@ def wait(mocker):
 def mocked_get_machine_properties(mocker):
     """Fixture that proviedes mocked get_machine_properties function so that
     AWS credentials and real AWS regions are not needed for the tests"""
-    def fun_mocked_get_machine_properties(instance_type, boto_cfg):
+    def fun_mocked_get_machine_properties(instance_type, boto_cfg=None):
         """Mocked getting instance number of CPUs and memory"""
         return InstanceProperties(32, 128)
 
     mocker.patch('elastic_blast.elb_config.aws_get_machine_properties', side_effect=fun_mocked_get_machine_properties)
+    mocker.patch('elastic_blast.tuner.aws_get_machine_properties', side_effect=fun_mocked_get_machine_properties)
 
 
 @pytest.fixture
-def cfg(mocked_get_machine_properties):
+def cfg(mocked_get_machine_properties, gke_mock):
     """Create an ElasticBlastConfig object"""
     cfg = ElasticBlastConfig(aws_region = 'test-region',
                              program = 'blastn',
-                             db = 'test-db',
+                             db = 'testdb',
                              queries = 'test-queries.fa',
                              results = 's3://test-results',
                              task = ElbCommand.SUBMIT)

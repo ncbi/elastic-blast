@@ -77,8 +77,10 @@ validate-iam-policy: iam-policy.json
 	-AWS_PAGER='' aws accessanalyzer validate-policy --no-paginate --policy-document file://$< --policy-type RESOURCE_POLICY
 
 .PHONY: validate-cf-templates
-validate-cf-templates: src/elastic_blast/templates/elastic-blast-cf.yaml
-	AWS_PAGER='' aws --region us-east-1 cloudformation validate-template --template-body file://$<
+validate-cf-templates: 
+	AWS_PAGER='' aws --region us-east-1 cloudformation validate-template --template-body file://src/elastic_blast/templates/elastic-blast-cf.yaml
+	AWS_PAGER='' aws --region us-east-1 cloudformation validate-template --template-body file://src/elastic_blast/templates/elastic-blast-janitor-cf.yaml
+	AWS_PAGER='' aws --region us-east-1 cloudformation validate-template --template-body file://src/elastic_blast/templates/cloudformation-admin-iam.yaml
 
 .PHONY: cfn-lint
 cfn-lint: src/elastic_blast/templates/elastic-blast-cf.yaml ${VENV}

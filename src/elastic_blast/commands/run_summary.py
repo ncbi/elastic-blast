@@ -34,8 +34,10 @@ import re
 import argparse
 from pathlib import Path
 from dataclasses import dataclass, field
-from typing import List
+from typing import DefaultDict, List, Tuple
 from tempfile import NamedTemporaryFile
+from collections import defaultdict, namedtuple
+
 import boto3  # type: ignore
 from botocore.exceptions import ClientError  #type: ignore
 from elastic_blast.base import PositiveInteger
@@ -60,6 +62,9 @@ PHASE_BLAST = 'blast'
 PHASE_QUERY_DOWNLOAD = 'queryDownload'
 PHASE_QUERY_SPLIT = 'querySplit'
 
+CpuInfo = namedtuple('CpuInfo', ['user', 'system', 'elapsed', 'percent'])
+
+JobInfo = namedtuple('JobInfo', ['start', 'end', 'instance_id', 'cpu_info'])
 
 @dataclass
 class Run:
@@ -68,22 +73,14 @@ class Run:
     end_time:  int = 0
     exit_codes: List[int] = field(default_factory=list)
     phase_names: List[str] = field(default_factory=list)
+    phases: DefaultDict[str,List[Tuple[int, int]]] = field(default_factory=lambda:defaultdict(list))
     def read_log_parser(self, log_parser):
         # Copy all run phases
         for _, _, phase in run_phases:
-            vars = [
-                phase + '_time',
-                phase + '_num',
-                phase + '_min',
-                phase + '_max'
-            ]
-            var_present = False
-            for var in vars:
-                if hasattr(log_parser, var):
-                    setattr(self, var, getattr(log_parser, var))
-                    var_present = True
-            if var_present:
-                self.phase_names.append(phase)
+            if not phase in log_parser.phases:
+                continue
+            self.phase_names.append(phase)
+        self.phases = log_parser.phases
 
         vars = [ 'db_num_seq', 'db_length', 'query_length', 'cluster_name',
                  'instance_type', 'instance_vcpus', 'instance_ram', 'min_vcpus',
@@ -99,6 +96,8 @@ def create_arg_parser(subparser, common_opts_parser):
             parents=[common_opts_parser])
     parser.add_argument('-o', '--output', type=argparse.FileType('wt'), default='-', 
             help='Output file, default: stdout')
+    parser.add_argument('-f', '--force-from-cluster', action='store_true', default=False,
+            help='Force reading logs from cluster, not from cache')
     parser.set_defaults(func=_run_summary)
 
 
@@ -138,7 +137,7 @@ def _run_summary(args, cfg, clean_up_stack):
     if cloud_provider == CSP.AWS:
         logs_on_bucket = _get_path_to_aws_batch_job_logs_on(args.results)
         logs = _get_aws_logs_from_results_bucket(logs_on_bucket)
-        if logs:
+        if logs and not args.force_from_cluster:
             run = _read_job_logs_aws_from_file(logs)
             got_logs_from_bucket = True
         else:
@@ -161,7 +160,7 @@ def _run_summary(args, cfg, clean_up_stack):
 
     if not got_logs_from_bucket and cloud_provider == CSP.AWS:
         logging.debug(f'Saving AWS Batch job logs to results bucket {logs_on_bucket}')
-        copy_file_to_s3(logs_on_bucket, logs)
+        copy_file_to_s3(logs_on_bucket, Path(logs.name))
 
     nfailed = sum(map(lambda x: 1 if x > 0 else 0, run.exit_codes))
     now = _format_time(time.time())
@@ -199,20 +198,25 @@ def _run_summary(args, cfg, clean_up_stack):
     #summary['runtime']['wallClock'] = PositiveInteger(blast_run_time)
     summary['runtime']['wallClock'] = blast_run_time
     for phase in run.phase_names:
-        total_var = phase + '_time'
-        num_var = phase + '_num'
-        min_var = phase + '_min'
-        max_var = phase + '_max'
-        if hasattr(run, total_var):
-            summary['runtime'][phase] = {}
-            if hasattr(run, num_var):
-                summary['runtime'][phase]['num'] = getattr(run, num_var)
-            if hasattr(run, total_var):
-                summary['runtime'][phase]['totalTime']  = getattr(run, total_var) / 1000
-            if hasattr(run, min_var):
-                summary['runtime'][phase]['minTime'] = getattr(run, min_var) / 1000
-            if hasattr(run, max_var):
-                summary['runtime'][phase]['maxTime'] = getattr(run, max_var) / 1000
+        phase_data = run.phases[phase]
+        # List of JobInfo tuples, one tuple per job
+        # Every tuple is JobInfo(start_time, end_time, instance_id, cpu_info)
+        # Instance_id can be empty
+        # Cpu_info can be None, or CpuInfo(user_time, system_time, elapsed, cpu_percent)
+        phase_times = list(map(lambda ji: (ji.end-ji.start) / 1000, phase_data))
+        summary['runtime'][phase] = {}
+        summary['runtime'][phase]['num'] = len(phase_data)
+        summary['runtime'][phase]['totalTime'] = sum(phase_times)
+        summary['runtime'][phase]['minTime'] = min(phase_times)
+        summary['runtime'][phase]['maxTime'] = max(phase_times)
+        instance_ids = list(map(lambda info: info.instance_id if info.instance_id else '', phase_data))
+        non_empty_instance_ids = sum(map(lambda x: 1 if x else 0, instance_ids))
+        if non_empty_instance_ids > 0:
+            summary['runtime'][phase]['instances'] = instance_ids
+        summary['runtime'][phase]['details'] = phase_times
+        cpu_percent = list(map(lambda info: int(info.cpu_info.percent) if info.cpu_info else -1, phase_data))
+        if max(cpu_percent) > -1:
+            summary['runtime'][phase]['cpuPercent'] = cpu_percent
 
     summary['blastData'] = {}
     if hasattr(run, 'query_length'):
@@ -307,6 +311,8 @@ re_query_download_start = re.compile(r'^Start quer(y|ies) download')
 re_query_download_end = re.compile(r'^End quer(y|ies) download')
 re_query_split_start = re.compile(r'^Start query splitting')
 re_query_split_end = re.compile(r'^End query splitting')
+re_instance_id = re.compile(r'^INSTANCE_ID: (.*)$')
+re_cpu_stat = re.compile(r'^([.0-9]+)user ([.0-9]+)system ([.:0-9]+)elapsed ([0-9]+)%CPU')
 run_phases = [
     (re_blastdbcmdstart, re_blastdbcmdend, PHASE_BLASTDB_SETUP),
     (re_blastcmdstart, re_blastcmdend, PHASE_BLAST),
@@ -328,10 +334,14 @@ class AwsLogParser:
         self.njobs = 0
         self.exit_codes = []
         self.phase_start_time = 0
+        self.phases = defaultdict(list)
+        self.last_cpu_stat = None
+        self.last_instance = None
 
     def init_job(self, exit_code):
         self.exit_codes.append(exit_code)
         self.njobs += 1
+        self.last_instance = None
 
     def parse_line(self, line):
         """ Parse a line of saved log file """
@@ -356,6 +366,12 @@ class AwsLogParser:
                 self.parse(ts, parts[1])
             except ValueError:
                 pass
+    
+    def _register(self, phase, start, end):
+        cpu_info = CpuInfo(*self.last_cpu_stat) if self.last_cpu_stat else None
+        self.phases[phase].append(JobInfo(start, end, self.last_instance, cpu_info))
+        self.phase_start_time = 0
+        self.last_cpu_stat = None
 
     def parse(self, ts, message):
         """ Parse timestamp and message of a log record """
@@ -367,6 +383,12 @@ class AwsLogParser:
         mo = re_db_stat.search(message)
         if mo:
             self.db_num_seq, self.db_length = map(lambda x: int(re.sub(',', '', x)), mo.groups())
+        mo = re_instance_id.match(message)
+        if mo:
+            self.last_instance = mo.group(1)
+        mo = re_cpu_stat.match(message)
+        if mo:
+            self.last_cpu_stat = mo.groups()
         for re_start, re_end, phase in run_phases:
             mo = re_start.search(message)
             if mo:
@@ -374,36 +396,13 @@ class AwsLogParser:
             else:
                 mo = re_end.search(message)
                 if mo:
-                    t = ts - self.phase_start_time
-                    #logging.debug(f'Got end of {phase}: start={self.phase_start_time} stop={ts} total={t}')
                     if self.phase_start_time == 0:
                         logging.warning(f'Only found stop time {ts} for {phase}')
                         continue
-                    total_var = phase + '_time'
-                    num_var = phase + '_num'
-                    min_var = phase + '_min'
-                    max_var = phase + '_max'
-                    if hasattr(self, total_var):
-                        total = getattr(self, total_var) + t
-                    else:
-                        total = t
-                    setattr(self, total_var, total)
-                    if hasattr(self, num_var):
-                        n = getattr(self, num_var) + 1
-                    else:
-                        n = 1
-                    setattr(self, num_var, n)
-                    if hasattr(self, min_var):
-                        val = min(getattr(self, min_var), t)
-                    else:
-                        val = t
-                    setattr(self, min_var, val)
-                    if hasattr(self, max_var):
-                        val = max(getattr(self, max_var), t)
-                    else:
-                        val = t
-                    setattr(self, max_var, val)
-                    self.phase_start_time = 0
+                    t = ts - self.phase_start_time
+                    #logging.debug(f'Got end of {phase}: start={self.phase_start_time} stop={ts} total={t}')
+                    self._register(phase, self.phase_start_time, ts)
+
 
 class AwsCompEnv:
     def __init__(self, batch, ec2):
@@ -551,23 +550,34 @@ def _read_job_logs_aws(cfg, write_logs):
             if 'logStreamName' in container:
                 log_stream = container['logStreamName']
                 logging.debug(f'job {job_id}, queue {job_queue}, status {status}, log stream {log_stream}')
+                next_token = None
                 try:
                     # aws logs get-log-events --log-group-name /aws/batch/job --log-stream-name $log_stream
-                    # TODO: need pagination here, logs are about 1MB per return,
-                    # need to process nextToken/nextForwardToken
+                    # We need log pagination here, logs are about 1MB per return,
+                    # so we process nextToken/nextForwardToken
                     # see 
                     # https://boto3.amazonaws.com/v1/documentation/api/latest/reference/services/logs.html#CloudWatchLogs.Client.get_log_events
-                    log_events = logs.get_log_events(logGroupName='/aws/batch/job',
-                                                    logStreamName=log_stream)
-                    events = log_events['events']
-                    next_token = log_events['nextForwardToken'] # see comment above
-                    for event in events:
-                        ts = event['timestamp']
-                        message = event['message']
-                        escaped_message = message.encode("unicode_escape").decode("utf-8")
+                    while True:
+                        args = {
+                            'logGroupName': '/aws/batch/job',
+                            'logStreamName': log_stream,
+                            'startFromHead': True
+                        }
+                        if next_token:
+                            args['nextToken'] = next_token
+                        log_events = logs.get_log_events(**args)
+                        events = log_events['events']
+                        new_next_token = log_events['nextForwardToken']
+                        for event in events:
+                            ts = event['timestamp']
+                            message = event['message']
+                            escaped_message = message.encode("unicode_escape").decode("utf-8")
 #                            decoded_message = escaped_message.encode('utf-8').decode("unicode_escape")
-                        write_logs.write(f'{ts}\t{escaped_message}\n')
-                        log_parser.parse(ts, message)
+                            write_logs.write(f'{ts}\t{escaped_message}\n')
+                            log_parser.parse(ts, message)
+                        if not new_next_token or new_next_token == next_token:
+                            break
+                        next_token = new_next_token
                 except ClientError as e:
                     # If it's ResourceNotFoundException the log stream is still being copied.
                     # It will be made available eventually, nothing we can sensibly do right now

@@ -16,7 +16,7 @@ spec:
         spec:
           containers:
           - name: check-blast-jobs
-            image: gcr.io/ncbi-sandbox-blast/ncbi/elastic-blast-janitor:latest
+            image: ${ELB_DOCKER_IMAGE}
             imagePullPolicy: IfNotPresent
             env:
             - name: ELB_GCP_PROJECT

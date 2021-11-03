@@ -39,7 +39,7 @@ NTHREADS=$(get_num_cores)
 cleanup_resources_on_error() {
     echo "Previous exit code: $?"
     set +e
-    if ! grep -qi gcp $CFG; then
+    if grep -q '^aws-' $CFG; then
         time $ROOT_DIR/elastic-blast delete --cfg $CFG --loglevel DEBUG --logfile $logfile $DRY_RUN
     fi
     exit 1;
@@ -49,13 +49,20 @@ TMP=`mktemp -t $(basename -s .sh $0)-XXXXXXX`
 trap "cleanup_resources_on_error; /bin/rm -f $TMP" INT QUIT HUP KILL ALRM ERR
 
 rm -fr *.fa *.out.gz elb-*.log
+if [ ! -z "${ELB_TC_BRANCH+x}" ] ; then
+    if grep -q ^labels $CFG; then
+        sed -i~ -e "s@\(^labels.*\)@\1,branch=$ELB_TC_BRANCH@" $CFG
+    else
+        sed -i~ -e "/^\[cluster\]/a labels = branch=$ELB_TC_BRANCH" $CFG
+    fi
+fi
 if which timeout >& /dev/null; then
     timeout --preserve-status ${timeout_minutes}m $ROOT_DIR/elastic-blast submit --cfg $CFG --loglevel DEBUG --logfile $logfile $DRY_RUN --sync
 else
     $ROOT_DIR/elastic-blast submit --cfg $CFG --loglevel DEBUG --logfile $logfile $DRY_RUN --sync
 fi
 
-if ! grep -qi aws $CFG; then
+if ! grep -q '^aws-' $CFG; then
     make logs 2>&1 | tee $logs
     $ROOT_DIR/elastic-blast run-summary --cfg $CFG --loglevel DEBUG --logfile $logfile -o $runsummary_output $DRY_RUN
 

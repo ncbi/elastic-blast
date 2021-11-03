@@ -37,6 +37,7 @@ import logging, ast
 import urllib.request
 from string import digits
 from random import sample
+from timeit import default_timer as timer
 from tenacity import retry, stop_after_attempt, wait_exponential
 from typing import Dict, IO, Tuple, Iterable, Generator, TextIO, List
 
@@ -108,8 +109,11 @@ def copy_to_bucket(dry_run: bool = False):
     s3 = boto3.resource('s3')
     # NB: Here we need to provide stable list of keys in
     # dictionary while deleting processed keys, hence list(keys())
+    start = timer()
+    query_bytes = 0
     for bucket_key in list(bucket_temp_dirs.keys()):
         tempdir = bucket_temp_dirs[bucket_key]
+        query_bytes += sum(os.path.getsize(os.path.join(tempdir,f)) for f in os.listdir(tempdir) if os.path.isfile(os.path.join(tempdir,f)))
         # gsutil -mq cp tempdir/* bucket_key/
         if bucket_key.startswith(ELB_GCS_PREFIX):
             bucket_dir = bucket_key + ('/' if bucket_key[-1] != '/' else '')
@@ -135,9 +139,43 @@ def copy_to_bucket(dry_run: bool = False):
                     bucket.upload_file(os.path.join(tempdir, fn), full_name)
         else:
             raise ValueError(f'Incorrect bucket prefix {bucket_key}')
+        end = timer()
+        if not dry_run:
+            logging.debug(f'RUNTIME upload-query-batches {end-start} seconds')
+            logging.debug(f'SPEED to upload-query-batches {(query_bytes/1000000)/(end-start):.2f} MB/second')
         logging.debug(f'Removing temp directory {tempdir}')
         shutil.rmtree(tempdir)
         bucket_temp_dirs.pop(bucket_key)
+
+
+def remove_bucket_key(bucket_key: str, dry_run: bool = False) -> None:
+    """ Removes data under given bucket/key
+    bucket_key: bucket and key prefix as single path
+    """
+    if bucket_key.startswith(ELB_S3_PREFIX):
+        s3 = boto3.resource('s3')
+        bname, prefix = parse_bucket_name_key(bucket_key)
+        if not dry_run:
+            s3_bucket = s3.Bucket(bname)
+            s3_bucket.objects.filter(Prefix=prefix).delete()
+            logging.debug(f'Deleted {bucket_key}')
+        else:
+            logging.info(f'dry-run: would have removed {bname}/{prefix}')
+    elif bucket_key.startswith(ELB_GCS_PREFIX):
+        out_path = os.path.join(bucket_key, '*')
+        cmd = f'gsutil -mq rm {out_path}'
+        if dry_run:
+            logging.info(cmd)
+            logging.debug(f'Deleted {out_path}')
+        else:
+            # This command is a part of clean-up process, there is no benefit in reporting
+            # its failure except logging it
+            logging.info(f'dry-run: would have removed {out_path}')
+            try:
+                safe_exec(cmd)
+            except SafeExecError as exn:
+                message = exn.message.strip().translate(str.maketrans('\n', '|'))
+                logging.warning(message)
 
 
 def cleanup_temp_bucket_dirs(dry_run: bool = False):

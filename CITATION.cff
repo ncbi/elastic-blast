@@ -1,7 +1,22 @@
 cff-version: "1.1.0"
 message: "If you use this software, please cite it using these metadata."
 title: ElasticBLAST
-version: "0.1.9"
-date-released: 2021-09-21
+version: "0.1.10"
+date-released: 2021-11-02
 license: "NCBI Public Domain"
 repository-code: "https://github.com/ncbi/elastic-blast/"
+authors: 
+  - family-names: Camacho
+    given-names: Christiam E.
+    orcid: https://orcid.org/0000-0002-6709-8298
+  - family-names: Boratyn
+    given-names: Greg
+  - family-names: Joukov
+    given-names: Victor
+    orcid: https://orcid.org/0000-0003-2962-8902
+  - family-names: Merezhuk
+    given-names: Yuri
+  - family-names: Madden
+    given-names: Thomas
+    orcid: https://orcid.org/0000-0003-1641-7321
+

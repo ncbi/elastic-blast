@@ -1,0 +1,259 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Deploy ElasticBLAST Janitor lambda function and schedule it to run
+Metadata:
+  AWS::CloudFormation::Interface:
+    ParameterGroups:
+      - Label:
+          default: Input configuration
+        Parameters:
+          - StackName
+          - JanitorSchedule
+          - Owner
+          - S3Bucket
+          - S3Key
+          - ElbResults
+    ParameterLabels:
+      StackName:
+        default: Stack name
+      JanitorSchedule:
+        default: cron expression for running the ElasticBLAST janitor module
+      Owner:
+        default: User that launched this CloudFormation stack
+      S3Bucket:
+        default: Bucket where the lambda zip file is stored
+      S3Key:
+        default: Key within the bucket where the lambda zip file is stored
+      ElbResults:
+        default: ElasticBLAST results bucket
+Parameters:
+  StackName:
+    Type: String
+    Description: ElasticBLAST AWS CloudFormation stack name that will be deleted.
+  JanitorSchedule:
+    Type: String
+    Description: Cron-expression to run the ElasticBLAST Janitor lambda function
+  Owner:
+    Description: User who creates/runs this application
+    Type: String
+  S3Bucket:
+    Description: Bucket where the lambda zip file is stored
+    Type: String
+  S3Key:
+    Description: Key within the bucket where the lambda zip file is stored
+    Type: String
+  ElbResults:
+    Description: ElasticBLAST results bucket
+    Type: String
+
+Resources:
+  ElasticBlastJanitorLambdaExecutionRole:
+    Type: "AWS::IAM::Role"
+    Properties:
+      Description: !Sub "Role to run ElasticBLAST janitor on ${StackName}"
+      #RoleName: !Join [-, ['elasticblast-lambda-exec-role', !Select [4, !Split ['-', !Select [2, !Split ['/', !Ref AWS::StackId]]]]]]
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+        - Effect: "Allow"
+          Principal:
+            Service: ["lambda.amazonaws.com"]
+          Action: "sts:AssumeRole"
+      Path: "/"
+      Policies:
+      - PolicyName: "elasticblast_janitor_lambda_policy"
+        PolicyDocument:
+          Version: "2012-10-17"
+          Statement:
+          - Effect: "Allow"
+            Action:
+            - "logs:CreateLogGroup"
+            - "logs:CreateLogStream"
+            - "logs:PutLogEvents"
+            Resource: "arn:aws:logs:*:*:*"
+          - Effect: "Allow"
+            Action:
+            - "cloudformation:DeleteStack"
+            Resource: !Sub "arn:aws:cloudformation:${AWS::Region}:${AWS::AccountId}:stack/${StackName}/*"
+          - Effect: "Allow"
+            Action:
+            - "ec2:DescribeInstanceTypes"
+            - "ec2:DescribeVpcs"
+            - "ec2:DescribeSubnets"
+            - "batch:DescribeJobs"
+            - "cloudformation:DescribeStacks"
+            - "s3:GetObject"
+            - "s3:PutObject"
+            - "s3:DeleteObject"
+            - "s3:ListBucket"
+            Resource: "*"
+      Tags:
+        - Key: Name
+          Value: !Join [-, [elasticblast, !Ref Owner, 'lambda-exec-role']]
+        - Key: Project
+          Value: BLAST
+        - Key: Owner
+          Value: !Ref Owner
+        - Key: billingcode
+          Value: elastic-blast
+  ElasticBlastJanitorLambda:
+    Type: "AWS::Lambda::Function"
+    DependsOn:
+      - ElasticBlastJanitorLambdaExecutionRole
+      - CopyZips
+    Properties:
+      FunctionName: !Sub "${StackName}-ElasticBlastJanitorLambda"
+      Description: !Sub "ElasticBLAST janitor lambda function for ${StackName}"
+      Code:
+        S3Bucket: !Ref 'CopyZipsLambdaBucket'
+        S3Key: !Sub '${S3Key}elasticblast-janitor-lambda-deployment.zip'
+      Handler: "lambda_elb.handler"
+      Runtime: python3.8
+      Timeout: 900
+      MemorySize: 256
+      Role: !GetAtt ElasticBlastJanitorLambdaExecutionRole.Arn
+      Tags:
+        - Key: Name
+          Value: !Join [-, [elasticblast, !Ref Owner, 'janitor', 'lambda']]
+        - Key: Project
+          Value: BLAST
+        - Key: Owner
+          Value: !Ref Owner
+        - Key: billingcode
+          Value: elastic-blast
+  ElasticBlastJanitorEventRule:
+     DependsOn:
+       - ElasticBlastJanitorLambda
+     Type: "AWS::Events::Rule"
+     Properties:
+       Description: !Sub "Event to periodically run ElasticBLAST Janitor on ${StackName}"
+       ScheduleExpression: !Ref JanitorSchedule
+       State: "ENABLED"
+       Targets: 
+          - 
+            Arn: !GetAtt ElasticBlastJanitorLambda.Arn
+            Id: !Sub 'ElasticBlastJanitorLambda-${StackName}'
+            Input: !Sub '{ "ELB_RESULTS" : "${ElbResults}", "ELB_CLUSTER_NAME": "${StackName}" }'
+  ElasticBlastJanitorLambdaPermission:
+    Type: "AWS::Lambda::Permission"
+    Properties: 
+      FunctionName: !Sub "arn:aws:lambda:${AWS::Region}:${AWS::AccountId}:function:${StackName}-ElasticBlastJanitorLambda"
+      Action: "lambda:InvokeFunction"
+      Principal: "events.amazonaws.com"
+      SourceArn: !GetAtt ElasticBlastJanitorEventRule.Arn
+
+  CopyZipsLambdaBucket:
+    Type: AWS::S3::Bucket
+    Properties:
+      Tags:
+        - Key: Name
+          Value: !Join [-, [elasticblast, !Ref Owner, 'janitor', 'deployment']]
+        - Key: Project
+          Value: BLAST
+        - Key: Owner
+          Value: !Ref Owner
+        - Key: billingcode
+          Value: elastic-blast
+  CopyZips:
+    Type: Custom::CopyZips
+    Properties:
+      ServiceToken: !GetAtt 'CopyZipsFunction.Arn'
+      DestBucket: !Ref 'CopyZipsLambdaBucket'
+      SourceBucket: !Ref 'S3Bucket'
+      Prefix: !Ref 'S3Key'
+      Objects:
+        - elasticblast-janitor-lambda-deployment.zip
+  CopyZipsRole:
+    Type: AWS::IAM::Role
+    Properties:
+      Description: !Sub "Role to deploy ElasticBLAST janitor lambda on ${StackName}"
+      AssumeRolePolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Allow
+            Principal:
+              Service: lambda.amazonaws.com
+            Action: sts:AssumeRole
+      ManagedPolicyArns:
+        - arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+      Path: /
+      Policies:
+        - PolicyName: lambda-copier
+          PolicyDocument:
+            Version: '2012-10-17'
+            Statement:
+              - Effect: Allow
+                Action:
+                  - s3:GetObject
+                Resource:
+                  - !Sub 'arn:aws:s3:::${S3Bucket}/${S3Key}*'
+              - Effect: Allow
+                Action:
+                  - s3:PutObject
+                  - s3:DeleteObject
+                Resource:
+                  - !Sub 'arn:aws:s3:::${CopyZipsLambdaBucket}/${S3Key}*'
+  CopyZipsFunction:
+    Type: AWS::Lambda::Function
+    Properties:
+      Description: !Sub Imports ElasticBLAST janitor lambda into ${CopyZipsLambdaBucket} for ${StackName}
+
+      Handler: index.handler
+      Runtime: python3.8
+      Role: !GetAtt 'CopyZipsRole.Arn'
+      Timeout: 240
+      Code:
+        ZipFile: |
+          import json
+          import logging
+          import threading
+          import boto3
+          import cfnresponse
+
+          def copy_objects(source_bucket, dest_bucket, prefix, objects):
+              s3 = boto3.client('s3')
+              for o in objects:
+                  key = prefix + o
+                  copy_source = {
+                      'Bucket': source_bucket,
+                      'Key': key
+                  }
+                  print(('copy_source: %s' % copy_source))
+                  print(('dest_bucket = %s'%dest_bucket))
+                  print(('key = %s' %key))
+                  s3.copy_object(CopySource=copy_source, Bucket=dest_bucket,
+                        Key=key)
+
+          def delete_objects(bucket, prefix, objects):
+              s3 = boto3.client('s3')
+              objects = {'Objects': [{'Key': prefix + o} for o in objects]}
+              s3.delete_objects(Bucket=bucket, Delete=objects)
+
+          def timeout(event, context):
+              logging.error('Execution is about to time out, sending failure response to CloudFormation')
+              cfnresponse.send(event, context, cfnresponse.FAILED, {}, None)
+
+          def handler(event, context):
+              # make sure we send a failure to CloudFormation if the function
+              # is going to timeout
+              timer = threading.Timer((context.get_remaining_time_in_millis()
+                        / 1000.00) - 0.5, timeout, args=[event, context])
+              timer.start()
+
+              print(('Received event: %s' % json.dumps(event)))
+              status = cfnresponse.SUCCESS
+              try:
+                  source_bucket = event['ResourceProperties']['SourceBucket']
+                  dest_bucket = event['ResourceProperties']['DestBucket']
+                  prefix = event['ResourceProperties']['Prefix']
+                  objects = event['ResourceProperties']['Objects']
+                  if event['RequestType'] == 'Delete':
+                      delete_objects(dest_bucket, prefix, objects)
+                  else:
+                      copy_objects(source_bucket, dest_bucket, prefix, objects)
+              except Exception as e:
+                  logging.error('Exception: %s' % e, exc_info=True)
+                  status = cfnresponse.FAILED
+              finally:
+                  timer.cancel()
+                  cfnresponse.send(event, context, status, {}, None)
+

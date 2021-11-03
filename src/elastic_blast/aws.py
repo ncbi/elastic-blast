@@ -31,7 +31,9 @@ import os
 from collections import defaultdict
 from functools import wraps
 import json
+import inspect
 from tempfile import NamedTemporaryFile
+from timeit import default_timer as timer
 import uuid
 
 from pprint import pformat
@@ -51,7 +53,10 @@ from .constants import ELB_DOCKER_IMAGE_AWS, INPUT_ERROR, ELB_QS_DOCKER_IMAGE_AW
 from .constants import DEPENDENCY_ERROR, TIMEOUT_ERROR
 from .constants import ELB_AWS_JOB_IDS, ELB_S3_PREFIX, ELB_GCS_PREFIX
 from .constants import ELB_DFLT_NUM_BATCHES_FOR_TESTING, ELB_UNKNOWN_NUMBER_OF_QUERY_SPLITS
-from .constants import ElbStatus
+from .constants import ElbStatus, ELB_CJS_DOCKER_IMAGE_AWS
+from .constants import ELB_AWS_JANITOR_CFN_TEMPLATE, ELB_DFLT_JANITOR_SCHEDULE_AWS
+from .constants import ELB_AWS_JANITOR_LAMBDA_DEPLOYMENT_BUCKET, ELB_AWS_JANITOR_LAMBDA_DEPLOYMENT_KEY
+from .constants import CFG_CLOUD_PROVIDER, CFG_CP_AWS_AUTO_SHUTDOWN_ROLE
 from .filehelper import parse_bucket_name_key
 from .aws_traits import get_machine_properties, create_aws_config, get_availability_zones_for
 from .object_storage_utils import write_to_s3
@@ -105,7 +110,9 @@ def check_cluster(cfg: ElasticBlastConfig) -> bool:
 
 class ElasticBlastAws(ElasticBlast):
     """ Implementation of core ElasticBLAST functionality in AWS.
-    Uses a CloudFormation template and AWS Batch.
+    Uses a CloudFormation template and AWS Batch for its main operation.
+    Uses a nested CloudFormation template and lambda to clean up after itself
+    (janitor module)
     """
 
     def __init__(self, cfg: ElasticBlastConfig, create=False, cleanup_stack: List[Any]=None):
@@ -123,7 +130,7 @@ class ElasticBlastAws(ElasticBlast):
         """ Internal constructor, converts AWS exceptions to UserReportError """
         self.boto_cfg = create_aws_config(cfg.aws.region)
         self.stack_name = self.cfg.cluster.name
-        logging.debug(f'Cloudformation stack name: {self.stack_name}')
+        logging.debug(f'CloudFormation stack name: {self.stack_name}')
 
         self.cf = boto3.resource('cloudformation', config=self.boto_cfg)
         self.batch = boto3.client('batch', config=self.boto_cfg)
@@ -169,9 +176,9 @@ class ElasticBlastAws(ElasticBlast):
                 logging.debug(f'Initialized AWS CloudFormation stack {self.cf_stack}: status {status}')
             else:
                 logging.debug(f'dry-run: would have initialized {self.stack_name}')
-        except ClientError:
+        except ClientError as err:
             if not create:
-                logging.error(f'Cloudformation stack {self.stack_name} could not be initialized')
+                logging.error(f'CloudFormation stack {self.stack_name} could not be initialized: {err}')
             initialized = False
         if not initialized and create:
             use_ssd = False
@@ -192,6 +199,18 @@ class ElasticBlastAws(ElasticBlast):
                 max_cpus = self.cfg.cluster.num_nodes * \
                     get_machine_properties(instance_type, self.boto_cfg).ncpus
             token = cfg.cluster.results.md5
+            janitor_schedule = ELB_DFLT_JANITOR_SCHEDULE_AWS
+            if 'ELB_JANITOR_SCHEDULE' in os.environ:
+                janitor_schedule = os.environ['ELB_JANITOR_SCHEDULE']
+                logging.debug(f'Overriding janitor schedule to "{janitor_schedule}"')
+            if 'ELB_DISABLE_AUTO_SHUTDOWN' in os.environ:
+                janitor_schedule = ''
+                logging.debug('Disabling janitor')
+            elif not self.cfg.aws.auto_shutdown_role:
+                janitor_schedule = ''
+                logging.debug(f'Disabling janitor due to missing {CFG_CLOUD_PROVIDER}.{CFG_CP_AWS_AUTO_SHUTDOWN_ROLE}')
+            else:
+                logging.debug("Submitting ElasticBLAST janitor CloudFormation stack")
             params = [
                 {'ParameterKey': 'Owner', 'ParameterValue': self.owner},
                 {'ParameterKey': 'MaxCpus', 'ParameterValue': str(max_cpus)},
@@ -200,7 +219,13 @@ class ElasticBlastAws(ElasticBlast):
                 {'ParameterKey': 'DiskSize', 'ParameterValue': str(disk_size)},
                 {'ParameterKey': 'DockerImageBlast', 'ParameterValue': ELB_DOCKER_IMAGE_AWS},
                 {'ParameterKey': 'DockerImageQuerySplitting', 'ParameterValue': ELB_QS_DOCKER_IMAGE_AWS},
-                {'ParameterKey': 'RandomToken', 'ParameterValue': token}
+                {'ParameterKey': 'DockerImageJobSubmission', 'ParameterValue': ELB_CJS_DOCKER_IMAGE_AWS},
+                {'ParameterKey': 'RandomToken', 'ParameterValue': token},
+                {'ParameterKey': 'ElbResults', 'ParameterValue': self.results_bucket},
+                {'ParameterKey': 'JanitorSchedule', 'ParameterValue': janitor_schedule},
+                {'ParameterKey': 'JanitorTemplateUrl', 'ParameterValue': ELB_AWS_JANITOR_CFN_TEMPLATE},
+                {'ParameterKey': 'JanitorLambdaDeploymentS3Bucket', 'ParameterValue': ELB_AWS_JANITOR_LAMBDA_DEPLOYMENT_BUCKET},
+                {'ParameterKey': 'JanitorLambdaDeploymentS3Key', 'ParameterValue': ELB_AWS_JANITOR_LAMBDA_DEPLOYMENT_KEY}
             ]
             if self.vpc_id and self.vpc_id.lower() != 'none':
                 params.append({'ParameterKey': 'VPC', 'ParameterValue': self.vpc_id})
@@ -258,12 +283,21 @@ class ElasticBlastAws(ElasticBlast):
             logging.debug(f'Setting AWS CloudFormation parameters: {pformat(params)}')
             logging.debug(f'Creating CloudFormation stack {self.stack_name} from {CF_TEMPLATE}')
             template_body = Path(CF_TEMPLATE).read_text()
+            creation_failure_strategy = 'DELETE'
+            if 'ELB_ROLLBACK_ON_CFN_CREATION_FAILURE' in os.environ:
+                creation_failure_strategy = 'ROLLBACK'
             if not self.dry_run:
-                self.cf_stack = self.cf.create_stack(StackName=self.stack_name,
-                                                     TemplateBody=template_body,
-                                                     Parameters=params,
-                                                     Tags=tags,
-                                                     Capabilities=capabilities)
+                create_stack_args = { 
+                    "StackName": self.stack_name,
+                    "TemplateBody": template_body,
+                    "OnFailure": creation_failure_strategy,
+                    "Parameters": params,
+                    "Tags": tags,
+                    "Capabilities": capabilities
+                }
+                if self.cfg.aws.auto_shutdown_role:
+                    create_stack_args["RoleARN"] = self.cfg.aws.auto_shutdown_role
+                self.cf_stack = self.cf.create_stack(**create_stack_args)
                 waiter = self.cf.meta.client.get_waiter('stack_create_complete')
                 try:
                     # Waiter periodically probes for cloudformation stack
@@ -275,18 +309,18 @@ class ElasticBlastAws(ElasticBlast):
                     # report cloudformation stack creation timeout
                     if self.cf_stack.stack_status == 'CREATE_IN_PROGRESS':
                         raise UserReportError(returncode=TIMEOUT_ERROR,
-                                              message='Cloudforation stack creation has timed out')
+                                              message='CloudFormation stack creation has timed out')
 
                     # report cloudformation stack creation error,
                     elif self.cf_stack.stack_status != 'CREATE_COMPLETE':
                         # report error message
-                        message = 'Cloudformation stack creation failed'
+                        message = 'CloudFormation stack creation failed'
                         stack_messages = self._get_cloudformation_errors()
                         if stack_messages:
                             message += f' with error message {". ".join(stack_messages)}'
                         else:
                             message += f' for unknown reason.'
-                        message += ' Please, run elastic-blast delete to remove cloudformation stack with errors'
+                        message += ' Please, run elastic-blast delete to remove CloudFormation stack with errors'
                         raise UserReportError(returncode=DEPENDENCY_ERROR,
                                               message=message)
 
@@ -320,27 +354,27 @@ class ElasticBlastAws(ElasticBlast):
             if self.job_queue_name:
                 logging.debug(f'JobQueueName: {self.job_queue_name}')
             else:
-                raise UserReportError(returncode=DEPENDENCY_ERROR, message='JobQueueName could not be read from cloudformation stack')
+                raise UserReportError(returncode=DEPENDENCY_ERROR, message='JobQueueName could not be read from CloudFormation stack')
 
             if self.blast_job_definition_name:
                 logging.debug(f'BlastJobDefinitionName: {self.blast_job_definition_name}')
             else:
-                raise UserReportError(returncode=DEPENDENCY_ERROR, message='BlastJobDefinitionName could not be read from cloudformation stack')
+                raise UserReportError(returncode=DEPENDENCY_ERROR, message='BlastJobDefinitionName could not be read from CloudFormation stack')
 
             if self.qs_job_definition_name:
                 logging.debug(f'QuerySplittingJobDefinitionName: {self.qs_job_definition_name}')
             else:
-                raise UserReportError(returncode=DEPENDENCY_ERROR, message='QuerySplittingJobDefinitionName could not be read from cloudformation stack')
+                raise UserReportError(returncode=DEPENDENCY_ERROR, message='QuerySplittingJobDefinitionName could not be read from CloudFormation stack')
 
             if self.js_job_definition_name:
                 logging.debug(f'JobSubmissionJobDefinitionName: {self.js_job_definition_name}')
             else:
-                raise UserReportError(returncode=DEPENDENCY_ERROR, message='JobSubmissionJobDefinitionName could not be read from cloudformation stack')
+                raise UserReportError(returncode=DEPENDENCY_ERROR, message='JobSubmissionJobDefinitionName could not be read from CloudFormation stack')
 
             if self.compute_env_name:
                 logging.debug(f'ComputeEnvName: {self.compute_env_name}')
             else:
-                logging.warning('ComputeEnvName could not be read from cloudformation stack')
+                logging.warning('ComputeEnvName could not be read from CloudFormation stack')
 
     def _provide_subnets(self):
         """ Read subnets from config file or if not set try to get them from default VPC """
@@ -420,7 +454,7 @@ class ElasticBlastAws(ElasticBlast):
 
         # otherwise return en empty string, which cloudformation template
         # will interpret to create the instance role
-        logging.debug('Instance role will be created by cloudformation')
+        logging.debug('Instance role will be created by CloudFormation')
         return ''
 
     def _get_batch_service_role(self):
@@ -451,7 +485,7 @@ class ElasticBlastAws(ElasticBlast):
 
         # otherwise return en empty string, which cloudformation template
         # will interpret to create the instance role
-        logging.debug('Batch service role will be created by cloudformation')
+        logging.debug('Batch service role will be created by CloudFormation')
         return ''
 
     def _get_job_role(self):
@@ -464,7 +498,7 @@ class ElasticBlastAws(ElasticBlast):
             logging.debug(f'Using Batch job role provided from config: {job_role}')
             return job_role
         else:
-            logging.debug('Batch job role will be created by cloudformation')
+            logging.debug('Batch job role will be created by CloudFormation')
             return ''
 
     def _get_spot_fleet_role(self):
@@ -477,29 +511,28 @@ class ElasticBlastAws(ElasticBlast):
             logging.debug(f'Using Spot Fleet role provided from config: {role}')
             return role
         else:
-            logging.debug('Spot Fleet role will be created by cloudformation')
+            logging.debug('Spot Fleet role will be created by CloudFormation')
             return ''
 
     @handle_aws_error
     def status(self) -> ElbStatus:
         retval = ElbStatus.UNKNOWN
-        try:
-            counts, _ = self.check_status()
-            njobs = sum(counts.values())
-            pending = counts['pending']
-            running = counts['running']
-            succeeded = counts['succeeded']
-            failed = counts['failed']
-            logging.debug(f'NumJobs {njobs} Pending {pending} Running {running} Succeeded {succeeded} Failed {failed}')
-            if failed > 0:
-                retval = ElbStatus.FAILURE
-            elif running > 0 or pending > 0:
-                retval = ElbStatus.RUNNING
-            elif (pending + running + failed) == 0 and succeeded == njobs:
-                retval = ElbStatus.SUCCESS
-        except:
-            logging.warning('Got exception in ElasticBlastAws.status')
-            raise
+
+        counts, _ = self.check_status()
+        njobs = sum(counts.values())
+        pending = counts['pending']
+        running = counts['running']
+        succeeded = counts['succeeded']
+        failed = counts['failed']
+        logging.debug(f'NumJobs {njobs} Pending {pending} Running {running} Succeeded {succeeded} Failed {failed}')
+
+        if failed > 0:
+            retval = ElbStatus.FAILURE
+        elif running > 0 or pending > 0:
+            retval = ElbStatus.RUNNING
+        elif (pending + running + failed) == 0 and succeeded == njobs:
+            retval = ElbStatus.SUCCESS
+
         return retval
 
 
@@ -513,8 +546,9 @@ class ElasticBlastAws(ElasticBlast):
                 logging.info(f"AWS CloudFormation stack {self.stack_name} doesn't exist, nothing to delete")
                 return
             logging.debug(f'Deleting AWS CloudFormation stack {self.stack_name}')
+            self._remove_ancillary_data(ELB_QUERY_BATCH_DIR)
             self.cf_stack.delete()
-            for sd in [ELB_QUERY_BATCH_DIR, ELB_METADATA_DIR, ELB_LOG_DIR]:
+            for sd in [ELB_METADATA_DIR, ELB_LOG_DIR]:
                 self._remove_ancillary_data(sd)
             waiter = self.cf.meta.client.get_waiter('stack_delete_complete')
             try:
@@ -523,11 +557,11 @@ class ElasticBlastAws(ElasticBlast):
                 # report cloudformation stack deletion timeout
                 if self.cf_stack.stack_status == 'DELETE_IN_PROGRESS':
                     raise UserReportError(returncode=TIMEOUT_ERROR,
-                                          message='Cloudformation stack deletion has timed out')
+                                          message='CloudFormation stack deletion has timed out')
 
                 # report cloudformation stack deletion error
                 elif self.cf_stack.stack_status != 'DELETE_COMPLETE':
-                    message = 'Cloudformation stack deletion failed'
+                    message = 'CloudFormation stack deletion failed'
                     stack_messages = self._get_cloudformation_errors()
                     if stack_messages:
                         message += f' with errors {". ".join(stack_messages)}'
@@ -607,7 +641,7 @@ class ElasticBlastAws(ElasticBlast):
                       'output': self.results_bucket}
         logging.debug(f'Query splitting job definition container overrides {overrides}')
         logging.debug(f"Query splitting job definition parameters {parameters}")
-        jname = f'elasticblast-{self.owner}-query-split'
+        jname = f'elasticblast-{self.owner}-{self.cfg.cluster.results.md5}-query-split'
         if not self.dry_run:
             logging.debug(f"Launching query splitting job named {jname}")
             job = self.batch.submit_job(jobQueue=self.job_queue_name,
@@ -658,7 +692,20 @@ class ElasticBlastAws(ElasticBlast):
 
 
     @handle_aws_error
-    def cloud_submit(self):
+    def submit(self, query_batches: List[str], query_length, one_stage_cloud_query_split: bool) -> None:
+        """ Submit query batches to cluster, converts AWS exceptions to UserReportError
+            Parameters:
+                query_batches               - list of bucket names of queries to submit
+                query_length                - total query length
+                one_stage_cloud_query_split - do the query split in the cloud as a part
+                                              of executing a regular job """
+        if self.cloud_job_submission:
+            self._cloud_submit()
+        else:
+            self.client_submit(query_batches, one_stage_cloud_query_split)
+
+
+    def _cloud_submit(self) -> None:
         parameters = {'db': self.db,
                       'num-vcpus': str(self.cfg.cluster.num_cpus),
                       'mem-limit': self.cfg.blast.mem_limit,
@@ -669,6 +716,9 @@ class ElasticBlastAws(ElasticBlast):
 
         if self.cfg.blast.taxidlist:
             parameters['taxidlist'] = self.cfg.blast.taxidlist
+        if logging.getLogger(__name__).getEffectiveLevel() == logging.DEBUG:
+            parameters['loglevel'] = 'DEBUG'
+            parameters['logfile'] = 'stderr'
 
         overrides = {'vcpus': self.cfg.cluster.num_cpus,
                      'memory': int(convert_memory_to_mb(self.cfg.blast.mem_limit)),
@@ -679,34 +729,33 @@ class ElasticBlastAws(ElasticBlast):
         # FIXME: It may be better to make usage report part of config that
         # ElasticBlastConfig sets from environment
         if 'BLAST_USAGE_REPORT' in os.environ:
-            overrides['environment'].append({'name': 'BLAST_USAGE_REPORT',
+            ovr_env = overrides['environment']
+            assert isinstance(ovr_env, List)
+            ovr_env.append({'name': 'BLAST_USAGE_REPORT',
                                              'value': os.environ['BLAST_USAGE_REPORT']})
 
         logging.debug(f'Job submission in the cloud parameters: {parameters}')
         logging.debug(f'Job submission in the cloud overrides: {overrides}')
-        jname = f'elasticblast-{self.owner}-job-submissions'
+        jname = f'elasticblast-{self.owner}-{self.cfg.cluster.results.md5}-job-submissions'
         if not self.dry_run:
             logging.debug(f'Submit-jobs job definition name: {self.js_job_definition_name}')
+            submit_job_args = {
+                "jobQueue": self.job_queue_name,
+                "jobDefinition": self.js_job_definition_name,
+                "jobName": jname,
+                "parameters": parameters,
+                "containerOverrides": overrides
+            }
             if self.qs_job_id:
-                job = self.batch.submit_job(jobQueue=self.job_queue_name,
-                                            jobDefinition=self.js_job_definition_name,
-                                            jobName=jname,
-                                            parameters=parameters,
-                                            containerOverrides=overrides,
-                                            dependsOn=[{'jobId': self.qs_job_id}])
-            else:
-                job = self.batch.submit_job(jobQueue=self.job_queue_name,
-                                            jobDefinition=self.js_job_definition_name,
-                                            jobName=jname,
-                                            parameters=parameters,
-                                            containerOverrides=overrides)
+                submit_job_args["dependsOn"] = [{'jobId': self.qs_job_id}]
+            job = self.batch.submit_job(**submit_job_args)
             logging.info(f'Submitted AWS Batch job {job["jobId"]} to submit search jobs')
             self.job_ids.append(job['jobId'])
             self.upload_job_ids()
 
 
     @handle_aws_error
-    def submit(self, query_batches: List[str], one_stage_cloud_query_split: bool) -> None:
+    def client_submit(self, query_batches: List[str], one_stage_cloud_query_split: bool) -> None:
         """ Submit query batches to cluster, converts AWS exceptions to UserReportError
             Parameters:
                 query_batches               - list of bucket names of queries to submit
@@ -765,6 +814,7 @@ class ElasticBlastAws(ElasticBlast):
             query_batches = query_batches[:nbatches2test]
             logging.debug(f'For testing purposes will only process a subset of query batches: {nbatches2test}')
 
+        start = timer()
         for i, q in enumerate(query_batches):
             parameters['query-batch'] = q
             parameters['split-part'] = str(i)
@@ -782,24 +832,24 @@ class ElasticBlastAws(ElasticBlast):
                 overrides['environment'] = [{'name': 'BLAST_USAGE_REPORT',
                                              'value': 'false'}]
             if not self.dry_run:
+                submit_job_args = {
+                    "jobQueue": self.job_queue_name,
+                    "jobDefinition": self.blast_job_definition_name,
+                    "jobName": jname,
+                    "parameters": parameters,
+                    "containerOverrides": overrides
+                }
                 if self.qs_job_id:
-                    job = self.batch.submit_job(jobQueue=self.job_queue_name,
-                                                jobDefinition=self.blast_job_definition_name,
-                                                jobName=jname,
-                                                parameters=parameters,
-                                                containerOverrides=overrides,
-                                                dependsOn=[{'jobId': self.qs_job_id}])
-                else:
-                    job = self.batch.submit_job(jobQueue=self.job_queue_name,
-                                                jobDefinition=self.blast_job_definition_name,
-                                                jobName=jname,
-                                                parameters=parameters,
-                                                containerOverrides=overrides)
+                    submit_job_args["dependsOn"] = [{'jobId': self.qs_job_id}]
+                job = self.batch.submit_job(**submit_job_args)
                 self.job_ids.append(job['jobId'])
                 logging.debug(f"Job definition parameters for job {job['jobId']} {parameters}")
                 logging.info(f"Submitted AWS Batch job {job['jobId']} with query {q}")
             else:
                 logging.debug(f'dry-run: would have submitted {jname} with query {q}')
+        end = timer()
+        logging.debug(f'RUNTIME submit-jobs {end-start} seconds')
+        logging.debug(f'SPEED to submit-jobs {len(query_batches)/(end-start):.2f} jobs/second')
 
         if not self.dry_run:
             # upload AWS-Batch job ids to results bucket for better search
@@ -841,6 +891,7 @@ class ElasticBlastAws(ElasticBlast):
             job_ids.append(self.qs_job_id)
         job_ids = list(set(job_ids))
         bucket.put_object(Body=json.dumps(job_ids).encode(), Key=key)
+        logging.debug(f'Uploaded {len(job_ids)} job IDs to {self.results_bucket}/{ELB_METADATA_DIR}/{ELB_AWS_JOB_IDS}')
 
 
     def upload_query_length(self, query_length: int) -> None:
@@ -850,11 +901,6 @@ class ElasticBlastAws(ElasticBlast):
             write_to_s3(os.path.join(self.results_bucket, ELB_METADATA_DIR, ELB_QUERY_LENGTH), str(query_length), self.boto_cfg)
         else:
             logging.debug('dry-run: would have uploaded query length')
-
-
-    def check_job_number_limit(self, queries, query_length) -> None:
-        " Check that number of jobs generated does not exceed platform maximum "
-        pass
 
 
     def check_status(self, extended=False) -> Tuple[Dict[str, int], str]:
@@ -888,9 +934,12 @@ class ElasticBlastAws(ElasticBlast):
                     self.job_ids += json.load(f_ids)
                     self.job_ids = list(set(self.job_ids))
             except ClientError as err:
-                logging.debug(f'Failed to retrieve {os.path.join(self.results_bucket, ELB_METADATA_DIR, ELB_AWS_JOB_IDS)}')
-                # reraise for other problems than missing file
-                if err.response['Error']['Code'] != '404':
+                err_code = err.response['Error']['Code']
+                fnx_name = inspect.stack()[0].function
+                if err_code == "404":
+                    logging.debug(f'{fnx_name} failed to retrieve {os.path.join(self.results_bucket, ELB_METADATA_DIR, ELB_AWS_JOB_IDS)}: error code {err_code}')
+                else:
+                    logging.debug(f'{fnx_name} raised exception on ClientError: {pformat(err.response)}')
                     raise
 
     @handle_aws_error
@@ -972,28 +1021,6 @@ class ElasticBlastAws(ElasticBlast):
             if jobs_in_status:
                 detailed_rep.append('\n'.join(detailed_info[status]))
         return counts, '\n'.join(detailed_rep)
-
-    def wait_until_done(self):
-        if self.dry_run:
-            return
-
-        status = self.check_status()
-        njobs = sum(status.values())
-        ndone = 0
-        logging.debug(f'Got {njobs} AWS jobs')
-
-        done = False
-        while not done:
-            if ndone == njobs:
-                done = True
-                logging.debug(f'Done waiting for job')
-            else:
-                ndone = status['succeeded'] + status['failed']
-                nrunning = status['running']
-                logging.debug(f'njobs={njobs} nrunning={nrunning} ndone={ndone}')
-                time.sleep(SECONDS2SLEEP)
-                status = self.check_status()
-
 
     def _remove_ancillary_data(self, bucket_prefix: str) -> None:
         """ Removes ancillary data from the end user's result bucket

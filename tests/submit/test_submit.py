@@ -47,7 +47,7 @@ INI_NO_BLASTDB = os.path.join(DATA_DIR, 'blastdb-notfound.ini')
 INI_CLOUD_SPLIT = os.path.join(DATA_DIR, 'elb-blastn-neg-taxidfiltering.ini')
 
 
-def test_get_query_split_mode():
+def test_get_query_split_mode(gke_mock):
     args = Namespace(cfg=INI_CLOUD_SPLIT)
     cfg = ElasticBlastConfig(configure(args), task = ElbCommand.SUBMIT)
     query_files = assemble_query_file_list(cfg)
@@ -89,7 +89,8 @@ def tmpdir():
 
 
 @patch(target='elastic_blast.elb_config.aws_get_machine_properties', new=MagicMock(return_value=InstanceProperties(32, 120)))
-def test_query_file_list(tmpdir):
+@patch(target='elastic_blast.tuner.aws_get_machine_properties', new=MagicMock(return_value=InstanceProperties(32, 120)))
+def test_query_file_list(tmpdir, gke_mock):
     """Test getting a list of queries files from a file"""
     expected_query_files = ['query-file-1', 'query-file-2']
     query_list_file = os.path.join(tmpdir, 'queries' + QUERY_LIST_EXT)
@@ -101,7 +102,7 @@ def test_query_file_list(tmpdir):
 
     cfg = ElasticBlastConfig(aws_region = 'test-region',
                              program = 'blastn',
-                             db = 'test-db',
+                             db = 'testdb',
                              queries = query_list_file,
                              results = 's3://test-results',
                              task = ElbCommand.SUBMIT)
@@ -111,7 +112,8 @@ def test_query_file_list(tmpdir):
 
 
 @patch(target='elastic_blast.elb_config.aws_get_machine_properties', new=MagicMock(return_value=InstanceProperties(32, 120)))
-def test_query_file_list_bad_uri(tmpdir):
+@patch(target='elastic_blast.tuner.aws_get_machine_properties', new=MagicMock(return_value=InstanceProperties(32, 120)))
+def test_query_file_list_bad_uri(tmpdir, gke_mock):
     """Test list of queries with illigal cloud URIs"""
     query_files = ['gs://bucket!-123/@#$*/queris!.fa',
                    's3://bucket!-123/@#$*/queris!.fa']
@@ -124,7 +126,7 @@ def test_query_file_list_bad_uri(tmpdir):
 
     cfg = ElasticBlastConfig(aws_region = 'test-region',
                              program = 'blastn',
-                             db = 'test-db',
+                             db = 'testdb',
                              queries = query_list_file,
                              results = 's3://test-results',
                              task = ElbCommand.SUBMIT)

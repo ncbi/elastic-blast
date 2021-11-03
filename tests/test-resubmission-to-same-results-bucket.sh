@@ -35,12 +35,29 @@ rm -f $errmsgfile
 cleanup_resources_on_error() {
     set +e
     echo Cleanup on error
-    $ROOT_DIR/elastic-blast delete --cfg $CFG --loglevel DEBUG --logfile $logfile $DRY_RUN
+    if grep -q '^aws-' $CFG; then
+        $ROOT_DIR/elastic-blast delete --cfg $CFG --loglevel DEBUG --logfile $logfile $DRY_RUN
+    fi
     exit 1;
 }
 
 TMP=`mktemp -t $(basename -s .sh $0)-XXXXXXX`
 trap "cleanup_resources_on_error; /bin/rm -f $TMP" INT QUIT HUP KILL ALRM ERR
+if [ ! -z "${ELB_TC_BRANCH+x}" ] ; then
+    if grep -q ^labels $CFG; then
+        sed -i~ -e "s@\(^labels.*\)@\1,branch=$ELB_TC_BRANCH@" $CFG
+    else
+        sed -i~ -e "/^\[cluster\]/a labels = branch=$ELB_TC_BRANCH" $CFG
+    fi
+fi
+
+if [ ! -z "${ELB_TC_BRANCH+x}" ] ; then
+    if grep -q ^labels $CFG; then
+        sed -i~ -e "s@\(^labels.*\)@\1,branch=$ELB_TC_BRANCH@" $CFG
+    else
+        sed -i~ -e "/^\[cluster\]/a labels = branch=$ELB_TC_BRANCH" $CFG
+    fi
+fi
 
 echo Submit first time
 $ROOT_DIR/elastic-blast submit --cfg $CFG --loglevel DEBUG --logfile $logfile $DRY_RUN
@@ -69,7 +86,7 @@ done
 
 # Clean up results
 echo Clean up buckets
-if ! grep -qi aws $CFG; then
+if ! grep -q '^aws-' $CFG; then
     gsutil -qm rm -r ${ELB_RESULTS}
 else
     aws s3 rm ${ELB_RESULTS}/ --recursive

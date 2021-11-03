@@ -104,11 +104,14 @@ def main():
                                  results = args.results,
                                  cluster_name = cf['cluster']['name'],
                                  task = ElbCommand.STATUS)
-        cfg.validate(ElbCommand.STATUS)
-        #logging.debug(f'{pformat(cfg.asdict())}')
 
+        if args.cluster_name:
+            cfg.cluster.name = args.cluster_name
         if 'ELB_CLUSTER_NAME' in os.environ:
             cfg.cluster.name = os.environ['ELB_CLUSTER_NAME']
+
+        logging.debug(f'{pformat(cfg.asdict())}')
+        cfg.validate(ElbCommand.STATUS)
 
         eb = ElasticBlastAws(cfg)
         eb.dry_run = args.dry_run
@@ -124,6 +127,7 @@ def create_arg_parser():
     """ Create the command line options parser object for this script. """
     parser = argparse.ArgumentParser(description=DESC)
     parser.add_argument('--results', metavar='STR', type=str, help='Results bucket', required=True)
+    parser.add_argument('--cluster-name', metavar='STR', type=str, help='ElasticBLAST cluster name')
     parser.add_argument("--dry-run", action='store_true', help="Do not perform any actions")
     parser.add_argument("--logfile", default='stderr', type=str, help=f"Default: stderr")
     parser.add_argument("--loglevel", default=ELB_DFLT_LOGLEVEL,

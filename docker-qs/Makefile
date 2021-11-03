@@ -26,8 +26,8 @@
 SHELL=/bin/bash
 .PHONY: all pre-check check clean build publish gcp-build gcp-check gcp-clean
 
-IMG?=ncbi/elastic-blast-query-splitting
-VERSION?=0.0.2
+IMG?=ncbi/elasticblast-query-split
+VERSION?=0.0.4
 GCP_PROJECT?=$(shell gcloud config get-value project 2>/dev/null)
 GCP_TEST_BUCKET?=gs://elasticblast-test/query-split-run-test
 AWS_REGION?=us-east-1
@@ -76,10 +76,10 @@ gcp-list-tagless-images:
 
 .PHONY: aws-build
 aws-build:
-	gcloud builds submit --config=awscloudbuild.yaml --substitutions=TAG_NAME="${VERSION}",_IMG="${AWS_IMG}",_SERVER="${AWS_SERVER}",_AWS_ECR_PASSWD="`aws ecr-public get-login-password --region us-east-1`" .
+	gcloud builds submit --config=awscloudbuild.yaml --substitutions=TAG_NAME="${VERSION}",_IMG="${AWS_IMG}",_SERVER="${AWS_SERVER}",_AWS_ECR_PASSWD="`aws ecr-public get-login-password --region ${AWS_REGION}`" .
 
 # This command needs to be run on an instance with docker installed. First build the image using "make build"
-ECR_REPO=?65123123.dkr.ecr.us-east-1.amazonaws.com
+ECR_REPO=?65123123.dkr.ecr.${AWS_REGION}.amazonaws.com
 .PHONY: publish-to-ecr
 publish-to-ecr:
 	aws ecr get-login --no-include-email --region ${AWS_REGION} | tee docker-login.sh

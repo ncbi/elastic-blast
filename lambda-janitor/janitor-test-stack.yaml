@@ -1,0 +1,50 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: ElasticBLAST Janitor Test stack which copies lambda function into a temporary bucket and runs it on a schedule
+Parameters:
+  Owner:
+    Description: User who creates/runs this application
+    Type: String
+
+  JanitorSchedule:
+    Description: Cron expression to determine when to run the ElasticBLAST Janitor module. 
+    Type: String
+
+  JanitorTemplateUrl:
+    Description: URL for the tested Janitor template.
+    Type: String
+
+  JanitorLambdaDeploymentS3Bucket:
+    Description: Bucket where the janitor lambda function deployment resides.
+    Type: String
+
+  JanitorLambdaDeploymentS3Key:
+    Description: Key within the bucket where the janitor lambda function deployment resides.
+    Type: String
+
+  ElbResults:
+    Description: ElasticBLAST results bucket
+    Type: String
+
+
+Resources:
+  JanitorStack:
+    Type: "AWS::CloudFormation::Stack"
+    Properties:
+      TemplateURL: !Ref JanitorTemplateUrl
+      Parameters:
+        StackName: !Ref 'AWS::StackName'
+        JanitorSchedule: !Ref JanitorSchedule
+        Owner: !Ref Owner
+        S3Bucket: !Ref JanitorLambdaDeploymentS3Bucket
+        S3Key: !Ref JanitorLambdaDeploymentS3Key
+        ElbResults: !Ref ElbResults
+      Tags:
+        - Key: Name
+          Value: !Join [-, [elasticblast, !Ref Owner, 'janitor']]
+        - Key: Project
+          Value: BLAST
+        - Key: Owner
+          Value: !Ref Owner
+        - Key: billingcode
+          Value: elastic-blast
+

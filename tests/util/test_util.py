@@ -42,8 +42,22 @@ from elastic_blast.util import validate_gcp_disk_name
 from elastic_blast.gcp_traits import get_machine_properties
 from elastic_blast.elb_config import ElasticBlastConfig
 from elastic_blast.base import InstanceProperties
+from elastic_blast.db_metadata import DbMetadata
 import pytest
 from tests.utils import MockedCompletedProcess
+
+
+DB_METADATA = DbMetadata(version = '1',
+                         dbname = 'some-name',
+                         dbtype = 'Protein',
+                         description = 'A test database',
+                         number_of_letters = 25,
+                         number_of_sequences = 25,
+                         files = [],
+                         last_updated = 'some-date',
+                         bytes_total = 25,
+                         bytes_to_cache = 25,
+                         number_of_volumes = 1)
 
 
 def test_mol_type():
@@ -147,14 +161,15 @@ class ElbLibTester(unittest.TestCase):
 
 def create_config_for_db(dbname):
     """Create minimal config for a database name"""
-    return ElasticBlastConfig(gcp_project = 'test-gcp-project',
-                              gcp_region = 'test-gcp-region',
-                              gcp_zone = 'test-gcp-zone',
-                              program = 'blastn',
-                              db = dbname,
-                              queries = 'test-queries.fa',
-                              results = 'gs://test-bucket',
-                              task = ElbCommand.SUBMIT)
+    with patch(target='elastic_blast.elb_config.get_db_metadata', new=MagicMock(return_value=DB_METADATA)):
+        return ElasticBlastConfig(gcp_project = 'test-gcp-project',
+                                  gcp_region = 'test-gcp-region',
+                                  gcp_zone = 'test-gcp-zone',
+                                  program = 'blastn',
+                                  db = dbname,
+                                  queries = 'test-queries.fa',
+                                  results = 'gs://test-bucket',
+                                  task = ElbCommand.SUBMIT)
 
 
 def test_safe_exec_run(mocker):
@@ -168,7 +183,9 @@ def test_safe_exec_run(mocker):
     subprocess.run.assert_called_with(cmd, check=True, stdout=-1, stderr=-1)
 
 
+@patch(target='elastic_blast.elb_config.get_db_metadata', new=MagicMock(return_value=DB_METADATA))
 @patch(target='elastic_blast.elb_config.aws_get_machine_properties', new=MagicMock(return_value=InstanceProperties(32, 120)))
+@patch(target='elastic_blast.tuner.aws_get_machine_properties', new=MagicMock(return_value=InstanceProperties(32, 120)))
 def test_convert_labels_to_aws_tags():
     cfg = create_config_for_db('nt')
 

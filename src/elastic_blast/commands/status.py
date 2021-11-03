@@ -27,11 +27,10 @@ Author: Victor Joukov joukovv@ncbi.nlm.nih.gov
 import sys
 import time
 import logging
-from elastic_blast import gcp
-from elastic_blast import aws
-from elastic_blast.util import SafeExecError, UserReportError
-from elastic_blast.status import get_status
-from elastic_blast.constants import CLUSTER_ERROR, CSP, ElbCommand
+from typing import Any, List
+
+from elastic_blast.constants import ElbCommand, ElbStatus
+from elastic_blast.elasticblast_factory import ElasticBlastFactory
 from elastic_blast.elb_config import ElasticBlastConfig
 
 def create_arg_parser(subparser, common_opts_parser):
@@ -42,56 +41,37 @@ def create_arg_parser(subparser, common_opts_parser):
                         help="Wait for job completion")
     parser.add_argument('--verbose', default=False, action='store_true',
                         help='Detailed information about jobs')
-    # FIXME: EB-132
-    parser.add_argument("--run-label", type=str,
-                        help="Run-label for this ElasticBLAST search, format: key:value")
     parser.set_defaults(func=_status)
 
 
 #TODO: use cfg only when args.wait, args.sync, and args.run_label are replicated in cfg
-def _status(args, cfg, clean_up_stack):
+def _status(args, cfg: ElasticBlastConfig, clean_up_stack: List[Any]) -> int:
     """ Entry point to handle checking status for an ElasticBLAST search """
     cfg.validate(ElbCommand.STATUS)
     returncode = 0
     try:
-        dry_run = cfg.cluster.dry_run
-
-        if cfg.cloud_provider.cloud == CSP.GCP:
-            cfg.appstate.k8s_ctx = gcp.get_gke_credentials(cfg)
-
         verbose_result = ''
+        elastic_blast = ElasticBlastFactory(cfg, False, clean_up_stack)
         while True:
+            status = elastic_blast.status()
+            result = str(status)
+            if status in (ElbStatus.RUNNING, ElbStatus.SUCCESS, ElbStatus.FAILURE):
+                counts, verbose_result = elastic_blast.check_status(args.verbose)
+                if counts:
+                    result = '\n'.join([f'{x} {counts[x.lower()]}' for x in
+                        ('Pending', 'Running', 'Succeeded', 'Failed')
+                    ])
 
-            if cfg.cloud_provider.cloud == CSP.AWS:
-                eb = aws.ElasticBlastAws(cfg)
-                counts, verbose_result = eb.check_status(args.verbose)
-                pending = counts['pending']
-                running = counts['running']
-                succeeded = counts['succeeded']
-                failed = counts['failed']
-                result = f'Pending {pending}\nRunning {running}\nSucceeded {succeeded}\nFailed {failed}'
-            else:
-                pending, running, succeeded, failed = get_status(cfg.appstate.k8s_ctx, args.run_label, dry_run=dry_run)
-                result = f'Pending {pending}\nRunning {running}\nSucceeded {succeeded}\nFailed {failed}'
-
-            if not args.wait or pending + running == 0:
-                break
             logging.debug(result)
+            if not args.wait or status in (ElbStatus.SUCCESS, ElbStatus.FAILURE, ElbStatus.UNKNOWN):
+                break
             time.sleep(20)  # TODO: make this a parameter (granularity)
-    except RuntimeError as e:
-        returncode = e.args[0]
-        print(e.args[1], file=sys.stderr)
-    except ValueError as e:
+    except RuntimeError as err:
+        returncode = err.args[0]
+        print(err.args[1], file=sys.stderr)
+    except ValueError as err:
         returncode = 1
-        print(e)
-    except SafeExecError as err:
-        msg = err.message.rstrip().replace('\n', ' | ')
-        logging.debug(f'kubectl error: {msg}')
-        # if the cluster exists, assume it is initializing
-        if gcp.check_cluster(cfg):
-            raise UserReportError(CLUSTER_ERROR, f'The cluster "{cfg.cluster.name}" exists, but is not responding. It may be still initializing, please try checking status again in a few minutes.')
-        else:
-            raise UserReportError(CLUSTER_ERROR, f'The cluster "{cfg.cluster.name}" was not found')
+        print(err)
     else:
         if verbose_result:
             print(verbose_result)

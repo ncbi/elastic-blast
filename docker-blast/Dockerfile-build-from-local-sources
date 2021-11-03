@@ -55,7 +55,6 @@ COPY --from=blast /blast/bin /blast/bin
 COPY --from=blast /blast/lib /blast/lib
 COPY --from=blast /root/edirect /root/edirect
 COPY splitq_download_db_search /blast/bin/
-COPY submit_jobs.py /blast/bin
 RUN sed -i -e "s/\$VERSION/$version/" /blast/bin/splitq_download_db_search
 COPY fasta-split /blast/bin/
 

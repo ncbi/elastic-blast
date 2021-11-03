@@ -55,10 +55,24 @@ from elastic_blast.util import ElbSupportedPrograms
 from elastic_blast.gcp_traits import get_machine_properties
 from elastic_blast.base import InstanceProperties, DBSource
 from elastic_blast.elb_config import ElasticBlastConfig
+from elastic_blast.db_metadata import DbMetadata
+from tests.utils import gke_mock
 
 TEST_DATA_DIR = os.path.join(os.path.dirname(__file__), 'data')
 
+DB_METADATA = DbMetadata(version = '1',
+                         dbname = 'some-name',
+                         dbtype = 'Protein',
+                         description = 'A test database',
+                         number_of_letters = 25,
+                         number_of_sequences = 25,
+                         files = [],
+                         last_updated = 'some-date',
+                         bytes_total = 25,
+                         bytes_to_cache = 25,
+                         number_of_volumes = 1)
 
+@patch(target='elastic_blast.elb_config.get_db_metadata', new=MagicMock(return_value=DB_METADATA))
 class ElbConfigLibTester(unittest.TestCase):
 
     """ Testing class for this module. """
@@ -306,7 +320,7 @@ class ElbConfigLibTester(unittest.TestCase):
         assert 'Cloud provider configuration is missing' in str(err.exception)
 
 
-def test_validate_gcp_config():
+def test_validate_gcp_config(gke_mock):
     """Test validation of GCP id strings in config"""
     cfg = configparser.ConfigParser()
     cfg.read(f"{TEST_DATA_DIR}/correct-cfg-file.ini")
@@ -343,12 +357,13 @@ def test_validate_gcp_config():
 
 
 @patch(target='elastic_blast.elb_config.aws_get_machine_properties', new=MagicMock(return_value=InstanceProperties(32, 120)))
-def test_validate_aws_config():
+@patch(target='elastic_blast.tuner.aws_get_machine_properties', new=MagicMock(return_value=InstanceProperties(32, 120)))
+def test_validate_aws_config(gke_mock):
     """Test validation of AWS config"""
     cfg = configparser.ConfigParser()
     cfg[CFG_BLAST] = {CFG_BLAST_PROGRAM: 'blastp',
                       CFG_BLAST_RESULTS: 's3://test-results',
-                      CFG_BLAST_DB: 'test-db',
+                      CFG_BLAST_DB: 'testdb',
                       CFG_BLAST_QUERY: 'test-queries'}
 
     valid_aws_provider = {
@@ -399,7 +414,8 @@ def test_validate_aws_config():
 
 
 @patch(target='elastic_blast.elb_config.aws_get_machine_properties', new=MagicMock(return_value=InstanceProperties(32, 120)))
-def test_validate_results_bucket_config():
+@patch(target='elastic_blast.tuner.aws_get_machine_properties', new=MagicMock(return_value=InstanceProperties(32, 120)))
+def test_validate_results_bucket_config(gke_mock):
     """Test validation of AWS config"""
     cfg = configparser.ConfigParser()
     _set_sections(cfg)
@@ -416,7 +432,7 @@ def test_validate_results_bucket_config():
     # pacify submit config checks
     cfg[CFG_BLAST][CFG_BLAST_PROGRAM] = 'blastn'
     cfg[CFG_BLAST][CFG_BLAST_QUERY] = 'queries'
-    cfg[CFG_BLAST][CFG_BLAST_DB] = 'nt'
+    cfg[CFG_BLAST][CFG_BLAST_DB] = 'testdb'
     ElasticBlastConfig(cfg, task = ElbCommand.SUBMIT)
 
     # test bucket inconsistent with cloud provider
@@ -443,7 +459,8 @@ def test_validate_results_bucket_config():
 
 
 @patch(target='elastic_blast.elb_config.aws_get_machine_properties', new=MagicMock(return_value=InstanceProperties(32, 120)))
-def test_validate_queries_config():
+@patch(target='elastic_blast.tuner.aws_get_machine_properties', new=MagicMock(return_value=InstanceProperties(32, 120)))
+def test_validate_queries_config(gke_mock):
     """Test validation of AWS config"""
     cfg = configparser.ConfigParser()
     _set_sections(cfg)
@@ -457,7 +474,7 @@ def test_validate_queries_config():
     }
     # pacify submit config checks
     cfg[CFG_BLAST][CFG_BLAST_RESULTS] = 's3://bucket'
-    cfg[CFG_BLAST][CFG_BLAST_DB] = 'nt'
+    cfg[CFG_BLAST][CFG_BLAST_DB] = 'testdb'
     cfg[CFG_BLAST][CFG_BLAST_PROGRAM] = 'blastn'
     cfg[CFG_CLUSTER][CFG_CLUSTER_MACHINE_TYPE] = ELB_DFLT_AWS_MACHINE_TYPE
 
@@ -538,8 +555,9 @@ def check_common_defaults(cfg):
     assert cfg.blast.db_mem_margin == constants.ELB_BLASTDB_MEMORY_MARGIN
 
 
+@patch(target='elastic_blast.tuner.aws_get_machine_properties', new=MagicMock(return_value=InstanceProperties(32, 120)))
 @patch(target='elastic_blast.elb_config.aws_get_machine_properties', new=MagicMock(return_value=InstanceProperties(32, 120)))
-def test_aws_defaults():
+def test_aws_defaults(gke_mock):
     """Test that default config parameters are set correctly for AWS"""
     args = argparse.Namespace(cfg=os.path.join(TEST_DATA_DIR, 'aws-defaults.ini'))
     cfg = ElasticBlastConfig(configure(args), task = ElbCommand.SUBMIT)
@@ -549,7 +567,7 @@ def test_aws_defaults():
     assert cfg.cluster.pd_size == constants.ELB_DFLT_AWS_PD_SIZE
 
 
-def test_gcp_defaults():
+def test_gcp_defaults(gke_mock):
     """Test that default config parameters are set correctly for GCP"""
     args = argparse.Namespace(cfg=os.path.join(TEST_DATA_DIR, 'gcp-defaults.ini'))
     cfg = ElasticBlastConfig(configure(args), task = ElbCommand.SUBMIT)
@@ -583,7 +601,7 @@ def env_config_no_cluster():
         del os.environ[var_name]
 
 
-def test_cluster_name_from_environment(env_config):
+def test_cluster_name_from_environment(env_config, gke_mock):
     """Test cluster name from environment overrides everything else"""
     args = argparse.Namespace(cfg=os.path.join(TEST_DATA_DIR, 'gcp-defaults.ini'))
     cfg = ElasticBlastConfig(configure(args), task = ElbCommand.SUBMIT)
@@ -592,7 +610,7 @@ def test_cluster_name_from_environment(env_config):
     assert cfg.cluster.name == env_config['ELB_CLUSTER_NAME']
 
 
-def test_generated_cluster_name(env_config_no_cluster):
+def test_generated_cluster_name(env_config_no_cluster, gke_mock):
     """Test cluster name generated from results, and value from config file is ignored"""
     args = argparse.Namespace(cfg=os.path.join(TEST_DATA_DIR, 'gcp-defaults.ini'))
     cfg = ElasticBlastConfig(configure(args), task = ElbCommand.SUBMIT)
@@ -603,8 +621,9 @@ def test_generated_cluster_name(env_config_no_cluster):
     assert cfg.cluster.name == f'elasticblast-{user.lower()}-{digest}'
 
 
+@patch(target='elastic_blast.tuner.aws_get_machine_properties', new=MagicMock(return_value=InstanceProperties(32, 120)))
 @patch(target='elastic_blast.elb_config.aws_get_machine_properties', new=MagicMock(return_value=InstanceProperties(32, 120)))
-def test_multiple_query_files():
+def test_multiple_query_files(gke_mock):
     """Test getting config with multiple query files"""
     args = argparse.Namespace(cfg=os.path.join(TEST_DATA_DIR, 'multiple-query-files.ini'))
     cfg = ElasticBlastConfig(configure(args), task = ElbCommand.SUBMIT)
@@ -612,7 +631,7 @@ def test_multiple_query_files():
     assert sorted(cfg.blast.queries_arg.split()) == sorted(expected_query_files)
 
 
-def test_mem_limit_too_high():
+def test_mem_limit_too_high(gke_mock):
     """Test that setting memory limit that exceeds cloud instance memory
     triggers an error"""
     args = argparse.Namespace(cfg=os.path.join(TEST_DATA_DIR, 'mem-limit-too-high.ini'))
@@ -624,6 +643,7 @@ def test_mem_limit_too_high():
     
 
 @patch(target='elastic_blast.elb_config.aws_get_machine_properties', new=MagicMock(return_value=InstanceProperties(4, 2)))
+@patch(target='elastic_blast.tuner.aws_get_machine_properties', new=MagicMock(return_value=InstanceProperties(4, 2)))
 def test_instance_too_small_aws():
     """Test that using too small an instance triggers an error"""
     args = argparse.Namespace(cfg=os.path.join(TEST_DATA_DIR, 'instance-too-small-aws.ini'))

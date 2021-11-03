@@ -35,8 +35,21 @@ from elastic_blast.resources.quotas.quota_check import check_resource_quotas
 from elastic_blast.base import InstanceProperties
 from elastic_blast.elb_config import ElasticBlastConfig
 from elastic_blast.constants import ElbCommand
+from elastic_blast.db_metadata import DbMetadata
 
 TEST_DATA_DIR = os.path.join(os.path.dirname(__file__), '..', '..', 'config', 'data')
+
+DB_METADATA = DbMetadata(version = '1',
+                         dbname = 'some-name',
+                         dbtype = 'Protein',
+                         description = 'A test database',
+                         number_of_letters = 25,
+                         number_of_sequences = 25,
+                         files = [],
+                         last_updated = 'some-date',
+                         bytes_total = 25,
+                         bytes_to_cache = 25,
+                         number_of_volumes = 1)
 
 
 class TestResourceQuotasAws(unittest.TestCase):
@@ -51,9 +64,11 @@ class TestResourceQuotasAws(unittest.TestCase):
         cfg_gcp.read(f"{TEST_DATA_DIR}/correct-cfg-file.ini")
         cfg_aws.read(f"{TEST_DATA_DIR}/elb-aws-blastn-pdbnt.ini")
 
-        self.cfg_gcp = ElasticBlastConfig(cfg_gcp, task = ElbCommand.SUBMIT)
+        with patch('elastic_blast.elb_config.get_db_metadata', new=MagicMock(return_value=DB_METADATA)):
+            self.cfg_gcp = ElasticBlastConfig(cfg_gcp, task = ElbCommand.SUBMIT)
         with patch('elastic_blast.elb_config.aws_get_machine_properties', new=MagicMock(return_value=InstanceProperties(32, 120))):
-            self.cfg_aws = ElasticBlastConfig(cfg_aws, task = ElbCommand.SUBMIT)
+            with patch('elastic_blast.elb_config.get_db_metadata', new=MagicMock(return_value=DB_METADATA)):
+                self.cfg_aws = ElasticBlastConfig(cfg_aws, task = ElbCommand.SUBMIT)
 
     @pytest.mark.skipif(os.getenv('TEAMCITY_VERSION') is not None, reason='AWS credentials not set in TC')
     def test_check_resource_quotas_aws(self):

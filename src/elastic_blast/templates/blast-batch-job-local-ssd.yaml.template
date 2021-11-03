@@ -85,9 +85,9 @@ spec:
             sleep 1;
           done;
           set -ex;
-          ls -1f /shared/results/BLASTDB_LENGTH.out | gsutil -qm cp -I ${BUCKET}/metadata/;
-          gsutil -q cp /shared/results/BLAST_RUNTIME-${JOB_NUM}.out ${BUCKET}/logs/;
-          gsutil -mq cp /shared/results/batch_${JOB_NUM}-${ELB_BLAST_PROGRAM}-${ELB_DB}.out.gz ${BUCKET}/;
+          ls -1f /shared/results/BLASTDB_LENGTH.out | gsutil -qm cp -I ${ELB_RESULTS}/metadata/;
+          gsutil -mq cp /shared/results/BLAST_RUNTIME-${JOB_NUM}.out ${ELB_RESULTS}/logs/;
+          gsutil -mq cp /shared/results/batch_${JOB_NUM}-${ELB_BLAST_PROGRAM}-${ELB_DB}.out.gz ${ELB_RESULTS}/;
           exit `cat /shared/results/BLAST_EXIT_CODE.out`;
       restartPolicy: OnFailure
   backoffLimit: 3

@@ -27,6 +27,15 @@ for t in $test_scripts; do
     [ $(basename $t) == $(basename ${BASH_SOURCE[0]}) ] && continue
     name=$(basename $t)
     echo "##teamcity[testStarted name='$name' captureStandardOutput='true'] "
+
+    # https://stackoverflow.com/questions/20514112/git-short-branch-name-in-teamcity
+    export ELB_TC_BRANCH=$(git symbolic-ref -q --short HEAD | tr '[A-Z]./' '[a-z]-' | cut -c-63)
+    if [ -z ${ELB_TC_BRANCH} ]; then
+        export ELB_TC_BRANCH=$(git describe --tags | tr '[A-Z]./' '[a-z]-' | cut -c-63)
+    fi
+    # https://www.jetbrains.com/help/teamcity/service-messages.html#Adding+or+Changing+a+Build+Parameter
+    echo "##teamcity[setParameter name='env.ELB_TC_BRANCH' value='$ELB_TC_BRANCH']"
+
     $t $script_arguments || echo "##teamcity[testFailed name='$name'] "
     #awk -f $SCRIPT_DIR/parse-runtimes.awk elb.log | sed "s,\",\',g"
     awk '/ RUNTIME / {printf "##teamcity[buildStatisticValue key=\"%s\" value=\"%f\"]\n", $(NF-2), $(NF-1)}' elb.log | sed "s,\",\',g"

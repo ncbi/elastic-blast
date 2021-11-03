@@ -27,9 +27,17 @@ SHELL=/bin/bash
 .PHONY: all pre-check check clean build publish gcp-build gcp-check gcp-clean
 
 IMG?=ncbi/elasticblast-janitor
-VERSION?=0.0.1
+VERSION?=0.0.3
 GCP_PROJECT?=$(shell gcloud config get-value project 2>/dev/null)
 GCP_TEST_BUCKET?=gs://elasticblast-test/query-split-run-test
+
+# For gcp-test
+ELB_GCP_PROJECT?=ncbi-sandbox-blast
+ELB_GCP_REGION?=us-east4
+ELB_GCP_ZONE?=us-east4-a
+ELB_RESULTS?=gs://elasticblast-test
+ELB_CLUSTER_NAME?=elb-test-cluster
+
 
 all: gcp-build gcp-check
 
@@ -55,21 +63,18 @@ TAG?=${USER}
 # Use this target to build an image from your local sources as opposed to those on PyPI.org
 # Your image will be named gcr.io/${GCP_PROJECT}/${IMG}:${USER} and aliased as
 # gcr.io/${GCP_PROJECT}/${IMG}:latest
+.PHONY: gcp-build-from-local-sources
 gcp-build-from-local-sources: VERSION=$(shell elastic-blast --version | cut -f 2 -d ' ')
 gcp-build-from-local-sources:
 	rsync -a ../setup.py ../setup.cfg_cloud ../src ../bin ../requirements ${PWD}/
 	sed -i~ -e '/^value = $${VERSION}/d;' setup.cfg_cloud
 	echo "value = ${VERSION}" >> setup.cfg_cloud
-	mv Dockerfile.gcp Dockerfile.gcp~
-	mv Dockerfile-build-from-local-sources.gcp Dockerfile.gcp
-	-gcloud builds submit --config cloudbuild.yaml --substitutions _VERSION=${TAG},_IMG=${IMG}
+	-gcloud builds submit --config cloudbuild.yaml --substitutions _VERSION=${TAG},_IMG=${IMG},_DOCKERFILE='Dockerfile-build-from-local-sources.gcp'
 	rm -fr src bin requirements setup.cfg_cloud setup.py
-	mv Dockerfile.gcp Dockerfile-build-from-local-sources.gcp
-	mv Dockerfile.gcp~ Dockerfile.gcp
 
 .PHONY: gcp-test
 gcp-test:
-	gcloud builds submit --config cloudrun.yaml --substitutions _IMG="gcr.io/${GCP_PROJECT}/${IMG}:${VERSION}"
+	gcloud builds submit --config cloudrun.yaml --substitutions _IMG="gcr.io/${GCP_PROJECT}/${IMG}:${VERSION}",_ELB_GCP_PROJECT="${ELB_GCP_PROJECT}",_ELB_GCP_REGION="${ELB_GCP_REGION}",_ELB_GCP_ZONE="${ELB_GCP_ZONE}",_ELB_RESULTS="${ELB_RESULTS}",_ELB_CLUSTER_NAME="${ELB_CLUSTER_NAME}"
 
 gcp-clean:
 	-gcloud container images delete gcr.io/${GCP_PROJECT}/${IMG}:${VERSION}

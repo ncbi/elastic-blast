@@ -58,12 +58,12 @@ def copy_file_to_s3(dest: str, file_object: Path, boto_cfg: Config = None, dry_r
         dry_run: if True, does nothing
     """
     if dry_run: 
-        logging.debug(f'Would have copied "{file_object.name}" to {dest}')
+        logging.debug(f'Would have copied "{file_object.resolve()}" to {dest}')
         return
     s3 = boto3.resource('s3') if boto_cfg == None else boto3.resource('s3', config=boto_cfg)
     bucket_name, key = parse_bucket_name_key(dest)
     bucket = s3.Bucket(bucket_name)
-    bucket.upload_file(Filename=file_object.name, Key=key)
+    bucket.upload_file(Filename=str(file_object.resolve()), Key=key)
     return
 
 

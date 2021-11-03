@@ -1,0 +1,38 @@
+AWSTemplateFormatVersion: '2010-09-09'
+Description: Administrator access service role for CloudFormation 
+Parameters:
+  Owner:
+    Description: User who creates/runs this application
+    Type: String
+
+Resources:
+  CFNAdminRole:
+    Type: "AWS::IAM::Role"
+    Properties:
+      RoleName: !Join [-, ['elasticblast-admin-role', !Select [4, !Split ['-', !Select [2, !Split ['/', !Ref AWS::StackId]]]]]]
+      AssumeRolePolicyDocument:
+        Version: "2012-10-17"
+        Statement:
+        - Effect: "Allow"
+          Principal:
+            Service: ["cloudformation.amazonaws.com"]
+          Action: "sts:AssumeRole"
+      Path: "/"
+      ManagedPolicyArns:
+        - 'arn:aws:iam::aws:policy/AdministratorAccess'
+      Tags:
+        - Key: Name
+          Value: !Join [-, [elasticblast, !Ref Owner, 'admin-role']]
+        - Key: Project
+          Value: BLAST
+        - Key: Owner
+          Value: !Ref Owner
+        - Key: billingcode
+          Value: elastic-blast
+Outputs:
+  CFNAdminRole:
+    Description: CloudFormation admin access service role.
+    Value: !Ref CFNAdminRole
+  CFNAdminRoleArn:
+    Description: CloudFormation admin access service role ARN.
+    Value: !GetAtt CFNAdminRole.Arn  

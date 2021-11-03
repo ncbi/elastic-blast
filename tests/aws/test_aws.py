@@ -53,15 +53,16 @@ from elastic_blast import aws
 from elastic_blast import aws_traits
 from elastic_blast.constants import ELB_DFLT_AWS_REGION, CSP
 from elastic_blast.constants import BLASTDB_ERROR, DEPENDENCY_ERROR, INPUT_ERROR
-from elastic_blast.constants import ElbCommand
+from elastic_blast.constants import ElbCommand, MolType
 from elastic_blast.util import UserReportError
 from elastic_blast.filehelper import parse_bucket_name_key
 from elastic_blast.base import InstanceProperties, DBSource
 from elastic_blast.elb_config import ElasticBlastConfig, PositiveInteger
-from tests.utils import aws_credentials
+from elastic_blast.db_metadata import DbMetadata
+from tests.utils import aws_credentials, gke_mock
 
 from botocore.exceptions import ClientError #type: ignore
-from unittest.mock import call
+from unittest.mock import call, patch, MagicMock
 import pytest
 
 
@@ -321,7 +322,7 @@ def test_ElasticBlastAws_delete(ElasticBlastAws, s3, mocker):
     assert results_key in [s.key for s in list(bucket.objects.all())]
 
 
-def test_create_config_from_file(mocker):
+def test_create_config_from_file(gke_mock, mocker):
     """Test boto3 config creation"""
     def mocked_get_machine_properties(instance_type, boto_cfg):
         """Mocked getting instance number of CPUs and memory"""
@@ -341,7 +342,7 @@ def test_create_config_from_file(mocker):
 def test_provide_vpc_dry_run():
     cfg = ElasticBlastConfig(aws_region='us-east-2',
                              program='blastn',
-                             db='some-db',
+                             db='pdbnt',
                              results='s3://elasticblast-test',
                              queries='queries',
                              task = ElbCommand.SUBMIT)
@@ -493,12 +494,27 @@ class MockedCloudformation:
         return MockedWaiter()
 
 
+DB_METADATA = DbMetadata(version = '1',
+                         dbname = 'some-name',
+                         dbtype = 'Protein',
+                         description = 'A test database',
+                         number_of_letters = 25,
+                         number_of_sequences = 25,
+                         files = [],
+                         last_updated = 'some-date',
+                         bytes_total = 25,
+                         bytes_to_cache = 25,
+                         number_of_volumes = 1)
+
+@patch(target='elastic_blast.elb_config.aws_get_machine_properties', new=MagicMock(return_value=InstanceProperties(32, 128)))
+@patch(target='elastic_blast.elb_config.get_db_metadata', new=MagicMock(return_value=DB_METADATA))
+@patch(target='elastic_blast.tuner.aws_get_machine_properties', new=MagicMock(return_value=InstanceProperties(32, 128)))
 def test_report_cloudformation_create_errors(batch, s3, iam, ec2, mocker):
     """Test proper reporting of cloudformation stack creation errors"""
 
     from elastic_blast.aws import ElasticBlastAws
 
-    def mocked_resource(name, config):
+    def mocked_resource(name, config = None):
         """Mocked boto3 resource function that creates mocked cloudformation
         resource"""
         # return the mocked object for cloudformation and regular moto objects
@@ -513,20 +529,14 @@ def test_report_cloudformation_create_errors(batch, s3, iam, ec2, mocker):
             return ec2
         return None
 
-    def mocked_get_machine_properties(cloud_provider, machine_type):
-        """Mocked getting instance properties that always reports the same value"""
-        return InstanceProperties(32, 128)
-
     mocker.patch('boto3.resource', side_effect=mocked_resource)
-    mocker.patch('elastic_blast.elb_config.aws_get_machine_properties',
-                 side_effect=mocked_get_machine_properties)
 
     cfg = initialize_cfg()
     with pytest.raises(UserReportError) as err:
         elb = ElasticBlastAws(cfg, create=True)
 
     assert err.value.returncode == DEPENDENCY_ERROR
-    assert 'Cloudformation stack creation failed' in err.value.message
+    assert 'CloudFormation stack creation failed' in err.value.message
     assert 'Expected error message'
 
 

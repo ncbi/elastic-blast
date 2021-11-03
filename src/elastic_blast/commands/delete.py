@@ -24,19 +24,16 @@ elb/comands/delete.py - delete cluster
 Author: Victor Joukov joukovv@ncbi.nlm.nih.gov
 """
 
-from elastic_blast.aws import ElasticBlastAws
-from elastic_blast.gcp import delete_cluster_with_cleanup, enable_gcp_api
-from elastic_blast.constants import CSP, ElbCommand
+from typing import Any, List
+
+from elastic_blast.elasticblast_factory import ElasticBlastFactory
+from elastic_blast.constants import ElbCommand
 from elastic_blast.elb_config import ElasticBlastConfig
 
 # TODO: use cfg only when args.wait, args.sync, and args.run_label are replicated in cfg
-def delete(args, cfg, clean_up_stack):
+def delete(args, cfg: ElasticBlastConfig, clean_up_stack: List[Any]) -> int:
     """ Entry point to delete resources associated with an ElasticBLAST search """
     cfg.validate(ElbCommand.DELETE)
-    if cfg.cloud_provider.cloud == CSP.AWS:
-        elastic_blast = ElasticBlastAws(cfg)
-        elastic_blast.delete()
-    else:
-        enable_gcp_api(cfg)
-        delete_cluster_with_cleanup(cfg)
+    elastic_blast = ElasticBlastFactory(cfg, False, clean_up_stack)
+    elastic_blast.delete()
     return 0

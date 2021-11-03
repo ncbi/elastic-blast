@@ -32,6 +32,13 @@ TMP=`mktemp -t $(basename -s .sh $0)-XXXXXXX`
 trap "cleanup_resources_on_error; /bin/rm -f $TMP" INT QUIT HUP KILL ALRM ERR
 
 rm -fr *.fa *.out.gz elb-*.log
+if [ ! -z "${ELB_TC_BRANCH+x}" ] ; then
+    if grep -q ^labels $CFG; then
+        sed -i~ -e "s@\(^labels.*\)@\1,branch=$ELB_TC_BRANCH@" $CFG
+    else
+        sed -i~ -e "/^\[cluster\]/a labels = branch=$ELB_TC_BRANCH" $CFG
+    fi
+fi
 $ROOT_DIR/elastic-blast submit --cfg $CFG --loglevel DEBUG --logfile $logfile $DRY_RUN
 err_code=$?
 

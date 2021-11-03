@@ -27,6 +27,7 @@ Author: Greg Boratyn boratyng@ncbi.nlm.nih.gov
 import subprocess
 import os
 from argparse import Namespace
+from unittest.mock import patch, MagicMock
 import pytest  # type: ignore
 from elastic_blast import gcp
 from elastic_blast import kubernetes
@@ -34,6 +35,7 @@ from elastic_blast import config
 from elastic_blast.constants import CLUSTER_ERROR, ElbCommand
 from elastic_blast.util import SafeExecError, UserReportError
 from elastic_blast.elb_config import ElasticBlastConfig
+from elastic_blast.db_metadata import DbMetadata
 from tests.utils import MockedCompletedProcess
 from tests.utils import mocked_safe_exec, get_mocked_config
 from tests.utils import GCP_PROJECT, GCP_DISKS, GKE_PVS, GKE_CLUSTERS
@@ -41,6 +43,17 @@ from tests.utils import GKEMock, gke_mock
 
 # Mocked tests
 
+DB_METADATA = DbMetadata(version = '1',
+                         dbname = 'some-name',
+                         dbtype = 'Protein',
+                         description = 'A test database',
+                         number_of_letters = 25,
+                         number_of_sequences = 25,
+                         files = [],
+                         last_updated = 'some-date',
+                         bytes_total = 25,
+                         bytes_to_cache = 25,
+                         number_of_volumes = 1)
 
 def test_fake_gcloud(gke_mock):
     """Test that calling fake safe_exec with wrong command line results in
@@ -89,6 +102,7 @@ def test_get_disks(gke_mock):
     gcp.safe_exec.assert_called()
 
 
+@patch(target='elastic_blast.elb_config.get_db_metadata', new=MagicMock(return_value=DB_METADATA))
 def test_get_disks_bad_output(mocker):
     """Test that gcp.get_disks raises RuntimeError for bad gcloud output"""
 
@@ -112,6 +126,7 @@ def test_delete_disk(gke_mock):
     gcp.safe_exec.assert_called()
 
 
+@patch(target='elastic_blast.elb_config.get_db_metadata', new=MagicMock(return_value=DB_METADATA))
 def test_delete_nonexistent_disk(mocker):
     """Test that deleting a GCP disk that does not exits raises util.SafeExecError"""
 
@@ -129,7 +144,7 @@ def test_delete_nonexistent_disk(mocker):
     subprocess.run.assert_called()
 
 
-def test_delete_disk_empty_name():
+def test_delete_disk_empty_name(gke_mock):
     """Test that deleting disk with and empty name results in ValueError"""
     cfg = get_mocked_config()
     with pytest.raises(ValueError):
@@ -144,6 +159,7 @@ def test_get_gke_clusters(gke_mock):
     gcp.safe_exec.assert_called()
 
 
+@patch(target='elastic_blast.elb_config.get_db_metadata', new=MagicMock(return_value=DB_METADATA))
 def test_get_gke_clusters_empty(mocker):
     """Test listing GKE clusters for an empty list"""
 

@@ -65,6 +65,6 @@ spec:
         - name: blastdb
           mountPath: /blast/queries
           readOnly: false
-        command: ["run.sh", "-i", "${INPUT_QUERY}", "-o", "${BUCKET}", "-b", "${BATCH_LEN}", "-c", "${COPY_ONLY}", "-q", "/blast/queries/"]
+        command: ["run.sh", "-i", "${INPUT_QUERY}", "-o", "${ELB_RESULTS}", "-b", "${BATCH_LEN}", "-c", "${COPY_ONLY}", "-q", "/blast/queries/"]
       restartPolicy: Never
-  backoffLimit: 3
+  backoffLimit: 9

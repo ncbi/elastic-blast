@@ -1,0 +1,18 @@
+steps:
+- name: '${_IMG}'
+  args: ['kubectl', 'version', '--client=true']
+- name: '${_IMG}'
+  args: ['envsubst', '--version']
+- name: '${_IMG}'
+  env:
+    - 'ELB_GCP_PROJECT=${_ELB_GCP_PROJECT}'
+    - 'ELB_GCP_ZONE=${_ELB_GCP_ZONE}'
+    - 'ELB_RESULTS=${_ELB_RESULTS}'
+    - 'ELB_CLUSTER_NAME=${_ELB_CLUSTER_NAME}'
+  args: ['/bin/bash', '-x', '/usr/bin/cloud-job-submit.sh']
+
+substitutions:
+  _ELB_GCP_PROJECT: 'ncbi-sandbox-blast'
+  _ELB_GCP_ZONE: 'us-east4-a'
+  _ELB_RESULTS: 'gs://elasticblast-test'
+  _ELB_CLUSTER_NAME: 'elb-test-cluster'

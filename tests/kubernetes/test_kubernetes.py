@@ -29,6 +29,7 @@ import time
 from pathlib import Path
 from tempfile import TemporaryDirectory
 import json
+from unittest.mock import MagicMock, patch
 import pytest
 from tests.utils import MockedCompletedProcess
 from tests.utils import mocked_safe_exec
@@ -40,6 +41,7 @@ from elastic_blast.config import configure
 from elastic_blast.elb_config import ElasticBlastConfig
 from elastic_blast.constants import ElbCommand
 from elastic_blast.constants import K8S_UNINITIALIZED_CONTEXT
+from elastic_blast.db_metadata import DbMetadata
 
 from typing import List
 
@@ -165,6 +167,19 @@ def safe_exec_mock(mocker):
     mocker.patch('elastic_blast.kubernetes.safe_exec', side_effect=print_safe_exec)
 
 
+DB_METADATA = DbMetadata(version = '1',
+                         dbname = 'some-name',
+                         dbtype = 'Protein',
+                         description = 'A test database',
+                         number_of_letters = 25,
+                         number_of_sequences = 25,
+                         files = [],
+                         last_updated = 'some-date',
+                         bytes_total = 25,
+                         bytes_to_cache = 25,
+                         number_of_volumes = 1)
+
+@patch(target='elastic_blast.elb_config.get_db_metadata', new=MagicMock(return_value=DB_METADATA))
 def test_initialize_persistent_disk(safe_exec_mock, mocker):
     """Exercises initialize_persistent_disk with mock safe_exec and prints out
     arguments to safe_exec
@@ -181,6 +196,7 @@ def test_initialize_persistent_disk(safe_exec_mock, mocker):
     kubernetes.initialize_persistent_disk(cfg)
 
 
+@patch(target='elastic_blast.elb_config.get_db_metadata', new=MagicMock(return_value=DB_METADATA))
 def test_initialize_persistent_disk_failed(mocker):
     def fake_safe_exec_failed_job(cmd):
         fn = os.path.join(TEST_DATA_DIR, 'job-status-failed.json')
@@ -203,6 +219,7 @@ def test_initialize_persistent_disk_failed(mocker):
     kubernetes.safe_exec.assert_called()
 
 
+@patch(target='elastic_blast.elb_config.get_db_metadata', new=MagicMock(return_value=DB_METADATA))
 def test_label_persistent_disk(safe_exec_mock):
     """Exercises label_persistent_disk with mock safe_exec and prints out
     arguments to safe_exec
