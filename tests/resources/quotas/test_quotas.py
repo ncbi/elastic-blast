@@ -36,6 +36,7 @@ from elastic_blast.base import InstanceProperties
 from elastic_blast.elb_config import ElasticBlastConfig
 from elastic_blast.constants import ElbCommand
 from elastic_blast.db_metadata import DbMetadata
+from tests.utils import GKEMock
 
 TEST_DATA_DIR = os.path.join(os.path.dirname(__file__), '..', '..', 'config', 'data')
 
@@ -65,10 +66,13 @@ class TestResourceQuotasAws(unittest.TestCase):
         cfg_aws.read(f"{TEST_DATA_DIR}/elb-aws-blastn-pdbnt.ini")
 
         with patch('elastic_blast.elb_config.get_db_metadata', new=MagicMock(return_value=DB_METADATA)):
-            self.cfg_gcp = ElasticBlastConfig(cfg_gcp, task = ElbCommand.SUBMIT)
+            with patch(target='elastic_blast.elb_config.safe_exec', new=MagicMock(side_effect=GKEMock().mocked_safe_exec)):
+                with patch(target='elastic_blast.util.safe_exec', new=MagicMock(side_effect=GKEMock().mocked_safe_exec)):
+                    self.cfg_gcp = ElasticBlastConfig(cfg_gcp, task = ElbCommand.SUBMIT)
         with patch('elastic_blast.elb_config.aws_get_machine_properties', new=MagicMock(return_value=InstanceProperties(32, 120))):
             with patch('elastic_blast.elb_config.get_db_metadata', new=MagicMock(return_value=DB_METADATA)):
-                self.cfg_aws = ElasticBlastConfig(cfg_aws, task = ElbCommand.SUBMIT)
+                with patch(target='boto3.client', new=MagicMock(side_effect=GKEMock().mocked_client)):
+                    self.cfg_aws = ElasticBlastConfig(cfg_aws, task = ElbCommand.SUBMIT)
 
     @pytest.mark.skipif(os.getenv('TEAMCITY_VERSION') is not None, reason='AWS credentials not set in TC')
     def test_check_resource_quotas_aws(self):

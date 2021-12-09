@@ -66,25 +66,51 @@ def test_db_data_from_db_metadata():
 
 def test_get_mt_mode():
     """Test computing BLAST search MT mode"""
-    db = DbData(length = 10000000, moltype = MolType.PROTEIN, bytes_to_cache_gb = 1)
-    query = SeqData(length = 20000, moltype = MolType.PROTEIN)
-    assert get_mt_mode(program = 'blastp', options = '', db = db, query = query) == MTMode.ONE
+    db_metadata = DbMetadata(version = '1',
+                             dbname = 'testdb',
+                             dbtype = 'Protein',
+                             description = 'A test database',
+                             number_of_letters = 10000000,
+                             number_of_sequences = 5,
+                             files = [],
+                             last_updated = 'a date',
+                             bytes_total = 125,
+                             bytes_to_cache = 100,
+                             number_of_volumes = 1)
 
-    db = DbData(length = 50000000000, moltype = MolType.PROTEIN, bytes_to_cache_gb = 1)
     query = SeqData(length = 20000, moltype = MolType.PROTEIN)
-    assert get_mt_mode(program = 'blastp', options = '', db = db, query = query) == MTMode.ZERO
+    assert get_mt_mode(program = 'blastp', options = '', db_metadata = db_metadata, query = query) == MTMode.ONE
 
-    db = DbData(length = 50000000000, moltype = MolType.PROTEIN, bytes_to_cache_gb = 1)
+
+    db_metadata.dbtype = 'Protein'
+    db_metadata.number_of_letters = 50000000000
     query = SeqData(length = 20000, moltype = MolType.PROTEIN)
-    assert get_mt_mode(program = 'blastp', options = '-taxidlist list', db = db, query = query) == MTMode.ONE
+    assert get_mt_mode(program = 'blastp', options = '', db_metadata = db_metadata, query = query) == MTMode.ZERO
 
-    db = DbData(length = 1000, moltype = MolType.NUCLEOTIDE, bytes_to_cache_gb = 1)
+    db_metadata.dbtype = 'Protein'
+    db_metadata.number_of_letters = 50000000000
+    query = SeqData(length = 20000, moltype = MolType.PROTEIN)
+    assert get_mt_mode(program = 'blastp', options = '-taxidlist list', db_metadata = db_metadata, query = query) == MTMode.ONE
+
+    db_metadata.dbtype = 'Nucleotide'
+    db_metadata.number_of_letters = 1000
     query = SeqData(length = 5000000, moltype = MolType.PROTEIN)
-    assert get_mt_mode(program = 'blastp', options = '', db = db, query = query) == MTMode.ONE
+    assert get_mt_mode(program = 'blastp', options = '', db_metadata = db_metadata, query = query) == MTMode.ONE
 
-    db = DbData(length = 20000000000, moltype = MolType.NUCLEOTIDE, bytes_to_cache_gb = 1)
+    db_metadata.dbtype = 'Nucleotide'
+    db_metadata.number_of_letters = 20000000000
     query = SeqData(length = 5000000, moltype = MolType.PROTEIN)
-    assert get_mt_mode(program = 'blastp', options = '', db = db, query = query) == MTMode.ZERO
+    assert get_mt_mode(program = 'blastp', options = '', db_metadata = db_metadata, query = query) == MTMode.ZERO
+
+    db_metadata.dbtype = 'Nucleotide'
+    db_metadata.number_of_letters = 500
+    query = SeqData(length = 5000000, moltype = MolType.PROTEIN)
+    assert get_mt_mode(program = 'tblastn', options = '', db_metadata = db_metadata, query = query) == MTMode.ZERO
+
+    db_metadata.dbtype = 'Nucleotide'
+    db_metadata.number_of_letters = 500
+    query = SeqData(length = 5000000, moltype = MolType.PROTEIN)
+    assert get_mt_mode(program = 'tblastx', options = '', db_metadata = db_metadata, query = query) == MTMode.ZERO
 
 
 def test_MTMode():
@@ -108,13 +134,24 @@ def test_get_num_cpus():
 
 def test_get_batch_length():
     """Test computing batch length"""
-    PROGRAM = 'blastp'
+    PROGRAM = 'blastx'
     NUM_CPUS = 16
-    assert get_batch_length(program = 'blastp', mt_mode = MTMode.ZERO,
+    assert get_batch_length(CSP.AWS, program = PROGRAM, mt_mode = MTMode.ZERO,
                             num_cpus = NUM_CPUS) == get_query_batch_size(PROGRAM)
 
-    assert get_batch_length(program = 'blastp', mt_mode = MTMode.ONE,
+    PROGRAM = 'blastp'
+    assert get_batch_length(CSP.AWS, program = PROGRAM, mt_mode = MTMode.ONE,
                             num_cpus = NUM_CPUS) == get_query_batch_size(PROGRAM) * NUM_CPUS
+
+    PROGRAM = 'rpsblast'
+    NUM_CPUS = 16
+    assert get_batch_length(CSP.AWS, program = PROGRAM, mt_mode = MTMode.ONE,
+                            num_cpus = NUM_CPUS) == get_query_batch_size(PROGRAM) * NUM_CPUS * 2
+
+    PROGRAM = 'rpsblast'
+    NUM_CPUS = 100
+    assert get_batch_length(CSP.GCP, program = PROGRAM, mt_mode = MTMode.ONE,
+                            num_cpus = NUM_CPUS) == get_query_batch_size(PROGRAM) * MAX_NUM_THREADS_GCP * 2
 
 
 @patch(target='elastic_blast.tuner.aws_get_machine_properties', new=MagicMock(return_value=InstanceProperties(32, 128)))

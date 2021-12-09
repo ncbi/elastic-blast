@@ -38,13 +38,13 @@ from elastic_blast.util import convert_memory_to_mb, get_blastdb_size, sanitize_
 from elastic_blast.util import safe_exec, SafeExecError, convert_disk_size_to_gb
 from elastic_blast.util import sanitize_gcp_labels, sanitize_for_k8s, sanitize_aws_tag
 from elastic_blast.util import validate_gcp_string, convert_labels_to_aws_tags
-from elastic_blast.util import validate_gcp_disk_name
+from elastic_blast.util import validate_gcp_disk_name, gcp_get_regions
 from elastic_blast.gcp_traits import get_machine_properties
 from elastic_blast.elb_config import ElasticBlastConfig
 from elastic_blast.base import InstanceProperties
 from elastic_blast.db_metadata import DbMetadata
 import pytest
-from tests.utils import MockedCompletedProcess
+from tests.utils import MockedCompletedProcess, gke_mock, GCP_REGIONS
 
 
 DB_METADATA = DbMetadata(version = '1',
@@ -127,15 +127,17 @@ class ElbLibTester(unittest.TestCase):
         with self.assertRaises(ValueError) as e:
             safe_exec(1)
 
+    @patch(target='elastic_blast.elb_config.gcp_get_regions', new=MagicMock(return_value=GCP_REGIONS))
     def test_get_blastdb_size(self):
         cfg = create_config_for_db('nr')
-        dbsize = get_blastdb_size(cfg.blast.db, cfg.blast.db_source)
+        dbsize = get_blastdb_size(cfg.blast.db, cfg.cluster.db_source)
         assert dbsize >= 227.4
 
+    @patch(target='elastic_blast.elb_config.gcp_get_regions', new=MagicMock(return_value=GCP_REGIONS))
     def test_get_blastdb_size_invalid_database(self):
         cfg = create_config_for_db('non_existent_blast_database')
         with self.assertRaises(ValueError):
-            get_blastdb_size(cfg.blast.db, cfg.blast.db_source)
+            get_blastdb_size(cfg.blast.db, cfg.cluster.db_source)
 
     def test_sanitize_gcp_labels(self):
         self.assertEqual('harry-potter', sanitize_gcp_labels('Harry.Potter'))
@@ -159,17 +161,17 @@ class ElbLibTester(unittest.TestCase):
     def test_sanitize_aws_batch_job_name(self):
         self.assertEqual('GCF_000001405-38_top_level', sanitize_aws_batch_job_name('GCF_000001405.38_top_level '))
 
+@patch(target='elastic_blast.elb_config.get_db_metadata', new=MagicMock(return_value=DB_METADATA))
 def create_config_for_db(dbname):
     """Create minimal config for a database name"""
-    with patch(target='elastic_blast.elb_config.get_db_metadata', new=MagicMock(return_value=DB_METADATA)):
-        return ElasticBlastConfig(gcp_project = 'test-gcp-project',
-                                  gcp_region = 'test-gcp-region',
-                                  gcp_zone = 'test-gcp-zone',
-                                  program = 'blastn',
-                                  db = dbname,
-                                  queries = 'test-queries.fa',
-                                  results = 'gs://test-bucket',
-                                  task = ElbCommand.SUBMIT)
+    return ElasticBlastConfig(gcp_project = 'test-gcp-project',
+                              gcp_region = 'test-gcp-region',
+                              gcp_zone = 'test-gcp-zone',
+                              program = 'blastn',
+                              db = dbname,
+                              queries = 'test-queries.fa',
+                              results = 'gs://test-bucket',
+                              task = ElbCommand.SUBMIT)
 
 
 def test_safe_exec_run(mocker):
@@ -186,12 +188,10 @@ def test_safe_exec_run(mocker):
 @patch(target='elastic_blast.elb_config.get_db_metadata', new=MagicMock(return_value=DB_METADATA))
 @patch(target='elastic_blast.elb_config.aws_get_machine_properties', new=MagicMock(return_value=InstanceProperties(32, 120)))
 @patch(target='elastic_blast.tuner.aws_get_machine_properties', new=MagicMock(return_value=InstanceProperties(32, 120)))
-def test_convert_labels_to_aws_tags():
-    cfg = create_config_for_db('nt')
-
-    cfg = ElasticBlastConfig(aws_region = 'test-aws-region',
+def test_convert_labels_to_aws_tags(gke_mock):
+    cfg = ElasticBlastConfig(aws_region = 'test-region',
                              program = 'blastn',
-                             db = 'nt',
+                             db = 'testdb',
                              queries = 'test-queries.fa',
                              results = 's3://some.bucket.with_s0me-interesting-name-end',
                              cluster_name = 'some-cluster-name',

@@ -39,6 +39,7 @@ if [ ! -z "${ELB_TC_BRANCH+x}" ] ; then
         sed -i~ -e "/^\[cluster\]/a labels = branch=$ELB_TC_BRANCH" $CFG
     fi
 fi
+set +e
 $ROOT_DIR/elastic-blast submit --cfg $CFG --loglevel DEBUG --logfile $logfile $DRY_RUN
 err_code=$?
 

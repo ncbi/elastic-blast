@@ -17,32 +17,48 @@ spec:
           path: "/mnt/disks/ssd0"
       containers:
       - name: ${K8S_JOB_GET_BLASTDB}
-        image: gcr.io/ncbi-sandbox-blast/joukovv/cloud-sdk-dl-blastdb:latest
+        image: ${ELB_DOCKER_IMAGE}
         workingDir: /blast/blastdb
         volumeMounts:
         - name: blastdb
           mountPath: /blast/blastdb
           subPath: blast
-        readinessProbe:
-          httpGet:
-            host: storage.googleapis.com
-            port: 443
-            scheme: HTTPS
-            path: /blast-db/latest-dir
         env:
         - name: BLAST_USAGE_REPORT
           value: "false"
         command: ["/bin/bash", "-c"]
         args:
-        - start=`date +%s`;
+        - echo "BASH version ${BASH_VERSION}";
+          start=`date +%s`;
           sleep 30;
-          log() { printf 'RUNTIME %s %f seconds for node ${NODE_ORDINAL}\n' "$1" "$2"; };
-          download-blastdb.py -d ${ELB_DB} -s ${ELB_BLASTDB_SRC} -m gsutil-m;
-          exit_code=$?;
+          log() { ts=`date +'%F %T'`; printf '%s RUNTIME %s %f seconds\n' "$ts" "$1" "$2"; };
+          if [ -z '${ELB_DB_PATH}' ]; then
+            echo update_blastdb.pl ${ELB_DB} --source ${ELB_BLASTDB_SRC} --verbose --verbose --verbose --verbose --verbose --verbose;
+            update_blastdb.pl ${ELB_DB} --source ${ELB_BLASTDB_SRC} --verbose --verbose --verbose --verbose --verbose --verbose;
+            exit_code=$?;
+          else
+            echo gsutil -mq cp ${ELB_DB_PATH} .;
+            gsutil -mq cp ${ELB_DB_PATH} .;
+            exit_code=$?;
+            [ $exit_code -eq 0 ] || exit $exit_code;
+            [ -f ${ELB_DB}.tar.gz ] && tar xzf ${ELB_DB}.tar.gz;
+            echo gsutil -mq cp ${ELB_TAX_DB_PATH} .;
+            gsutil -mq cp ${ELB_TAX_DB_PATH} .;
+            exit_code=$?;
+            [ -f ${ELB_DB}.tar.gz ] && rm ${ELB_DB}.tar.gz;
+          fi;
           end=`date +%s`;
           log "download-blastdbs" $(($end-$start));
           [ $exit_code -eq 0 ] || exit $exit_code;
-          if [ -n "${ELB_TAXIDLIST}" ] ; then
+          echo blastdbcmd -info -db ${ELB_DB} -dbtype ${ELB_DB_MOL_TYPE};
+          blastdbcmd -info -db ${ELB_DB} -dbtype ${ELB_DB_MOL_TYPE};
+          exit_code=$?;
+          [ $exit_code -eq 0 ] || exit $exit_code;
+          echo blastdbcheck -db ${ELB_DB} -dbtype ${ELB_DB_MOL_TYPE} -no_isam -ends 5;
+          blastdbcheck -db ${ELB_DB} -dbtype ${ELB_DB_MOL_TYPE} -no_isam -ends 5;
+          exit_code=$?;
+          [ $exit_code -eq 0 ] || exit $exit_code;
+          if [ ! -z "${ELB_TAXIDLIST}" ] ; then
               gsutil -mq cp ${ELB_TAXIDLIST} /blast/blastdb;
               exit_code=$?;
           fi;
@@ -50,4 +66,5 @@ spec:
       restartPolicy: Never
       nodeSelector:
         ordinal: "${NODE_ORDINAL}"
-  backoffLimit: 0
+  backoffLimit: 3
+  activeDeadlineSeconds: ${TIMEOUT}

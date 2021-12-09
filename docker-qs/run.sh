@@ -64,26 +64,29 @@ fi
 TMP=`mktemp`
 if [[ $output_bucket =~ ^s3:// ]]; then
   time fasta_split.py $input -l $batch_len -o output -c $TMP
+  find output -type f -name "batch_*.fa" | xargs -n1 basename > batch_list.txt
   time aws s3 cp output $output_bucket/query_batches --recursive --only-show-errors
   time aws s3 cp $TMP $output_bucket/metadata/query_length.txt --only-show-errors
-  (cd output; ls batch_*.fa) | aws s3 cp - $output_bucket/metadata/batch_list.txt --only-show-errors
+  time aws s3 cp batch_list.txt $output_bucket/metadata/batch_list.txt --only-show-errors
 else
   if [ $copy_only -eq 1 ]; then
     time gsutil -mq cp "$output_bucket/query_batches/batch_*.fa" $local_output_dir
   else
     time fasta_split.py $input -l $batch_len -o $local_output_dir -c $TMP
-    num_batches=`cd $local_output_dir; ls batch_*.fa|wc -l`
+    num_batches=`find $local_output_dir -type f -name "batch_*.fa"|wc -l`
     query_length=`cat $TMP`
     if [ $num_batches -gt $k8s_job_limit ]; then
       suggested_batch_len=$(( (query_length + k8s_job_limit - 1) / k8s_job_limit ))
       gsutil -q cp - $output_bucket/metadata/FAILURE.txt <<EOF
+Your ElasticBLAST search has failed and its computing resources will be deleted.
 The batch size specified ($batch_len) led to creating $num_batches kubernetes jobs, which exceeds the limit on number of jobs ($k8s_job_limit).
-Please increase the batch-len parameter to at least $suggested_batch_len.
+Please increase the batch-len parameter to at least $suggested_batch_len and repeat the search.
 EOF
       exit 0
     else
-      time gsutil cp $TMP $output_bucket/metadata/query_length.txt
+      time gsutil -qm cp $TMP $output_bucket/metadata/query_length.txt
     fi
   fi
-  (cd $local_output_dir; ls batch_*.fa) | gsutil cp - $output_bucket/metadata/batch_list.txt
+  find $local_output_dir -type f -name "batch_*.fa" | xargs -n1 basename > batch_list.txt
+  time gsutil -qm cp batch_list.txt $output_bucket/metadata/batch_list.txt
 fi

@@ -20,7 +20,6 @@ TEMPLATE_DIR=${CURRENT_DIR}/../src/elastic_blast/templates
 
 # For testing purposes
 ELB_RESULTS?=s3://elb-camacho/auto-shutdown9
-ELB_CLUSTER_NAME?=elasticblast-camacho-3be5e632f
 
 all: create
 
@@ -84,33 +83,45 @@ events:
 	-aws cloudformation describe-stack-events --stack-name ${STACK_NAME}-admin-role --region ${REGION}
 	-aws cloudformation describe-stack-events --stack-name ${STACK_NAME}-demo-stack --region ${REGION}
 
-
 ###############################################################################
 # Targets for AWS lambda function that invokes elastic-blast
 
+PROD_BUCKET=elb-camacho
 LAMBDA_FNX_NAME=ncbi-elasticblast-janitor
 ROLE_NAME=ncbi-elasticblast-janitor-role
 ROLE_PATH=/app/ncbi/elasticblast/
+# This is a deployment package, it cannot exceed 50MB
+LAMBDA_FNX_ARCHIVE=elasticblast-janitor-lambda-deployment.zip
 PYTHON_RUNTIME=$(shell awk '/Runtime: / {print $$NF}' ${TEMPLATE_DIR}/elastic-blast-janitor-cf.yaml | sort -Vu | head -1)
 LAMBDA_TIMEOUT=$(shell awk '/Timeout: / {print $$NF}' ${TEMPLATE_DIR}/elastic-blast-janitor-cf.yaml | sort -nr | head -1 )
 LAMBDA_HANDLER=$(shell awk '/Handler: / {print $$NF}' ${TEMPLATE_DIR}/elastic-blast-janitor-cf.yaml | grep -v index.handler )
+LAMBDA_MEMORY=$(shell awk '/MemorySize: / {print $$NF}' ${TEMPLATE_DIR}/elastic-blast-janitor-cf.yaml )
 
 VENV?=.env
-${VENV}: requirements.txt
+REQUIREMENTS?=requirements.txt
+${VENV}: ${REQUIREMENTS}
 	[ -d $@ ] || python3 -m venv $@
 	source ${VENV}/bin/activate && pip3 install -r $<
 
+test-lambda-locally:
+	rm -fr .env-testing
+	make VENV=.env-testing REQUIREMENTS=requirements-for-testing.txt ${LAMBDA_FNX_ARCHIVE}
+
+test-lambda-locally-dry-run:
+	rm -fr .env-testing
+	make VENV=.env-testing REQUIREMENTS=requirements-for-testing.txt ${LAMBDA_FNX_ARCHIVE} ELB_DRY_RUN=1
+
+
 .PHONY: test-lambda
-test-lambda: export ELB_DRY_RUN=1
 test-lambda: export AWS_REGION=${REGION}
 test-lambda: ${VENV}
-	ELB_RESULTS=${ELB_RESULTS} ELB_CLUSTER_NAME=${ELB_CLUSTER_NAME} ${VENV}/bin/python3 lambda_elb.py
+	ELB_RESULTS=${ELB_RESULTS} ${VENV}/bin/python3 lambda_elb.py
 
-elasticblast-janitor-lambda-deployment.zip: test-lambda
+${LAMBDA_FNX_ARCHIVE}: test-lambda
 	(cd ${VENV}/lib/${PYTHON_RUNTIME}/site-packages && zip -qr ${CURRENT_DIR}/$@ .)
 	zip -g $@ lambda_elb.py
 	# https://docs.aws.amazon.com/lambda/latest/dg/gettingstarted-limits.html
-	if [ `du -m $@ | cut -f 1` -gt 50 ]; then echo "ERROR: $@ is larger than 50MB"; exit 1; fi
+	@if [ `du -m $@ | cut -f 1` -gt 50 ]; then echo "ERROR: $@ is larger than 50MB"; exit 1; fi
 
 # The following targets are for testing lambda function on the CLI
 
@@ -121,37 +132,132 @@ create-lambda-role:
 			--assume-role-policy-document file://trust-policy.json \
 			--path ${ROLE_PATH} \
 			--tags Key=Project,Value=BLAST Key=billingcode,Value=elastic-blast Key=Owner,Value=${USER} Key=Name,Value=${ROLE_NAME} && \
-		aws iam attach-role-policy --role-name ${ROLE_NAME} --policy-arn arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole )
+		aws iam attach-role-policy --role-name ${ROLE_NAME} --policy-arn arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole && \
+		aws iam attach-role-policy --role-name ${ROLE_NAME} --policy-arn arn:aws:iam::aws:policy/AmazonVPCReadOnlyAccess && \
+		aws iam attach-role-policy --role-name ${ROLE_NAME} --policy-arn arn:aws:iam::aws:policy/AmazonS3FullAccess && \
+		aws iam attach-role-policy --role-name ${ROLE_NAME} --policy-arn arn:aws:iam::aws:policy/AWSBatchFullAccess && \
+		aws iam attach-role-policy --role-name ${ROLE_NAME} --policy-arn arn:aws:iam::aws:policy/AmazonEC2FullAccess && \
+		aws iam attach-role-policy --role-name ${ROLE_NAME} --policy-arn arn:aws:iam::aws:policy/IAMFullAccess && \
+		aws iam attach-role-policy --role-name ${ROLE_NAME} --policy-arn arn:aws:iam::aws:policy/AWSCloudFormationFullAccess \
+		)
 	#aws iam list-roles --path-prefix ${ROLE_PATH}
 
-.PHONY: deploy-for-elasticblast
-deploy-for-elasticblast: rm-virtual-env elasticblast-janitor-lambda-deployment.zip upload-template
-	aws s3 cp --acl public-read --only-show-errors elasticblast-janitor-lambda-deployment.zip s3://${BUCKET}/functions/
+# THIS TARGET UPDATES PRODUCTION ELASTIC BLAST!!
+.PHONY: deploy-to-production
+deploy-to-production: rm-virtual-env ${LAMBDA_FNX_ARCHIVE} upload-template
+	aws s3 cp --acl public-read --only-show-errors ${LAMBDA_FNX_ARCHIVE} s3://${BUCKET}/functions/
+
+# This target updates the lambda function created via CLI used for testing 
+.PHONY: update-lambda-deployment-dry-run
+update-lambda-deployment-dry-run: ${LAMBDA_FNX_ARCHIVE}
+	aws lambda update-function-code --function-name ${LAMBDA_FNX_NAME} \
+		--zip-file fileb://${LAMBDA_FNX_ARCHIVE} --no-publish \
+		--dry-run 
+
+# This target updates the lambda function created via CLI used for testing 
+.PHONY: update-lambda-deployment
+update-lambda-deployment: ${LAMBDA_FNX_ARCHIVE}
+	aws lambda update-function-code --function-name ${LAMBDA_FNX_NAME} \
+		--zip-file fileb://${LAMBDA_FNX_ARCHIVE} --no-publish
+
+################################################################################
+## Alias/Version management
+.PHONY: list-versions
+list-versions: list-aliases
+	aws lambda list-versions-by-function --function-name ${LAMBDA_FNX_NAME} --output json
+
+.PHONY: list-latest-object-versions
+list-latest-object-versions:
+	-aws s3api list-object-versions --bucket ${BUCKET} --prefix templates/elastic-blast-janitor-cf.yaml --query 'Versions[?IsLatest].[VersionId]' --output text
+	-aws s3api list-object-versions --bucket ${BUCKET} --prefix functions/${LAMBDA_FNX_ARCHIVE} --query 'Versions[?IsLatest].[VersionId]' --output text
+
+.PHONY: list-object-versions
+list-object-versions:
+	-aws s3api list-object-versions --bucket ${BUCKET} --prefix templates/elastic-blast-janitor-cf.yaml --output json
+	-aws s3api list-object-versions --bucket ${BUCKET} --prefix functions/${LAMBDA_FNX_ARCHIVE} --output json
+
+.PHONY: create-alias
+create-alias:
+	[ ! -z "${LAMBDA_FNX_PRODUCTION_VERSION}" ] || { echo "LAMBDA_FNX_PRODUCTION_VERSION environment variable must be defined. Please visit https://console.aws.amazon.com/lambda/home?region=us-east-1#/functions/ncbi-elasticblast-janitor?tab=versions"; exit 1; }
+	aws lambda create-alias --function-name ${LAMBDA_FNX_NAME} \
+		--description "Production ElasticBLAST Janitor for testing purposes" \
+		--name PRODUCTION --function-version ${LAMBDA_FNX_PRODUCTION_VERSION}
+
+.PHONY: publish-version
+publish-version:
+	[ ! -z "${DESCRIPTION}" ] || { echo "DESCRIPTION environment variable must be defined"; exit 1; }
+	aws lambda publish-version --function-name ${LAMBDA_FNX_NAME} \
+		--description "${DESCRIPTION}"
+
+.PHONY: list-aliases
+list-aliases:
+	aws lambda list-aliases --function-name ${LAMBDA_FNX_NAME}
+	aws lambda get-alias --function-name ${LAMBDA_FNX_NAME} --name PRODUCTION
 
 .PHONY: rm-virtual-env
 rm-virtual-env:
 	rm -fr ${VENV}
 
+# This isn't needed for updates! Please see update-lambda-deployment* Makefile targets
 .PHONY: deploy
-deploy: elasticblast-janitor-lambda-deployment.zip create-lambda-role
+deploy: ${LAMBDA_FNX_ARCHIVE} create-lambda-role
 	[[ `aws lambda list-functions --query "Functions[?FunctionName=='${LAMBDA_FNX_NAME}']" --output text` ]] || \
 		aws lambda create-function --function-name ${LAMBDA_FNX_NAME}  \
 			--runtime ${PYTHON_RUNTIME} \
-			--description "ElasticBLAST janitor lambda function created using CLI" \
+			--description "ElasticBLAST janitor lambda function created using CLI for TESTING" \
 			--zip-file fileb://$< \
 			--timeout ${LAMBDA_TIMEOUT} \
+			--memory-size ${LAMBDA_MEMORY} \
 			--tags Project=BLAST,billingcode=elastic-blast,Owner=${USER},Name=${LAMBDA_FNX_NAME} \
 			--handler ${LAMBDA_HANDLER} \
 			--role `aws iam list-roles --path-prefix ${ROLE_PATH} --output text --query 'Roles[0].Arn'`
 
+ELB_DRY_RUN?=1
+# This invokes the ${LAMBDA_FNX_NAME}. this MUST work before deploying to production (i.e.: deploy-to-production)
 .PHONY: invoke
-invoke: deploy
-	-aws lambda invoke --function-name ${LAMBDA_FNX_NAME} response1.json --log-type Tail \
-		--cli-binary-format raw-in-base64-out \
-		--payload '{ "ELB_RESULTS": "s3://elasticblast-${USER}", "ELB_CLUSTER_NAME": "elasticblast-${USER}", "ELB_DRY_RUN": "1" }' --query 'LogResult' --output text |  base64 -d
+invoke:
+	[ -z "${ELB_DRY_RUN}" ] && \
+		printf '{ "ELB_RESULTS": "%s" }\n' ${ELB_RESULTS} | jq -Mr . | tee ${TMP_OUTPUT} || \
+		printf '{ "ELB_RESULTS": "%s", "ELB_DRY_RUN": "1" }\n' ${ELB_RESULTS} | jq -Mr . | tee ${TMP_OUTPUT}
+	${RM} response1.json;
+	-if [ -z "${LAMBDA_FNX_PRODUCTION_VERSION}" ]; then \
+		aws lambda invoke --function-name ${LAMBDA_FNX_NAME} response1.json \
+			--invocation-type RequestResponse --log-type Tail \
+			--cli-binary-format raw-in-base64-out \
+			--payload file://${TMP_OUTPUT} --query 'LogResult' --output text |  base64 -d; \
+	else \
+		aws lambda invoke --function-name ${LAMBDA_FNX_NAME} response1.json \
+			--invocation-type RequestResponse --log-type Tail \
+			--cli-binary-format raw-in-base64-out \
+			--qualifier ${LAMBDA_FNX_PRODUCTION_VERSION} \
+			--payload file://${TMP_OUTPUT} --query 'LogResult' --output text |  base64 -d; \
+	fi
+	-cat response1.json
+	echo;
 
 .PHONY: undeploy
 undeploy:
 	-aws lambda delete-function --function-name ${LAMBDA_FNX_NAME}
 	-aws iam detach-role-policy --role-name ${ROLE_NAME} --policy-arn arn:aws:iam::aws:policy/service-role/AWSLambdaBasicExecutionRole
+	-aws iam detach-role-policy --role-name ${ROLE_NAME} --policy-arn arn:aws:iam::aws:policy/AmazonVPCReadOnlyAccess
+	-aws iam detach-role-policy --role-name ${ROLE_NAME} --policy-arn arn:aws:iam::aws:policy/AmazonS3FullAccess
+	-aws iam detach-role-policy --role-name ${ROLE_NAME} --policy-arn arn:aws:iam::aws:policy/AWSBatchFullAccess
+	-aws iam detach-role-policy --role-name ${ROLE_NAME} --policy-arn arn:aws:iam::aws:policy/AmazonEC2FullAccess
+	-aws iam detach-role-policy --role-name ${ROLE_NAME} --policy-arn arn:aws:iam::aws:policy/IAMFullAccess
+	-aws iam detach-role-policy --role-name ${ROLE_NAME} --policy-arn arn:aws:iam::aws:policy/AWSCloudFormationFullAccess
 	-aws iam delete-role --role-name ${ROLE_NAME}
+
+###############################################################################
+# Compares the production deployment with the current sources
+TMP_OUTPUT:=$(shell mktemp -t "XXXXXXX.tmp")
+TMP_OUTPUT2:=$(shell mktemp -t "XXXXXXX.tmp")
+diff:
+	aws s3 cp --only-show-errors s3://${PROD_BUCKET}/templates/elastic-blast-janitor-cf.yaml ${TMP_OUTPUT}
+	diff ${TMP_OUTPUT} ${TEMPLATE_DIR}/elastic-blast-janitor-cf.yaml
+	aws s3 cp --only-show-errors s3://${PROD_BUCKET}/functions/${LAMBDA_FNX_ARCHIVE} ${TMP_OUTPUT2}
+	#unzip -l ${TMP_OUTPUT2}
+	unzip -p ${TMP_OUTPUT2} lambda_elb.py > ${TMP_OUTPUT}
+	diff ${TMP_OUTPUT} lambda_elb.py
+
+
+

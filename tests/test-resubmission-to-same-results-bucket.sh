@@ -90,7 +90,9 @@ if ! grep -q '^aws-' $CFG; then
     gsutil -qm rm -r ${ELB_RESULTS}
 else
     aws s3 rm ${ELB_RESULTS}/ --recursive
-    $ROOT_DIR/elastic-blast delete --cfg $CFG --loglevel DEBUG --logfile $logfile $DRY_RUN
+    if ! aws iam get-role --role-name ncbi-elasticblast-janitor-role  >&/dev/null; then
+        $ROOT_DIR/elastic-blast delete --cfg $CFG --loglevel DEBUG --logfile $logfile $DRY_RUN
+    fi
 fi
 
 # Do the final error check: this string must be in the logfile

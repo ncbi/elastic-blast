@@ -56,31 +56,21 @@ from elastic_blast.elb_config import ElasticBlastConfig
 
 def get_query_split_mode(cfg: ElasticBlastConfig, query_files):
     """ Determine query split mode """
+    if 'ELB_USE_CLIENT_SPLIT' in os.environ:
+        return QuerySplitMode.CLIENT
     # Case for cloud split on AWS: one file on S3
     #                      on GCP: one file on GCS
-    eligible_for_cloud_query_split = False
     if len(query_files) == 1 and (
             cfg.cloud_provider.cloud == CSP.AWS and query_files[0].startswith(ELB_S3_PREFIX)
             or
             cfg.cloud_provider.cloud == CSP.GCP and query_files[0].startswith(ELB_GCS_PREFIX)):
-        eligible_for_cloud_query_split = True
-
-    use_1_stage_cloud_split = False
-    use_2_stage_cloud_split = False
-
-    if eligible_for_cloud_query_split:
         if cfg.cloud_provider.cloud == CSP.AWS and \
            'ELB_USE_1_STAGE_CLOUD_SPLIT' in os.environ:
-            use_1_stage_cloud_split = True
-        elif not 'ELB_USE_CLIENT_SPLIT' in os.environ:
-            use_2_stage_cloud_split = True
+            return QuerySplitMode.CLOUD_ONE_STAGE
+        else:
+            return QuerySplitMode.CLOUD_TWO_STAGE
 
-    if use_1_stage_cloud_split:
-        return QuerySplitMode.CLOUD_ONE_STAGE
-    elif use_2_stage_cloud_split:
-        return QuerySplitMode.CLOUD_TWO_STAGE
-    else:
-        return QuerySplitMode.CLIENT
+    return QuerySplitMode.CLIENT
 
 
 def prepare_1_stage(cfg: ElasticBlastConfig, query_files):
@@ -102,7 +92,7 @@ def write_config_to_metadata(cfg):
     if cfg.cluster.dry_run:
         return
     # FIXME: refactor this code into object_storage_utils
-    cfg_text = pformat(cfg.asdict())
+    cfg_text = cfg.to_json()
     dst = os.path.join(cfg.cluster.results, ELB_METADATA_DIR, ELB_META_CONFIG_FILE)
     if cfg.cloud_provider.cloud == CSP.AWS:
         write_to_s3(dst, cfg_text)
@@ -163,12 +153,11 @@ def submit(args, cfg, clean_up_stack):
 
     # check database availability
     try:
-        get_blastdb_size(cfg.blast.db, cfg.blast.db_source)
+        get_blastdb_size(cfg.blast.db, cfg.cluster.db_source)
     except ValueError as err:
         raise UserReportError(returncode=BLASTDB_ERROR, message=str(err))
 
     elastic_blast = ElasticBlastFactory(cfg, True, clean_up_stack)
-    # check_memory_requirements(cfg)  # FIXME: EB-281, EB-313
     elastic_blast.upload_workfiles()
 
     # query splitting
@@ -183,6 +172,8 @@ def submit(args, cfg, clean_up_stack):
             queries = qs_res.query_batches
             query_length = qs_res.query_length
 
+    # update config file in metadata
+    write_config_to_metadata(cfg)
     # job submission
     elastic_blast.submit(queries, query_length, query_split_mode == QuerySplitMode.CLOUD_ONE_STAGE)
     return 0
@@ -270,22 +261,6 @@ def split_query(query_files: List[str], cfg: ElasticBlastConfig) -> Tuple[List[s
     end = timer()
     logging.debug(f'RUNTIME split-queries {end-start} seconds')
     return (queries, query_length)
-
-
-def check_memory_requirements(cfg: ElasticBlastConfig):
-    """ Using configuration cfg ensure that the memory required by database
-        (database size plus margin) is available on machine type of configured cluster"""
-    db = cfg.blast.db
-    try:
-        dbsize = get_blastdb_size(cfg.blast.db, cfg.blast.db_source)
-    except ValueError as err:
-        raise UserReportError(returncode=BLASTDB_ERROR, message=str(err))
-    db_mem_margin = cfg.blast.db_mem_margin
-    db_mem_req = dbsize * db_mem_margin
-    machine_type = cfg.cluster.machine_type
-    machine_mem = get_machine_properties(machine_type).memory
-    if machine_mem < db_mem_req:
-        raise RuntimeError(f'Database {db} requires {db_mem_req:.3f}GB RAM for processing, machine {machine_type} provides only {machine_mem:.3f}GB')
 
 
 def assemble_query_file_list(cfg: ElasticBlastConfig) -> List[str]:

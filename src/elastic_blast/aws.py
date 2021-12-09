@@ -57,6 +57,7 @@ from .constants import ElbStatus, ELB_CJS_DOCKER_IMAGE_AWS
 from .constants import ELB_AWS_JANITOR_CFN_TEMPLATE, ELB_DFLT_JANITOR_SCHEDULE_AWS
 from .constants import ELB_AWS_JANITOR_LAMBDA_DEPLOYMENT_BUCKET, ELB_AWS_JANITOR_LAMBDA_DEPLOYMENT_KEY
 from .constants import CFG_CLOUD_PROVIDER, CFG_CP_AWS_AUTO_SHUTDOWN_ROLE
+from .constants import AWS_JANITOR_ROLE_NAME
 from .filehelper import parse_bucket_name_key
 from .aws_traits import get_machine_properties, create_aws_config, get_availability_zones_for
 from .object_storage_utils import write_to_s3
@@ -200,6 +201,13 @@ class ElasticBlastAws(ElasticBlast):
                     get_machine_properties(instance_type, self.boto_cfg).ncpus
             token = cfg.cluster.results.md5
             janitor_schedule = ELB_DFLT_JANITOR_SCHEDULE_AWS
+            if not self.cfg.aws.auto_shutdown_role and 'ELB_DISABLE_AUTO_SHUTDOWN' not in os.environ:
+                try:
+                    role = self.iam.Role(AWS_JANITOR_ROLE_NAME)
+                    self.cfg.aws.auto_shutdown_role = role.arn
+                    logging.debug(f'Found janitor role for {AWS_JANITOR_ROLE_NAME}: {role.arn}')
+                except:
+                    logging.debug(f'Did not find janitor role for {AWS_JANITOR_ROLE_NAME}')
             if 'ELB_JANITOR_SCHEDULE' in os.environ:
                 janitor_schedule = os.environ['ELB_JANITOR_SCHEDULE']
                 logging.debug(f'Overriding janitor schedule to "{janitor_schedule}"')
@@ -208,7 +216,7 @@ class ElasticBlastAws(ElasticBlast):
                 logging.debug('Disabling janitor')
             elif not self.cfg.aws.auto_shutdown_role:
                 janitor_schedule = ''
-                logging.debug(f'Disabling janitor due to missing {CFG_CLOUD_PROVIDER}.{CFG_CP_AWS_AUTO_SHUTDOWN_ROLE}')
+                logging.debug(f'Disabling janitor due to non-existent {AWS_JANITOR_ROLE_NAME} and unset {CFG_CLOUD_PROVIDER}.{CFG_CP_AWS_AUTO_SHUTDOWN_ROLE}')
             else:
                 logging.debug("Submitting ElasticBLAST janitor CloudFormation stack")
             params = [
@@ -514,27 +522,6 @@ class ElasticBlastAws(ElasticBlast):
             logging.debug('Spot Fleet role will be created by CloudFormation')
             return ''
 
-    @handle_aws_error
-    def status(self) -> ElbStatus:
-        retval = ElbStatus.UNKNOWN
-
-        counts, _ = self.check_status()
-        njobs = sum(counts.values())
-        pending = counts['pending']
-        running = counts['running']
-        succeeded = counts['succeeded']
-        failed = counts['failed']
-        logging.debug(f'NumJobs {njobs} Pending {pending} Running {running} Succeeded {succeeded} Failed {failed}')
-
-        if failed > 0:
-            retval = ElbStatus.FAILURE
-        elif running > 0 or pending > 0:
-            retval = ElbStatus.RUNNING
-        elif (pending + running + failed) == 0 and succeeded == njobs:
-            retval = ElbStatus.SUCCESS
-
-        return retval
-
 
     @handle_aws_error
     def delete(self):
@@ -633,7 +620,7 @@ class ElasticBlastAws(ElasticBlast):
         """
         overrides: Dict[str, Any] = {
             'vcpus': self.cfg.cluster.num_cpus,
-            'memory': int(convert_memory_to_mb(self.cfg.blast.mem_limit))
+            'memory': int(convert_memory_to_mb(self.cfg.cluster.mem_limit))
         }
         # FIXME: handle multiple files by concatenating them?
         parameters = {'input': query_files[0],
@@ -708,7 +695,7 @@ class ElasticBlastAws(ElasticBlast):
     def _cloud_submit(self) -> None:
         parameters = {'db': self.db,
                       'num-vcpus': str(self.cfg.cluster.num_cpus),
-                      'mem-limit': self.cfg.blast.mem_limit,
+                      'mem-limit': self.cfg.cluster.mem_limit,
                       'blast-program': self.cfg.blast.program,
                       'blast-options': self.cfg.blast.options,
                       'bucket': self.results_bucket,
@@ -721,7 +708,7 @@ class ElasticBlastAws(ElasticBlast):
             parameters['logfile'] = 'stderr'
 
         overrides = {'vcpus': self.cfg.cluster.num_cpus,
-                     'memory': int(convert_memory_to_mb(self.cfg.blast.mem_limit)),
+                     'memory': int(convert_memory_to_mb(self.cfg.cluster.mem_limit)),
                      'environment': [{'name': 'ELB_CLUSTER_NAME',
                                       'value': self.cfg.cluster.name}]
         }
@@ -765,19 +752,19 @@ class ElasticBlastAws(ElasticBlast):
 
         prog = self.cfg.blast.program
 
-        if self.cfg.blast.db_source != DBSource.AWS:
-            logging.warning(f'BLAST databases for AWS based ElasticBLAST obtained from {self.cfg.blast.db_source.name}')
+        if self.cfg.cluster.db_source != DBSource.AWS:
+            logging.warning(f'BLAST databases for AWS based ElasticBLAST obtained from {self.cfg.cluster.db_source.name}')
 
         overrides: Dict[str, Any] = {
             'vcpus': self.cfg.cluster.num_cpus,
-            'memory': int(convert_memory_to_mb(self.cfg.blast.mem_limit))
+            'memory': int(convert_memory_to_mb(self.cfg.cluster.mem_limit))
         }
         usage_reporting = get_usage_reporting()
         elb_job_id = uuid.uuid4().hex
 
         parameters = {'db': self.db,
                       'db-path': self.db_path,
-                      'db-source': self.cfg.blast.db_source.name,
+                      'db-source': self.cfg.cluster.db_source.name,
                       'db-mol-type': str(ElbSupportedPrograms().get_db_mol_type(prog)),
                       'num-vcpus': str(self.cfg.cluster.num_cpus),
                       'blast-program': prog,
@@ -903,20 +890,38 @@ class ElasticBlastAws(ElasticBlast):
             logging.debug('dry-run: would have uploaded query length')
 
 
-    def check_status(self, extended=False) -> Tuple[Dict[str, int], str]:
-        """Report status of batch searches.
+    def check_status(self, extended=False) -> Tuple[ElbStatus, Dict[str, int], str]:
+        """ Check execution status of ElasticBLAST search
         Parameters:
-            extended - boolean defining whether to get detailed information
-                       about the jobs.
+            extended - do we need verbose information about jobs
         Returns:
-            Tuple of
-              Dictionary with counts of jobs in pending, running, succeeded, and
-              failed status.
-            and
-              opional string with formatted detailed output.
+            tuple of
+                status - cluster status, ElbStatus
+                counts - job counts for all job states
+                verbose_result - detailed info about jobs
         """
         try:
-            return self._check_status(extended)
+            retval = ElbStatus.UNKNOWN
+
+            counts, details = self._check_status(extended)
+            njobs = sum(counts.values())
+            pending = counts['pending']
+            running = counts['running']
+            succeeded = counts['succeeded']
+            failed = counts['failed']
+            logging.debug(f'NumJobs {njobs} Pending {pending} Running {running} Succeeded {succeeded} Failed {failed}')
+            if failed > 0:
+                retval = ElbStatus.FAILURE
+            elif njobs == 0:
+                # This is likely the case when dry-run is set to True
+                retval = ElbStatus.UNKNOWN
+            elif running > 0 or pending > 0:
+                retval = ElbStatus.RUNNING
+            elif (pending + running + failed) == 0 and succeeded == njobs:
+                retval = ElbStatus.SUCCESS
+
+            return retval, counts, details
+
         except ParamValidationError:
             raise UserReportError(CLUSTER_ERROR, f"Cluster {self.stack_name} is not valid or not created yet")
 

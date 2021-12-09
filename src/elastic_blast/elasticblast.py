@@ -62,10 +62,6 @@ class ElasticBlast(metaclass=ABCMeta):
         """ Save query length in a metadata file in cloud storage """
 
     @abstractmethod
-    def status(self) -> ElbStatus:
-        """ Return the status of an ElasticBLAST search """
-
-    @abstractmethod
     def submit(self, query_batches: List[str], query_length, one_stage_cloud_query_split: bool) -> None:
         """ Submit query batches to cluster
             Parameters:
@@ -75,14 +71,21 @@ class ElasticBlast(metaclass=ABCMeta):
                                               of executing a regular job """
 
     @abstractmethod
-    def check_status(self, extended=False) -> Tuple[Dict[str, int], str]:
-        """ Check execution status
-            Parameters:
-                extended - do we need verbose information about jobs
-            Returns:
-                tuple of
-                    counts - job counts for all job states
-                    verbose_result - detailed info about jobs"""
+    def check_status(self, extended=False) -> Tuple[ElbStatus, Dict[str, int], str]:
+        """ Check execution status of ElasticBLAST search
+        Parameters:
+            extended - do we need verbose information about jobs
+        Returns:
+            tuple of
+                status - cluster status, ElbStatus
+                counts - job counts for all job states
+                verbose_result - detailed info about jobs
+        """
+
+    # Compatibility method, used now only in janitor.py
+    def status(self) -> ElbStatus:
+        """ Return the status of an ElasticBLAST search """
+        return self.check_status()[0]
 
     @abstractmethod
     def delete(self) -> None:

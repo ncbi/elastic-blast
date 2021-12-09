@@ -14,6 +14,7 @@ import unittest
 import logging
 import json
 import subprocess
+import shutil
 import re
 import datetime
 from pathlib import Path
@@ -297,6 +298,10 @@ def convert_date_to_iso8601(date: str) -> str:
 
 def get_blast_version() -> str:
     """Get BLAST+ version"""
+    if shutil.which("blastdbcmd") is None:
+        raise UserReportError(returncode=ERROR_DEPENDENCY,
+                              message=f'The BLAST+ command line tools are not available in your PATH')
+
     cmd = 'blastdbcmd -version'.split()
     try:
         p = subprocess.run(cmd, check=True, stdout=subprocess.PIPE,

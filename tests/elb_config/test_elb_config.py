@@ -61,15 +61,18 @@ from elastic_blast.constants import ELB_DFLT_AWS_DISK_TYPE, ELB_DFLT_OUTFMT
 from elastic_blast.constants import ELB_DFLT_AWS_NUM_CPUS, ELB_DFLT_GCP_NUM_CPUS
 from elastic_blast.constants import INPUT_ERROR, ELB_DFLT_AWS_REGION, BLASTDB_ERROR
 from elastic_blast.constants import SYSTEM_MEMORY_RESERVE, MolType
+from elastic_blast.constants import ELB_NOT_INITIALIZED_MEM, ELB_NOT_INITIALIZED_NUM
 from elastic_blast.base import ConfigParserToDataclassMapper, ParamInfo, DBSource
-from elastic_blast.base import InstanceProperties
+from elastic_blast.base import InstanceProperties, MemoryStr, PositiveInteger
 from elastic_blast.elb_config import CloudURI, GCPString, AWSRegion
 from elastic_blast.elb_config import GCPConfig, AWSConfig, BlastConfig, ClusterConfig
 from elastic_blast.elb_config import ElasticBlastConfig, get_instance_props
 from elastic_blast.constants import ElbCommand
 from elastic_blast.util import UserReportError, get_query_batch_size, ElbSupportedPrograms
 from elastic_blast.gcp_traits import get_machine_properties as gcp_get_machine_properties
-from elastic_blast.aws_traits import get_machine_properties as aws_get_machine_properties
+from elastic_blast.tuner import aws_get_mem_limit
+from elastic_blast.db_metadata import DbMetadata
+import elastic_blast.aws_traits
 from tests.utils import gke_mock, DB_METADATA_PROT as MOCK_DB_METADATA
 
 import pytest
@@ -139,7 +142,7 @@ def test_gcpstring():
 def test_awsregion():
     """Test AWSRegion type"""
     assert issubclass(AWSRegion, str)
-    for val in ['us-east-1', 'some-Region', 'REGION-123']:
+    for val in ['us-east-1', 'test-region', 'REGION-123']:
         assert AWSRegion(val) == val
 
     for val in ['re@ion', 'region-!@#', '']:
@@ -147,7 +150,7 @@ def test_awsregion():
             AWSRegion(val)
 
 
-def test_gcpconfig():
+def test_gcpconfig(gke_mock):
     """Test GCPConfig defaults"""
     PROJECT = 'test-project'
     REGION = 'test-region'
@@ -168,7 +171,7 @@ def test_gcpconfig():
     assert not errors
 
 
-def test_gcpconfig_validation():
+def test_gcpconfig_validation(gke_mock):
     """Test GCPConfig validation"""
     cfg = GCPConfig(project = 'test-project',
                     region = 'test-region',
@@ -188,7 +191,7 @@ def test_gcpconfig_validation():
     assert [message for message in errors if 'gcp-network and gcp-subnetwork' in message]
 
 
-def test_gcpconfig_from_configparser():
+def test_gcpconfig_from_configparser(gke_mock):
     """Test GCPConfig initialized from a ConfigParser object"""
     PROJECT = 'test-project'
     REGION = 'test-region'
@@ -243,7 +246,7 @@ def test_gcpconfig_from_configparser_errors():
         assert [message for message in errors if key in message and 'invalid value' in message and confpars[CFG_CLOUD_PROVIDER][key] in message]
 
 
-def test_awsconfig():
+def test_awsconfig(gke_mock):
     """Test AWSConfig defaults"""
     REGION = 'test-region'
     cfg = AWSConfig(region = REGION)
@@ -261,7 +264,7 @@ def test_awsconfig():
     assert not errors
 
 
-def test_awsconfig_from_configparser():
+def test_awsconfig_from_configparser(gke_mock):
     """Test AWSConfig initialized from a ConfigParser object"""
     REGION = 'test-region'
     VPC = 'test-vpc'
@@ -298,7 +301,7 @@ def test_awsconfig_from_configparser():
     assert not errors
 
 
-def test_awsconfig_from_configparser_missing():
+def test_awsconfig_from_configparser_missing(gke_mock):
     """Test missing required parameters are reported when initializing
     GCPConfig from a ConfigParser object"""
     REQUIRED_PARAMS = [CFG_CP_AWS_REGION]
@@ -315,29 +318,17 @@ def test_blastconfig(gke_mock):
     DB = 'testdb'
     QUERIES = 'test-queries'
     NUM_CPUS = 8
-
-    cloud_provider = GCPConfig(project = 'test-project',
-                               region = 'test-region',
-                               zone = 'test-zone')
-    machine_type = 'n1-standard-32'
     
     cfg = BlastConfig(program = PROGRAM,
                       db = DB,
-                      queries_arg = QUERIES,
-                      cloud_provider = cloud_provider,
-                      machine_type = machine_type,
-                      num_cpus = NUM_CPUS)
+                      queries_arg = QUERIES)
 
     assert cfg.program == PROGRAM
     assert cfg.db == DB
     assert cfg.queries_arg == QUERIES
-    assert cfg.db_source.name == cloud_provider.cloud.name
-    assert cfg.batch_len == get_query_batch_size(cfg.program)
+    assert cfg.batch_len == ELB_NOT_INITIALIZED_NUM
     assert not cfg.queries
     assert cfg.options == f'-outfmt {ELB_DFLT_OUTFMT}'
-    assert cfg.mem_request
-    props = gcp_get_machine_properties(machine_type)
-    assert cfg.mem_limit.asGB() == props.memory - SYSTEM_MEMORY_RESERVE
     assert not cfg.taxidlist
     assert cfg.db_mem_margin == ELB_BLASTDB_MEMORY_MARGIN
 
@@ -345,7 +336,6 @@ def test_blastconfig(gke_mock):
 AWS_INSTANCE_RAM = 120
 AWS_INSTANCE_NUM_CPUS = 32
 
-@patch(target='elastic_blast.tuner.aws_get_machine_properties', new=MagicMock(return_value=InstanceProperties(AWS_INSTANCE_NUM_CPUS, AWS_INSTANCE_RAM)))
 def test_blastconfig_aws(gke_mock):
     """Test BlastConfig defaults"""
     PROGRAM = 'blastp'
@@ -353,25 +343,16 @@ def test_blastconfig_aws(gke_mock):
     QUERIES = 'test-queries'
     NUM_CPUS = 8
 
-    cloud_provider = AWSConfig(region = 'test-region')
-    machine_type = 'm5.x8large'
-
     cfg = BlastConfig(program = PROGRAM,
                       db = DB,
-                      queries_arg = QUERIES,
-                      cloud_provider = cloud_provider,
-                      machine_type = machine_type,
-                      num_cpus = NUM_CPUS)
+                      queries_arg = QUERIES)
 
     assert cfg.program == PROGRAM
     assert cfg.db == DB
     assert cfg.queries_arg == QUERIES
-    assert cfg.db_source.name == cloud_provider.cloud.name
-    assert cfg.batch_len == get_query_batch_size(cfg.program)
+    assert cfg.batch_len == ELB_NOT_INITIALIZED_NUM
     assert not cfg.queries
     assert cfg.options == f'-outfmt {ELB_DFLT_OUTFMT}'
-    assert cfg.mem_request
-    assert abs(cfg.mem_limit.asGB() - (AWS_INSTANCE_RAM - SYSTEM_MEMORY_RESERVE) / math.floor(AWS_INSTANCE_NUM_CPUS / NUM_CPUS)) < 1
     assert not cfg.taxidlist
     assert cfg.db_mem_margin == ELB_BLASTDB_MEMORY_MARGIN
 
@@ -381,25 +362,19 @@ def test_blastconfig_validation(gke_mock):
     BAD_URI = 'gs://@BadURI!'
     cfg = BlastConfig(program = 'blastp',
                       db = 'testdb',
-                      queries_arg = BAD_URI,
-                      cloud_provider = GCPConfig(project = 'test-project',
-                                                 region = 'test-region',
-                                                 zone = 'test-zone'),
-                      machine_type = 'n1-standard-32',
-                      num_cpus = 16)
+                      queries_arg = BAD_URI)
+
     errors = []
     cfg.validate(errors, ElbCommand.SUBMIT)
     assert errors
     assert [message for message in errors if BAD_URI in message]
 
 
-@patch(target='elastic_blast.elb_config.aws_get_machine_properties', new=MagicMock(return_value=InstanceProperties(32, 120)))
 def test_blastconfig_from_configparser(gke_mock):
     """Test BlastConfig initialized from a ConfigParser object"""
     PROGRAM = 'blastp'
     DB = 'testdb'
     QUERIES = 'test-queries'
-    DB_SOURCE = 'GCP'
     BATCH_LEN = 5000
     OPTIONS = f'test options -outfmt {ELB_DFLT_OUTFMT}'
     MEM_REQUEST = '1.3G'
@@ -410,27 +385,18 @@ def test_blastconfig_from_configparser(gke_mock):
     confpars[CFG_BLAST] = {CFG_BLAST_PROGRAM: PROGRAM,
                            CFG_BLAST_DB: DB,
                            CFG_BLAST_QUERY: QUERIES,
-                           CFG_BLAST_DB_SRC: DB_SOURCE,
                            CFG_BLAST_BATCH_LEN: str(BATCH_LEN),
                            CFG_BLAST_OPTIONS: OPTIONS,
-                           CFG_BLAST_MEM_REQUEST: MEM_REQUEST,
-                           CFG_BLAST_MEM_LIMIT: MEM_LIMIT,
                            CFG_BLAST_DB_MEM_MARGIN: str(DB_MEM_MARGIN)}
 
-    cfg = BlastConfig.create_from_cfg(confpars,
-                                      cloud_provider = AWSConfig(region = 'test-region'),
-                                      machine_type = 'test-machine-type',
-                                      num_cpus = 9)
+    cfg = BlastConfig.create_from_cfg(confpars)
 
     assert cfg.program == PROGRAM
     assert cfg.db == DB
     assert cfg.queries_arg == QUERIES
-    assert cfg.db_source == DBSource[DB_SOURCE]
     assert cfg.batch_len == BATCH_LEN
     assert not cfg.queries
     assert cfg.options == OPTIONS
-    assert cfg.mem_limit == MEM_LIMIT
-    assert cfg.mem_request == MEM_REQUEST
     # taxid list is later parsed from BLAST options
     assert not cfg.taxidlist
     assert cfg.db_mem_margin == DB_MEM_MARGIN
@@ -439,7 +405,7 @@ def test_blastconfig_from_configparser(gke_mock):
     assert not errors
 
 
-def test_blastconfig_from_configparser_missing():
+def test_blastconfig_from_configparser_missing(gke_mock):
     """Test BlastConfig initialization from a ConfigParser object with missing
     required parameters"""
     REQUIRED_PARAMS = [CFG_BLAST_PROGRAM, CFG_BLAST_DB, CFG_BLAST_QUERY]
@@ -453,12 +419,32 @@ def test_blastconfig_from_configparser_missing():
         assert 'Missing ' + param in str(err.value)
                                     
 
+def test_blastconfig_from_configparser_unsupported_options(gke_mock):
+    """Test BlastConfig initialized from a ConfigParser object"""
+    PROGRAM = 'blastp'
+    DB = 'testdb'
+    QUERIES = 'test-queries'
+    OPTIONS = '-remote -seqidlist -negative_seqidlist -gilist -negative_gilist -filtering_db -use_index -index_name -in_pssm -in_msa'
+
+    confpars = configparser.ConfigParser()
+    confpars[CFG_BLAST] = {CFG_BLAST_PROGRAM: PROGRAM,
+                           CFG_BLAST_DB: DB,
+                           CFG_BLAST_QUERY: QUERIES,
+                           CFG_BLAST_OPTIONS: OPTIONS}
+
+    cfg = BlastConfig.create_from_cfg(confpars)
+    errors = []
+    cfg.validate(errors, ElbCommand.SUBMIT)
+    assert 'not supported in ElasticBLAST' in errors[0]
+    for option in OPTIONS.split():
+        assert option in errors[0]
+
+
 @patch(target='elastic_blast.elb_config.aws_get_machine_properties', new=MagicMock(return_value=InstanceProperties(32, 120)))
-def test_blastconfig_from_configparser_errors():
+def test_blastconfig_from_configparser_errors(gke_mock):
     """Test that incorrect parameter values in ConfigParser are properly
     reported"""
     PROGRAM = 'some-program'
-    DB_SOURCE = 'some-db-source'
     BATCH_LEN = -5
     MEM_LIMIT = '5'
     MEM_REQUEST = -5
@@ -468,25 +454,18 @@ def test_blastconfig_from_configparser_errors():
     confpars[CFG_BLAST] = {CFG_BLAST_PROGRAM: PROGRAM,
                            CFG_BLAST_DB: 'some-db',
                            CFG_BLAST_QUERY: 'some-query',
-                           CFG_BLAST_DB_SRC: DB_SOURCE,
                            CFG_BLAST_BATCH_LEN: str(BATCH_LEN),
-                           CFG_BLAST_MEM_LIMIT: str(MEM_LIMIT),
-                           CFG_BLAST_MEM_REQUEST: str(MEM_REQUEST),
                            CFG_BLAST_DB_MEM_MARGIN: str(DB_MEM_MARGIN)}
 
 
     with pytest.raises(ValueError) as err:
         cfg = BlastConfig.create_from_cfg(confpars,
-                                          cloud_provider = AWSConfig(region = 'test-region'),
-                                          machine_type = 'some-machine-type')
+                                          cloud_provider = AWSConfig(region = 'test-region'))
 
     # test that each invalid parameter value is reported
     errors = str(err.value).split('\n')
     for key in [CFG_BLAST_PROGRAM,
-                CFG_BLAST_DB_SRC,
                 CFG_BLAST_BATCH_LEN,
-                CFG_BLAST_MEM_LIMIT,
-                CFG_BLAST_MEM_REQUEST,
                 CFG_BLAST_DB_MEM_MARGIN]:
         assert [message for message in errors if key in message and 'invalid value' in message and confpars[CFG_BLAST][key] in message]
 
@@ -494,16 +473,16 @@ def test_blastconfig_from_configparser_errors():
 def test_clusterconfig_gcp():
     """Test ClusterConfig defaults for GCP"""
     RESULTS = CloudURI('gs://test-results')
-    gcp_cfg = GCPConfig(project = 'test-project',
-                        region = 'test-region',
-                        zone = 'test-zone')
-    cfg = ClusterConfig(cloud_provider = gcp_cfg, results = RESULTS)
+    cfg = ClusterConfig(results = RESULTS)
     assert cfg.name.startswith('elasticblast')
-    assert cfg.machine_type == ELB_DFLT_GCP_MACHINE_TYPE
+    assert not cfg.machine_type
     assert cfg.pd_size == ELB_DFLT_GCP_PD_SIZE
     assert cfg.num_cpus == ELB_DFLT_GCP_NUM_CPUS
     assert cfg.num_nodes == ELB_DFLT_NUM_NODES
     assert cfg.results == RESULTS
+    assert cfg.mem_limit == ELB_NOT_INITIALIZED_MEM
+    assert cfg.mem_request
+    assert cfg.db_source.name == RESULTS.get_cloud_provider().name
     assert not cfg.use_preemptible
     assert not cfg.iops
     assert not cfg.labels
@@ -514,18 +493,21 @@ def test_clusterconfig_gcp():
     assert not errors
 
 
-@patch(target='elastic_blast.elb_config.aws_get_machine_properties', new=MagicMock(return_value=InstanceProperties(32, 120)))
+@patch(target='elastic_blast.tuner.aws_get_machine_properties', new=MagicMock(return_value=InstanceProperties(AWS_INSTANCE_NUM_CPUS, AWS_INSTANCE_RAM)))
+@patch(target='elastic_blast.elb_config.aws_get_machine_properties', new=MagicMock(return_value=InstanceProperties(AWS_INSTANCE_NUM_CPUS, AWS_INSTANCE_RAM)))
 def test_clusterconfig_aws():
     """Test ClusterConfig defaults for AWS"""
     RESULTS = CloudURI('s3://test-results')
-    aws_cfg = AWSConfig(region = 'test-region')
-    cfg = ClusterConfig(cloud_provider = aws_cfg, results = RESULTS)
+    cfg = ClusterConfig(results = RESULTS)
     assert cfg.name.startswith('elasticblast')
     assert cfg.results == RESULTS
-    assert cfg.machine_type == ELB_DFLT_AWS_MACHINE_TYPE
+    assert not cfg.machine_type
     assert cfg.pd_size == ELB_DFLT_AWS_PD_SIZE
     assert cfg.num_cpus == ELB_DFLT_AWS_NUM_CPUS
     assert cfg.num_nodes == ELB_DFLT_NUM_NODES
+    assert cfg.mem_limit == ELB_NOT_INITIALIZED_MEM
+    assert cfg.mem_request
+    assert cfg.db_source.name == RESULTS.get_cloud_provider().name
     assert not cfg.use_preemptible
     assert cfg.disk_type == ELB_DFLT_AWS_DISK_TYPE
     assert not cfg.iops
@@ -538,12 +520,12 @@ def test_clusterconfig_aws():
     assert not errors
 
 
-@patch(target='elastic_blast.elb_config.aws_get_machine_properties', new=MagicMock(return_value=InstanceProperties(32, 120)))
+@patch(target='elastic_blast.tuner.aws_get_machine_properties', new=MagicMock(return_value=InstanceProperties(AWS_INSTANCE_NUM_CPUS, AWS_INSTANCE_RAM)))
+@patch(target='elastic_blast.elb_config.aws_get_machine_properties', new=MagicMock(return_value=InstanceProperties(AWS_INSTANCE_NUM_CPUS, AWS_INSTANCE_RAM)))
 def test_clusterconfig_aws_arm_instances():
     """Test ClusterConfig defaults for AWS"""
     RESULTS = CloudURI('s3://test-results')
-    aws_cfg = AWSConfig(region = 'test-region')
-    cfg = ClusterConfig(cloud_provider = aws_cfg, results = RESULTS, machine_type = 'r6gd.8xlarge')
+    cfg = ClusterConfig(results = RESULTS, machine_type = 'r6gd.8xlarge')
     assert cfg.name.startswith('elasticblast')
     assert cfg.results == RESULTS
     assert cfg.machine_type == 'r6gd.8xlarge'
@@ -570,6 +552,9 @@ def test_clusterconfig_from_configparser():
     MACHINE_TYPE = 'test-machine-type'
     PD_SIZE = 'test-pd-size'
     NUM_CPUS = 10
+    MEM_LIMIT = '123G'
+    MEM_REQUEST = '1.3G'
+    DB_SOURCE = 'GCP'
     NUM_NODES = 5000
     USE_PREEMPTIBLE = 'Yes'
     DISK_TYPE = 'test-disk-type'
@@ -578,6 +563,7 @@ def test_clusterconfig_from_configparser():
     LABELS = 'test-labels'
     USE_LOCAL_SSD = 'yes'
     ENABLE_STACKDRIVER = 'true'
+    REGION = 'test-region'
 
     confpars = configparser.ConfigParser()
     confpars[CFG_CLUSTER] = {CFG_CLUSTER_NAME: NAME,
@@ -592,15 +578,20 @@ def test_clusterconfig_from_configparser():
                              CFG_CLUSTER_LABELS: LABELS,
                              CFG_CLUSTER_EXP_USE_LOCAL_SSD: USE_LOCAL_SSD,
                              CFG_CLUSTER_ENABLE_STACKDRIVER: ENABLE_STACKDRIVER}
-    confpars[CFG_BLAST] = {CFG_BLAST_RESULTS: RESULTS}
+    confpars[CFG_BLAST] = {CFG_BLAST_RESULTS: RESULTS,
+                           CFG_BLAST_MEM_LIMIT: MEM_LIMIT,
+                           CFG_BLAST_MEM_REQUEST: MEM_REQUEST,
+                           CFG_BLAST_DB_SRC: DB_SOURCE}
+    confpars[CFG_CLOUD_PROVIDER] = {CFG_CP_AWS_REGION: REGION}
 
-    cfg = ClusterConfig.create_from_cfg(confpars,
-                                        cloud_provider = AWSConfig(region = 'test-region'))
+    cfg = ClusterConfig.create_from_cfg(confpars)
 
     assert cfg.name == NAME
     assert cfg.machine_type == MACHINE_TYPE
     assert cfg.pd_size == PD_SIZE
     assert cfg.num_cpus == NUM_CPUS
+    assert cfg.mem_limit == MEM_LIMIT
+    assert cfg.mem_request == MEM_REQUEST
     assert cfg.num_nodes == NUM_NODES
     assert cfg.use_preemptible == True
     assert cfg.disk_type == DISK_TYPE
@@ -610,9 +601,6 @@ def test_clusterconfig_from_configparser():
     assert cfg.use_local_ssd == True
     assert cfg.enable_stackdriver == True
     errors = []
-    # caused by use_local_ssd == True
-    with pytest.raises(NotImplementedError):
-        cfg.validate(errors, ElbCommand.SUBMIT)
     assert not errors
 
 
@@ -622,8 +610,7 @@ def test_clusterconfig_from_configparser_missing():
     missing required parameters"""
     REQUIRED_PARAMS = [CFG_BLAST_RESULTS]
     with pytest.raises(ValueError) as err:
-        cfg = ClusterConfig.create_from_cfg(configparser.ConfigParser(),
-                                            cloud_provider = AWSConfig(region = 'test-region'))
+        cfg = ClusterConfig.create_from_cfg(configparser.ConfigParser())
 
     for param in REQUIRED_PARAMS:
         assert 'Missing ' + param in str(err.value)
@@ -636,15 +623,75 @@ def test_clusterconfig_from_configparser_errors():
     confpars[CFG_CLUSTER] = {CFG_CLUSTER_NUM_CPUS: '-25',
                              CFG_CLUSTER_NUM_NODES: 'abc',
                              CFG_CLUSTER_BID_PERCENTAGE: '101'}
+    confpars[CFG_BLAST] = {CFG_BLAST_MEM_LIMIT: '-5',
+                           CFG_BLAST_MEM_REQUEST: '-5',
+                           CFG_BLAST_DB_SRC: 'some-db-source'}
 
     with pytest.raises(ValueError) as err:
-        cfg = ClusterConfig.create_from_cfg(confpars,
-                                            cloud_provider = CSP.AWS)
+        cfg = ClusterConfig.create_from_cfg(confpars)
 
     # test that each invalid parameter value is reported
     errors = str(err.value).split('\n')
     for key in confpars[CFG_CLUSTER].keys():
         assert [message for message in errors if key in message and 'invalid value' in message and confpars[CFG_CLUSTER][key] in message]
+    for key in confpars[CFG_BLAST].keys():
+        assert [message for message in errors if key in message and 'invalid value' in message and confpars[CFG_BLAST][key] in message]
+
+
+TEST_MACHINE_TYPE = 'test-machine-type'
+
+@patch(target='elastic_blast.tuner.aws_get_machine_properties', new=MagicMock(return_value=InstanceProperties(32, 120)))
+@patch(target='elastic_blast.elb_config.aws_get_machine_properties', new=MagicMock(return_value=InstanceProperties(32, 120)))
+@patch(target='elastic_blast.aws_traits.get_machine_properties', new=MagicMock(return_value=InstanceProperties(32, 120)))
+@patch(target='elastic_blast.elb_config.get_machine_type', new=MagicMock(return_value=TEST_MACHINE_TYPE))
+def test_machine_type(gke_mock):
+    """Test that machine type and memory limit are set properly"""
+    # AWS default, no database metadata
+    cfg = ElasticBlastConfig(aws_region = 'test-region',
+                            program = 'blastp',
+                            queries = 'test-query.fa',
+                            db = 's3://some-db',
+                            results = 's3://some-results',
+                            task = ElbCommand.SUBMIT)
+    cfg.validate()
+    assert cfg.cluster.machine_type == ELB_DFLT_AWS_MACHINE_TYPE
+    assert cfg.cluster.mem_limit.asGB() == 59
+
+    # GCP default, no database metadata
+    cfg = ElasticBlastConfig(gcp_project = 'test-project',
+                            gcp_region = 'test-region',
+                            gcp_zone = 'test-zone',
+                            program = 'blastp',
+                            queries = 'test-query.fa',
+                            db = 'gs://some-db',
+                            results = 'gs://some-results',
+                            task = ElbCommand.SUBMIT)
+    cfg.validate()
+    assert cfg.cluster.machine_type == ELB_DFLT_GCP_MACHINE_TYPE
+    assert cfg.cluster.mem_limit.asGB() == 206
+
+    # with database metadata
+    cfg = ElasticBlastConfig(aws_region = 'test-region',
+                            program = 'blastp',
+                            queries = 'test-query.fa',
+                            db = 'testdb',
+                            results = 's3://some-results',
+                            task = ElbCommand.SUBMIT)
+    cfg.validate()
+    assert cfg.cluster.machine_type == TEST_MACHINE_TYPE
+    assert cfg.cluster.mem_limit.asGB() == 59
+
+    # with user-provided machine type
+    USER_MACHINE_TYPE = 'a-machine-type'
+    cfg = ElasticBlastConfig(aws_region = 'test-region',
+                            program = 'blastp',
+                            queries = 'test-query.fa',
+                            db = 'testdb',
+                            results = 's3://some-results',
+                            machine_type = USER_MACHINE_TYPE,
+                            task = ElbCommand.SUBMIT)
+    cfg.validate()
+    assert cfg.cluster.machine_type == USER_MACHINE_TYPE
 
 
 def test_ElasticBlastConfig_init_errors():
@@ -668,7 +715,7 @@ def test_ElasticBlastConfig_init_errors():
     assert 'task parameter must be specified' in str(err.value)
 
     with pytest.raises(AttributeError) as err:
-        cfg = ElasticBlastConfig(aws_region = 'some-region', results = 's3://results')
+        cfg = ElasticBlastConfig(aws_region = 'test-region', results = 's3://results')
     assert 'task parameter must be specified' in str(err.value)
 
 
@@ -678,7 +725,7 @@ def test_validate_too_many_cpus(gke_mock):
     """Test that requesting too many CPUs is reported"""
     cfg = ElasticBlastConfig(aws_region = 'test-region',
                              program = 'blastp',
-                             db = 'testdb',
+                             db = 's3://some-db',
                              queries = 'test-query.fa',
                              results = 's3://results',
                              task = ElbCommand.SUBMIT)
@@ -693,7 +740,7 @@ def test_validate_too_many_cpus(gke_mock):
 @patch(target='elastic_blast.tuner.gcp_get_machine_properties', new=MagicMock(return_value=InstanceProperties(AWS_INSTANCE_NUM_CPUS, AWS_INSTANCE_RAM+8)))
 def test_get_max_concurrent_blast_jobs_gcp(gke_mock):
     PROJECT = 'some-project'
-    REGION = 'some-region'
+    REGION = 'test-region'
     ZONE = 'some-zone'
     QUERY = 'some-query'
     DB = 'testdb'
@@ -720,15 +767,15 @@ def test_get_max_concurrent_blast_jobs_gcp(gke_mock):
     n = cfg.get_max_number_of_concurrent_blast_jobs()
     assert n == 10
     assert cfg.cluster.instance_memory.asGB() == 128
-    assert cfg.blast.mem_limit.asGB() == 126
-    assert cfg.blast.mem_request.asGB() == 0.5
+    assert cfg.cluster.mem_limit.asGB() == 126
+    assert cfg.cluster.mem_request.asGB() == 0.5
 
 
 @patch(target='elastic_blast.elb_config.aws_get_machine_properties', new=MagicMock(return_value=InstanceProperties(AWS_INSTANCE_NUM_CPUS, AWS_INSTANCE_RAM+8)))
 @patch(target='elastic_blast.tuner.aws_get_machine_properties', new=MagicMock(return_value=InstanceProperties(AWS_INSTANCE_NUM_CPUS, AWS_INSTANCE_RAM+8)))
 def test_get_max_concurrent_blast_jobs_aws(gke_mock):
     PROJECT = 'some-project'
-    REGION = 'some-region'
+    REGION = 'test-region'
     ZONE = 'some-zone'
     QUERY = 'some-query'
     DB = 'testdb'
@@ -736,7 +783,7 @@ def test_get_max_concurrent_blast_jobs_aws(gke_mock):
     RESULTS = 's3://results'
 
     confpars = configparser.ConfigParser()
-    confpars[CFG_CLOUD_PROVIDER] = {CFG_CP_AWS_REGION: ELB_DFLT_AWS_REGION}
+    confpars[CFG_CLOUD_PROVIDER] = {CFG_CP_AWS_REGION: REGION}
     confpars[CFG_CLUSTER] = {CFG_CLUSTER_MACHINE_TYPE: ELB_DFLT_AWS_MACHINE_TYPE,
             CFG_CLUSTER_NUM_CPUS: 16,
             CFG_CLUSTER_NUM_NODES: 5
@@ -752,14 +799,14 @@ def test_get_max_concurrent_blast_jobs_aws(gke_mock):
     n = cfg.get_max_number_of_concurrent_blast_jobs()
     assert n == 10
     assert cfg.cluster.instance_memory.asGB() == 128
-    assert cfg.blast.mem_limit.asGB() == 63
-    assert cfg.blast.mem_request.asGB() == 0.5
+    assert cfg.cluster.mem_limit.asGB() == 63
+    assert cfg.cluster.mem_request.asGB() == 0.5
 
 
 def test_ElasticBlastConfig_from_configparser(gke_mock):
     """Test creating ElasticBlastConfig from a ConfigParser object"""
     PROJECT = 'some-project'
-    REGION = 'some-region'
+    REGION = 'test-region'
     ZONE = 'some-zone'
     QUERY = 'some-query'
     DB = 'testdb'
@@ -877,8 +924,9 @@ def test_validate_too_little_memory(gke_mock):
                                  db = DB,
                                  results = 'gs://results',
                                  gcp_project = 'some-project',
-                                 gcp_region = 'some-region',
+                                 gcp_region = 'test-region',
                                  gcp_zone = 'some-zone',
+                                 machine_type = 'n1-standard-2',
                                  task = ElbCommand.SUBMIT)
         cfg.validate()
     assert err.value.returncode == INPUT_ERROR
@@ -895,7 +943,7 @@ def test_missing_ncbi_db_metadata(gke_mock):
                                  db = DB,
                                  results = 'gs://results',
                                  gcp_project = 'some-project',
-                                 gcp_region = 'some-region',
+                                 gcp_region = 'test-region',
                                  gcp_zone = 'some-zone',
                                  task = ElbCommand.SUBMIT)
         cfg.validate()
@@ -912,7 +960,7 @@ def test_missing_user_db_metadata(gke_mock):
                              db = DB,
                              results = 'gs://results',
                              gcp_project = 'some-project',
-                             gcp_region = 'some-region',
+                             gcp_region = 'test-region',
                              gcp_zone = 'some-zone',
                              task = ElbCommand.SUBMIT)
     cfg.validate()
@@ -961,8 +1009,701 @@ def test_incorrect_db_mol_type(gke_mock):
                                  queries = 'some-query.fa',
                                  db = DB,
                                  results = 's3://results',
-                                 aws_region = 'some-region',
+                                 aws_region = 'test-region',
                                  task = ElbCommand.SUBMIT)
         cfg.validate()
     assert err.value.returncode == BLASTDB_ERROR
     assert f'database molecular type' in err.value.message
+
+
+@patch(target='elastic_blast.elb_config.aws_get_machine_properties', new=MagicMock(return_value=InstanceProperties(AWS_INSTANCE_NUM_CPUS, AWS_INSTANCE_RAM+8)))
+@patch(target='elastic_blast.tuner.aws_get_machine_properties', new=MagicMock(return_value=InstanceProperties(AWS_INSTANCE_NUM_CPUS, AWS_INSTANCE_RAM+8)))
+def test_serialize(gke_mock):
+    """Test ElasticBlastConfig JSON serialization and deserialization"""
+    # crete an ElasticBlastConfig object with a lot of custom parameters
+    cfg = ElasticBlastConfig(program = 'blastn',
+                             queries = 'test-query.fa',
+                             db = 'testdb',
+                             results = 's3://test-results',
+                             aws_region = 'test-region',
+                             task = ElbCommand.SUBMIT)
+
+    cfg.cluster.machine_type = 'test-machine-type'
+    cfg.cluster.mem_limit = MemoryStr('12G')
+    cfg.cluster.num_cpus = 13
+    cfg.cluster.num_nodes = 93
+    cfg.cluster.labels = 'my-label:abc'
+
+    cfg.blast.options = '-taxids 1,2,3 -outfmt "6 std staxids"'
+    cfg.blast.batch_len = PositiveInteger(1234)
+
+    cfg.timeouts.init_pv = PositiveInteger(6)
+    cfg.timeouts.blast_k8s =PositiveInteger(8)
+
+    cfg.appstate.disk_id = 'abcd'
+    cfg.appstate.k8s_ctx = 'efgh'
+    cfg.validate()
+
+    # make sure that we have database metadata
+    assert cfg.blast.db_metadata
+
+    # serialize
+    s = cfg.to_json()
+
+    # deserialize
+    # fake username to test that the correct cluster.name will be initialized
+    with patch(target='getpass.getuser', new=MagicMock(return_value='some-different-user')):
+        de_cfg = ElasticBlastConfig.from_json(s)
+    assert de_cfg.cloud_provider
+    assert de_cfg.cloud_provider.cloud == cfg.cloud_provider.cloud
+    assert de_cfg.aws
+    assert not de_cfg.gcp
+    assert de_cfg.blast
+    assert de_cfg.cluster
+    assert de_cfg.timeouts
+    assert de_cfg.appstate
+
+    # compare types and values of all attributes in config clases
+    for atr in ['aws', 'blast', 'cluster', 'timeouts', 'appstate']:
+        # a section in the original config object (reference)
+        ref = getattr(cfg, atr)
+        # a section in the deserialized config object
+        obj = getattr(de_cfg, atr)
+        for f1, f2 in zip(fields(ref), fields(obj)):
+            assert f1.type == f2.type
+            assert getattr(ref, f1.name) == getattr(obj, f2.name), f'{atr}.{f1.name} is different'
+
+
+@patch(target='elastic_blast.elb_config.aws_get_machine_properties', new=MagicMock(return_value=InstanceProperties(AWS_INSTANCE_NUM_CPUS, AWS_INSTANCE_RAM+8)))
+@patch(target='elastic_blast.tuner.aws_get_machine_properties', new=MagicMock(return_value=InstanceProperties(AWS_INSTANCE_NUM_CPUS, AWS_INSTANCE_RAM+8)))
+def test_mt_mode_and_batch_len_rpsblast(gke_mock):
+    """Test that default mt mode and batch length are set correctly"""
+    # GCP, with db metadata
+    cfg = ElasticBlastConfig(program = 'rpsblast',
+                             queries = 'test-query.fa',
+                             db = 'testdb',
+                             results = 'gs://test-results',
+                             gcp_project = 'test-project',
+                             gcp_region = 'test-region',
+                             gcp_zone = 'test-zone',
+                             task = ElbCommand.SUBMIT)
+    cfg.validate()
+    assert '-mt_mode 1' in cfg.blast.options
+    assert cfg.blast.batch_len == 3000000
+
+    # AWS, with db metadata
+    cfg = ElasticBlastConfig(program = 'rpsblast',
+                             queries = 'test-query.fa',
+                             db = 'testdb',
+                             results = 's3://test-results',
+                             aws_region = 'test-region',
+                             task = ElbCommand.SUBMIT)
+    cfg.validate()
+    assert '-mt_mode 1' in cfg.blast.options
+    assert cfg.blast.batch_len == 3200000
+
+    # GCP, no db metadata
+    cfg = ElasticBlastConfig(program = 'rpsblast',
+                             queries = 'test-query.fa',
+                             db = 'gs://bucket/some-db',
+                             results = 'gs://test-results',
+                             gcp_project = 'test-project',
+                             gcp_region = 'test-region',
+                             gcp_zone = 'test-zone',
+                             task = ElbCommand.SUBMIT)
+    cfg.validate()
+    assert '-mt_mode 1' in cfg.blast.options
+    assert cfg.blast.batch_len == 3000000
+
+    # AWS, no db metadata
+    cfg = ElasticBlastConfig(program = 'rpsblast',
+                             queries = 'test-query.fa',
+                             db = 's3://bucket/some-db',
+                             results = 's3://test-results',
+                             aws_region = 'test-region',
+                             task = ElbCommand.SUBMIT)
+    cfg.validate()
+    assert '-mt_mode 1' in cfg.blast.options
+    assert cfg.blast.batch_len == 3200000
+
+    # AWS, too many CPUs
+    confpars = configparser.ConfigParser()
+    confpars[CFG_CLOUD_PROVIDER] = {CFG_CP_AWS_REGION: 'test-region'}
+    confpars[CFG_BLAST] = {CFG_BLAST_PROGRAM: 'rpsblast',
+                           CFG_BLAST_QUERY: 'test-query.fa',
+                           CFG_BLAST_DB: 's3://bucket/some-db',
+                           CFG_BLAST_RESULTS: 's3://test-results'}
+    confpars[CFG_CLUSTER] = {CFG_CLUSTER_NUM_CPUS: 30}
+
+    cfg = ElasticBlastConfig(confpars, task = ElbCommand.SUBMIT)
+    cfg.validate()
+    assert '-mt_mode 1' in cfg.blast.options
+    assert cfg.blast.batch_len == 3200000
+
+
+@patch(target='elastic_blast.elb_config.aws_get_machine_properties', new=MagicMock(return_value=InstanceProperties(AWS_INSTANCE_NUM_CPUS, AWS_INSTANCE_RAM+8)))
+@patch(target='elastic_blast.tuner.aws_get_machine_properties', new=MagicMock(return_value=InstanceProperties(AWS_INSTANCE_NUM_CPUS, AWS_INSTANCE_RAM+8)))
+def test_mt_mode_and_batch_len_rpstblastn(gke_mock):
+    """Test that default mt mode and batch length are set correctly"""
+    PROGRAM = 'rpstblastn'
+
+    # GCP, with db metadata
+    cfg = ElasticBlastConfig(program = PROGRAM,
+                             queries = 'test-query.fa',
+                             db = 'testdb',
+                             results = 'gs://test-results',
+                             gcp_project = 'test-project',
+                             gcp_region = 'test-region',
+                             gcp_zone = 'test-zone',
+                             task = ElbCommand.SUBMIT)
+    cfg.validate()
+    assert '-mt_mode 1' in cfg.blast.options
+    assert cfg.blast.batch_len == 1500000
+
+    # AWS, with db metadata
+    cfg = ElasticBlastConfig(program = PROGRAM,
+                             queries = 'test-query.fa',
+                             db = 'testdb',
+                             results = 's3://test-results',
+                             aws_region = 'test-region',
+                             task = ElbCommand.SUBMIT)
+    cfg.validate()
+    assert '-mt_mode 1' in cfg.blast.options
+    assert cfg.blast.batch_len == 1600000
+
+    # GCP, no db metadata
+    cfg = ElasticBlastConfig(program = PROGRAM,
+                             queries = 'test-query.fa',
+                             db = 'gs://bucket/some-db',
+                             results = 'gs://test-results',
+                             gcp_project = 'test-project',
+                             gcp_region = 'test-region',
+                             gcp_zone = 'test-zone',
+                             task = ElbCommand.SUBMIT)
+    cfg.validate()
+    assert '-mt_mode 1' in cfg.blast.options
+    assert cfg.blast.batch_len == 1500000
+
+    # AWS, no db metadata
+    cfg = ElasticBlastConfig(program = PROGRAM,
+                             queries = 'test-query.fa',
+                             db = 's3://bucket/some-db',
+                             results = 's3://test-results',
+                             aws_region = 'test-region',
+                             task = ElbCommand.SUBMIT)
+    cfg.validate()
+    assert '-mt_mode 1' in cfg.blast.options
+    assert cfg.blast.batch_len == 1600000
+
+
+@patch(target='elastic_blast.elb_config.aws_get_machine_properties', new=MagicMock(return_value=InstanceProperties(AWS_INSTANCE_NUM_CPUS, AWS_INSTANCE_RAM+8)))
+@patch(target='elastic_blast.tuner.aws_get_machine_properties', new=MagicMock(return_value=InstanceProperties(AWS_INSTANCE_NUM_CPUS, AWS_INSTANCE_RAM+8)))
+def test_mt_mode_and_batch_len_blastp(gke_mock):
+    """Test that default mt mode and batch length are set correctly"""
+    db_metadata = DbMetadata(version = '1.1',
+                             dbname = 'some-protein-db',
+                             dbtype = 'PROTEIN',
+                             description = 'Metadata for a fake test database',
+                             number_of_letters = 4999999,
+                             number_of_sequences = 123,
+                             files = [],
+                             last_updated = 'some time ago',
+                             bytes_total = 123,
+                             bytes_to_cache = 123,
+                             number_of_volumes = 1)
+
+    PROGRAM = 'blastp'
+    GCP_KWARGS = {'program': PROGRAM,
+                  'queries': 'test-query.fa',
+                  'db': 'gs://bucket/some-db',
+                  'results': 'gs://test-results',
+                  'gcp_project': 'test-project',
+                  'gcp_region': 'test-region',
+                  'gcp_zone': 'test-zone',
+                  'task': ElbCommand.SUBMIT}
+
+    AWS_KWARGS = {'program': PROGRAM,
+                  'queries': 'test-query.fa',
+                  'db': 's3://bucket/some-db',
+                  'results': 's3://test-results',
+                  'aws_region': 'test-region',
+                  'task': ElbCommand.SUBMIT}
+
+    # with db metadata, database size below 500M residues
+    db_metadata.number_of_letters = 499999999
+
+    with patch(target='elastic_blast.elb_config.get_db_metadata', new=MagicMock(return_value=db_metadata)):
+        # GCP
+        cfg = ElasticBlastConfig(**GCP_KWARGS)
+        cfg.validate()
+        assert '-mt_mode 1' in cfg.blast.options
+        assert cfg.blast.batch_len == 150000
+
+        # AWS
+        cfg = ElasticBlastConfig(**AWS_KWARGS)
+        cfg.validate()
+        assert '-mt_mode 1' in cfg.blast.options
+        assert cfg.blast.batch_len == 160000
+
+    # with db metadata, database size between 500M and 20B residues
+    db_metadata.number_of_letters = int(20e9) - 1
+
+    with patch(target='elastic_blast.elb_config.get_db_metadata', new=MagicMock(return_value=db_metadata)):
+        # GCP
+        cfg = ElasticBlastConfig(**GCP_KWARGS)
+        cfg.validate()
+        assert '-mt_mode 1' not in cfg.blast.options
+        assert cfg.blast.batch_len == 40000
+
+        # AWS
+        cfg = ElasticBlastConfig(**AWS_KWARGS)
+        cfg.validate()
+        assert '-mt_mode 1' not in cfg.blast.options
+        assert cfg.blast.batch_len == 40000
+
+    # with db metadata, database size abobe 20B residues
+    db_metadata.number_of_letters = int(20e9)
+
+    with patch(target='elastic_blast.elb_config.get_db_metadata', new=MagicMock(return_value=db_metadata)):
+        # GCP
+        cfg = ElasticBlastConfig(**GCP_KWARGS)
+        cfg.validate()
+        assert '-mt_mode 1' not in cfg.blast.options
+        assert cfg.blast.batch_len == 20000
+
+        # AWS
+        cfg = ElasticBlastConfig(**AWS_KWARGS)
+        cfg.validate()
+        assert '-mt_mode 1' not in cfg.blast.options
+        assert cfg.blast.batch_len == 20000
+
+    # without db_metadata
+
+    # GCP
+    cfg = ElasticBlastConfig(**GCP_KWARGS)
+    cfg.validate()
+    assert '-mt_mode 1' not in cfg.blast.options
+    assert cfg.blast.batch_len == 10000
+
+    # AWS
+    cfg = ElasticBlastConfig(**AWS_KWARGS)
+    cfg.validate()
+    assert '-mt_mode 1' not in cfg.blast.options
+    assert cfg.blast.batch_len == 10000
+
+
+@patch(target='elastic_blast.elb_config.aws_get_machine_properties', new=MagicMock(return_value=InstanceProperties(AWS_INSTANCE_NUM_CPUS, AWS_INSTANCE_RAM+8)))
+@patch(target='elastic_blast.tuner.aws_get_machine_properties', new=MagicMock(return_value=InstanceProperties(AWS_INSTANCE_NUM_CPUS, AWS_INSTANCE_RAM+8)))
+def test_mt_mode_and_batch_len_blastn(gke_mock):
+    """Test that default mt mode and batch length are set correctly"""
+    db_metadata = DbMetadata(version = '1.1',
+                             dbname = 'some-protein-db',
+                             dbtype = 'NUCLEOTIDE',
+                             description = 'Metadata for a fake test database',
+                             number_of_letters = 4999999,
+                             number_of_sequences = 123,
+                             files = [],
+                             last_updated = 'some time ago',
+                             bytes_total = 123,
+                             bytes_to_cache = 123,
+                             number_of_volumes = 1)
+
+    PROGRAM = 'blastn'
+    GCP_KWARGS = {'program': PROGRAM,
+                  'queries': 'test-query.fa',
+                  'db': 'gs://bucket/some-db',
+                  'results': 'gs://test-results',
+                  'gcp_project': 'test-project',
+                  'gcp_region': 'test-region',
+                  'gcp_zone': 'test-zone',
+                  'task': ElbCommand.SUBMIT}
+
+    AWS_KWARGS = {'program': PROGRAM,
+                  'queries': 'test-query.fa',
+                  'db': 's3://bucket/some-db',
+                  'results': 's3://test-results',
+                  'aws_region': 'test-region',
+                  'task': ElbCommand.SUBMIT}
+
+    # with db metadata, database size below 14B bases
+    db_metadata.number_of_letters = int(14e9)
+
+    with patch(target='elastic_blast.elb_config.get_db_metadata', new=MagicMock(return_value=db_metadata)):
+        # GCP
+        cfg = ElasticBlastConfig(**GCP_KWARGS)
+        cfg.validate()
+        assert '-mt_mode 1' in cfg.blast.options
+        assert cfg.blast.batch_len == 75e6
+
+        # AWS
+        cfg = ElasticBlastConfig(**AWS_KWARGS)
+        cfg.validate()
+        assert '-mt_mode 1' in cfg.blast.options
+        assert cfg.blast.batch_len == 80e6
+
+    # with db metadata, database size above 14B bases
+    db_metadata.number_of_letters = int(14e9) + 1
+
+    with patch(target='elastic_blast.elb_config.get_db_metadata', new=MagicMock(return_value=db_metadata)):
+        # GCP
+        cfg = ElasticBlastConfig(**GCP_KWARGS)
+        cfg.validate()
+        assert '-mt_mode 1' not in cfg.blast.options
+        assert cfg.blast.batch_len == 5e6
+
+        # AWS
+        cfg = ElasticBlastConfig(**AWS_KWARGS)
+        cfg.validate()
+        assert '-mt_mode 1' not in cfg.blast.options
+        assert cfg.blast.batch_len == 5e6
+
+    # without db_metadata
+
+    # GCP
+    cfg = ElasticBlastConfig(**GCP_KWARGS)
+    cfg.validate()
+    assert '-mt_mode 1' not in cfg.blast.options
+    assert cfg.blast.batch_len == 5e6
+
+    # AWS
+    cfg = ElasticBlastConfig(**AWS_KWARGS)
+    cfg.validate()
+    assert '-mt_mode 1' not in cfg.blast.options
+    assert cfg.blast.batch_len == 5e6
+
+
+@patch(target='elastic_blast.elb_config.aws_get_machine_properties', new=MagicMock(return_value=InstanceProperties(AWS_INSTANCE_NUM_CPUS, AWS_INSTANCE_RAM+8)))
+@patch(target='elastic_blast.tuner.aws_get_machine_properties', new=MagicMock(return_value=InstanceProperties(AWS_INSTANCE_NUM_CPUS, AWS_INSTANCE_RAM+8)))
+def test_mt_mode_and_batch_len_blastx(gke_mock):
+    """Test that default mt mode and batch length are set correctly"""
+    db_metadata = DbMetadata(version = '1.1',
+                             dbname = 'some-protein-db',
+                             dbtype = 'PROTEIN',
+                             description = 'Metadata for a fake test database',
+                             number_of_letters = 4999999,
+                             number_of_sequences = 123,
+                             files = [],
+                             last_updated = 'some time ago',
+                             bytes_total = 123,
+                             bytes_to_cache = 123,
+                             number_of_volumes = 1)
+
+    PROGRAM = 'blastx'
+    GCP_KWARGS = {'program': PROGRAM,
+                  'queries': 'test-query.fa',
+                  'db': 'gs://bucket/some-db',
+                  'results': 'gs://test-results',
+                  'gcp_project': 'test-project',
+                  'gcp_region': 'test-region',
+                  'gcp_zone': 'test-zone',
+                  'task': ElbCommand.SUBMIT}
+
+    AWS_KWARGS = {'program': PROGRAM,
+                  'queries': 'test-query.fa',
+                  'db': 's3://bucket/some-db',
+                  'results': 's3://test-results',
+                  'aws_region': 'test-region',
+                  'task': ElbCommand.SUBMIT}
+
+    # with db metadata, database size below 2B residues
+    db_metadata.number_of_letters = int(2e9) - 1
+
+    with patch(target='elastic_blast.elb_config.get_db_metadata', new=MagicMock(return_value=db_metadata)):
+        # GCP
+        cfg = ElasticBlastConfig(**GCP_KWARGS)
+        cfg.validate()
+        assert '-mt_mode 1' in cfg.blast.options
+        assert cfg.blast.batch_len == 300060
+
+        # AWS
+        cfg = ElasticBlastConfig(**AWS_KWARGS)
+        cfg.validate()
+        assert '-mt_mode 1' in cfg.blast.options
+        assert cfg.blast.batch_len == 320064
+
+    # with db metadata, database size between 2B and 20B residues
+    db_metadata.number_of_letters = int(20e9) - 1
+
+    with patch(target='elastic_blast.elb_config.get_db_metadata', new=MagicMock(return_value=db_metadata)):
+        # GCP
+        cfg = ElasticBlastConfig(**GCP_KWARGS)
+        cfg.validate()
+        assert '-mt_mode 1' not in cfg.blast.options
+        assert cfg.blast.batch_len == 100000
+
+        # AWS
+        cfg = ElasticBlastConfig(**AWS_KWARGS)
+        cfg.validate()
+        assert '-mt_mode 1' not in cfg.blast.options
+        assert cfg.blast.batch_len == 100000
+
+    # with db metadata, database size abobe 20B residues
+    db_metadata.number_of_letters = int(20e9)
+
+    with patch(target='elastic_blast.elb_config.get_db_metadata', new=MagicMock(return_value=db_metadata)):
+        # GCP
+        cfg = ElasticBlastConfig(**GCP_KWARGS)
+        cfg.validate()
+        assert '-mt_mode 1' not in cfg.blast.options
+        assert cfg.blast.batch_len == 30000
+
+        # AWS
+        cfg = ElasticBlastConfig(**AWS_KWARGS)
+        cfg.validate()
+        assert '-mt_mode 1' not in cfg.blast.options
+        assert cfg.blast.batch_len == 30000
+
+
+    # without db_metadata
+    
+    # GCP
+    cfg = ElasticBlastConfig(**GCP_KWARGS)
+    cfg.validate()
+    assert '-mt_mode 1' not in cfg.blast.options
+    assert cfg.blast.batch_len == 20004
+
+    # AWS
+    cfg = ElasticBlastConfig(**AWS_KWARGS)
+    cfg.validate()
+    assert '-mt_mode 1' not in cfg.blast.options
+    assert cfg.blast.batch_len == 20004
+
+
+@patch(target='elastic_blast.elb_config.aws_get_machine_properties', new=MagicMock(return_value=InstanceProperties(AWS_INSTANCE_NUM_CPUS, AWS_INSTANCE_RAM+8)))
+@patch(target='elastic_blast.tuner.aws_get_machine_properties', new=MagicMock(return_value=InstanceProperties(AWS_INSTANCE_NUM_CPUS, AWS_INSTANCE_RAM+8)))
+def test_mt_mode_and_batch_len_tblastn(gke_mock):
+    """Test that default mt mode and batch length are set correctly"""
+    db_metadata = DbMetadata(version = '1.1',
+                             dbname = 'some-protein-db',
+                             dbtype = 'NUCLEOTIDE',
+                             description = 'Metadata for a fake test database',
+                             number_of_letters = 4999999,
+                             number_of_sequences = 123,
+                             files = [],
+                             last_updated = 'some time ago',
+                             bytes_total = 123,
+                             bytes_to_cache = 123,
+                             number_of_volumes = 1)
+
+    PROGRAM = 'tblastn'
+    GCP_KWARGS = {'program': PROGRAM,
+                  'queries': 'test-query.fa',
+                  'db': 'gs://bucket/some-db',
+                  'results': 'gs://test-results',
+                  'gcp_project': 'test-project',
+                  'gcp_region': 'test-region',
+                  'gcp_zone': 'test-zone',
+                  'task': ElbCommand.SUBMIT}
+
+    AWS_KWARGS = {'program': PROGRAM,
+                  'queries': 'test-query.fa',
+                  'db': 's3://bucket/some-db',
+                  'results': 's3://test-results',
+                  'aws_region': 'test-region',
+                  'task': ElbCommand.SUBMIT}
+
+    # with db metadata, database size below 100M bases
+    db_metadata.number_of_letters = int(40e6)
+
+    with patch(target='elastic_blast.elb_config.get_db_metadata', new=MagicMock(return_value=db_metadata)):
+        # GCP
+        cfg = ElasticBlastConfig(**GCP_KWARGS)
+        cfg.validate()
+        assert '-mt_mode 1' not in cfg.blast.options
+        assert cfg.blast.batch_len == 320000
+
+        # AWS
+        cfg = ElasticBlastConfig(**AWS_KWARGS)
+        cfg.validate()
+        assert '-mt_mode 1' not in cfg.blast.options
+        assert cfg.blast.batch_len == 320000
+
+    # with db metadata, database size between 100M and 20B bases
+    db_metadata.number_of_letters = int(20e9) - 1
+
+    with patch(target='elastic_blast.elb_config.get_db_metadata', new=MagicMock(return_value=db_metadata)):
+        # GCP
+        cfg = ElasticBlastConfig(**GCP_KWARGS)
+        cfg.validate()
+        assert '-mt_mode 1' not in cfg.blast.options
+        assert cfg.blast.batch_len == 40000
+
+        # AWS
+        cfg = ElasticBlastConfig(**AWS_KWARGS)
+        cfg.validate()
+        assert '-mt_mode 1' not in cfg.blast.options
+        assert cfg.blast.batch_len == 40000
+
+    # with db metadata, database size above 20B bases
+    db_metadata.number_of_letters = int(500e9)
+
+    with patch(target='elastic_blast.elb_config.get_db_metadata', new=MagicMock(return_value=db_metadata)):
+        # GCP
+        cfg = ElasticBlastConfig(**GCP_KWARGS)
+        cfg.validate()
+        assert '-mt_mode 1' not in cfg.blast.options
+        assert cfg.blast.batch_len == 20000
+
+        # AWS
+        cfg = ElasticBlastConfig(**AWS_KWARGS)
+        cfg.validate()
+        assert '-mt_mode 1' not in cfg.blast.options
+        assert cfg.blast.batch_len == 20000
+
+
+    # without db_metadata
+    
+    # GCP
+    cfg = ElasticBlastConfig(**GCP_KWARGS)
+    cfg.validate()
+    assert '-mt_mode 1' not in cfg.blast.options
+    assert cfg.blast.batch_len == 20000
+
+    # AWS
+    cfg = ElasticBlastConfig(**AWS_KWARGS)
+    cfg.validate()
+    assert '-mt_mode 1' not in cfg.blast.options
+    assert cfg.blast.batch_len == 20000
+
+
+@patch(target='elastic_blast.elb_config.aws_get_machine_properties', new=MagicMock(return_value=InstanceProperties(AWS_INSTANCE_NUM_CPUS, AWS_INSTANCE_RAM+8)))
+@patch(target='elastic_blast.tuner.aws_get_machine_properties', new=MagicMock(return_value=InstanceProperties(AWS_INSTANCE_NUM_CPUS, AWS_INSTANCE_RAM+8)))
+def test_mt_mode_and_batch_len_tblastx(gke_mock):
+    """Test that default mt mode and batch length are set correctly"""
+    db_metadata = DbMetadata(version = '1.1',
+                             dbname = 'some-db',
+                             dbtype = 'NUCLEOTIDE',
+                             description = 'Metadata for a fake test database',
+                             number_of_letters = 4999999,
+                             number_of_sequences = 123,
+                             files = [],
+                             last_updated = 'some time ago',
+                             bytes_total = 123,
+                             bytes_to_cache = 123,
+                             number_of_volumes = 1)
+
+    PROGRAM = 'tblastx'
+    GCP_KWARGS = {'program': PROGRAM,
+                  'queries': 'test-query.fa',
+                  'db': 'gs://bucket/some-db',
+                  'results': 'gs://test-results',
+                  'gcp_project': 'test-project',
+                  'gcp_region': 'test-region',
+                  'gcp_zone': 'test-zone',
+                  'task': ElbCommand.SUBMIT}
+
+    AWS_KWARGS = {'program': PROGRAM,
+                  'queries': 'test-query.fa',
+                  'db': 's3://bucket/some-db',
+                  'results': 's3://test-results',
+                  'aws_region': 'test-region',
+                  'task': ElbCommand.SUBMIT}
+
+    # with db metadata, database size below 100M bases
+    db_metadata.number_of_letters = int(50e6)
+
+    with patch(target='elastic_blast.elb_config.get_db_metadata', new=MagicMock(return_value=db_metadata)):
+        # GCP
+        cfg = ElasticBlastConfig(**GCP_KWARGS)
+        cfg.validate()
+        assert '-mt_mode 1' not in cfg.blast.options
+        assert cfg.blast.batch_len == 400000
+
+        # AWS
+        cfg = ElasticBlastConfig(**AWS_KWARGS)
+        cfg.validate()
+        assert '-mt_mode 1' not in cfg.blast.options
+        assert cfg.blast.batch_len == 400000
+
+    # with db metadata, database size between 50M and 20B bases
+    db_metadata.number_of_letters = int(20e9) - 1
+
+    with patch(target='elastic_blast.elb_config.get_db_metadata', new=MagicMock(return_value=db_metadata)):
+        # GCP
+        cfg = ElasticBlastConfig(**GCP_KWARGS)
+        cfg.validate()
+        assert '-mt_mode 1' not in cfg.blast.options
+        assert cfg.blast.batch_len == 100000
+
+        # AWS
+        cfg = ElasticBlastConfig(**AWS_KWARGS)
+        cfg.validate()
+        assert '-mt_mode 1' not in cfg.blast.options
+        assert cfg.blast.batch_len == 100000
+
+    # with db metadata, database size above 20B bases
+    db_metadata.number_of_letters = int(500e9)
+
+    with patch(target='elastic_blast.elb_config.get_db_metadata', new=MagicMock(return_value=db_metadata)):
+        # GCP
+        cfg = ElasticBlastConfig(**GCP_KWARGS)
+        cfg.validate()
+        assert '-mt_mode 1' not in cfg.blast.options
+        assert cfg.blast.batch_len == 10000
+
+        # AWS
+        cfg = ElasticBlastConfig(**AWS_KWARGS)
+        cfg.validate()
+        assert '-mt_mode 1' not in cfg.blast.options
+        assert cfg.blast.batch_len == 10000
+
+
+    # without db_metadata
+    
+    # GCP
+    cfg = ElasticBlastConfig(**GCP_KWARGS)
+    cfg.validate()
+    assert '-mt_mode 1' not in cfg.blast.options
+    assert cfg.blast.batch_len == 100000
+
+    # AWS
+    cfg = ElasticBlastConfig(**AWS_KWARGS)
+    cfg.validate()
+    assert '-mt_mode 1' not in cfg.blast.options
+    assert cfg.blast.batch_len == 100000
+
+
+@patch(target='elastic_blast.elb_config.aws_get_machine_properties', new=MagicMock(return_value=InstanceProperties(AWS_INSTANCE_NUM_CPUS, AWS_INSTANCE_RAM+8)))
+@patch(target='elastic_blast.tuner.aws_get_machine_properties', new=MagicMock(return_value=InstanceProperties(AWS_INSTANCE_NUM_CPUS, AWS_INSTANCE_RAM+8)))
+def test_mt_mode_and_batch_len_user_selected(gke_mock):
+    """Test that user selected mt_mode and batch_len is not overrriten"""
+    db_metadata = DbMetadata(version = '1.1',
+                             dbname = 'some-db',
+                             dbtype = 'NUCLEOTIDE',
+                             description = 'Metadata for a fake test database',
+                             number_of_letters = int(500e9),
+                             number_of_sequences = 123,
+                             files = [],
+                             last_updated = 'some time ago',
+                             bytes_total = 123,
+                             bytes_to_cache = 123,
+                             number_of_volumes = 1)
+
+    confpars = configparser.ConfigParser()
+    confpars[CFG_CLOUD_PROVIDER] = {CFG_CP_AWS_REGION: 'test-region'}
+
+    confpars[CFG_BLAST] = {CFG_BLAST_QUERY: 'test-query.fa',
+                           CFG_BLAST_PROGRAM: 'tblastn',
+                           CFG_BLAST_DB: 'some-db',
+                           CFG_BLAST_RESULTS: 's3://test-results',
+                           CFG_BLAST_OPTIONS: '-mt_mode 1'}
+    
+    with patch(target='elastic_blast.elb_config.get_db_metadata', new=MagicMock(return_value=db_metadata)):
+       cfg = ElasticBlastConfig(confpars, task = ElbCommand.SUBMIT)
+       cfg.validate()
+       assert '-mt_mode 1' in cfg.blast.options
+       
+    BATCH_LEN = 123
+    confpars[CFG_BLAST] = {CFG_BLAST_QUERY: 'test-query.fa',
+                           CFG_BLAST_PROGRAM: 'tblastn',
+                           CFG_BLAST_DB: 'some-db',
+                           CFG_BLAST_RESULTS: 's3://test-results',
+                           CFG_BLAST_BATCH_LEN: BATCH_LEN}
+
+    with patch(target='elastic_blast.elb_config.get_db_metadata', new=MagicMock(return_value=db_metadata)):
+       cfg = ElasticBlastConfig(confpars, task = ElbCommand.SUBMIT)
+       cfg.validate()
+       assert cfg.blast.batch_len == BATCH_LEN
+       assert cfg.blast.user_provided_batch_len
+
+

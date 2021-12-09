@@ -47,6 +47,7 @@ def write_to_s3(dest: str, contents: str, boto_cfg: Config = None, dry_run: bool
     bucket_name, key = parse_bucket_name_key(dest)
     bucket = s3.Bucket(bucket_name)
     bucket.put_object(Body=contents.encode(), Key=key)
+    logging.debug(f'Uploaded {dest}')
     return
 
 

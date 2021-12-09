@@ -62,8 +62,10 @@ else
     exit_code=0
 fi
 
-if grep -q '^aws-' $CFG; then
-    $ROOT_DIR/elastic-blast delete --cfg $CFG --loglevel DEBUG --logfile $logfile $DRY_RUN
+if grep -q '^aws' $CFG; then
+    if ! aws iam get-role --role-name ncbi-elasticblast-janitor-role  >&/dev/null; then
+        $ROOT_DIR/elastic-blast delete --cfg $CFG --loglevel DEBUG --logfile $logfile $DRY_RUN
+    fi
 fi
 
 exit $exit_code

@@ -6,6 +6,8 @@ ElasticBLAST
 [![Anaconda-Server Badge](https://anaconda.org/bioconda/elastic-blast/badges/downloads.svg)](https://anaconda.org/bioconda/elastic-blast)
 [![Anaconda-Server Badge](https://anaconda.org/bioconda/elastic-blast/badges/installer/conda.svg)](https://conda.anaconda.org/bioconda)
 
+[![PyPI version](https://badge.fury.io/py/elastic-blast.svg)](https://badge.fury.io/py/elastic-blast)
+
 ElasticBLAST is a cloud-based tool to perform your BLAST searches faster and make you more effective.
 
 ElasticBLAST is ideal for users who have a large number (thousands or more) of queries to BLAST or who prefer to use cloud infrastructure for their searches.  It can run BLAST searches that cannot be done on [NCBI WebBLAST](https://blast.ncbi.nlm.nih.gov) and runs them more quickly than stand-alone [BLAST+](https://www.ncbi.nlm.nih.gov/books/NBK279690/).

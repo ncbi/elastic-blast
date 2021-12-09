@@ -28,9 +28,10 @@ import argparse
 import logging
 import os
 from elastic_blast.base import QuerySplittingResults
-from elastic_blast.filehelper import harvest_query_splitting_results
+from elastic_blast.filehelper import harvest_query_splitting_results, open_for_read
 from elastic_blast.constants import ElbCommand, ELB_DFLT_LOGLEVEL
-from elastic_blast.aws import ElasticBlastAws
+from elastic_blast.constants import ELB_METADATA_DIR, ELB_META_CONFIG_FILE
+from elastic_blast.aws import ElasticBlastAws, handle_aws_error
 from elastic_blast.elb_config import ElasticBlastConfig
 from elastic_blast.util import config_logging
 from elastic_blast.base import MemoryStr
@@ -38,6 +39,7 @@ from elastic_blast import VERSION
 
 DESC = 'Helper script to submit ElasticBLAST jobs remotely'
 
+@handle_aws_error
 def main():
     """Main function"""
     parser = create_arg_parser()
@@ -45,23 +47,14 @@ def main():
 
     config_logging(args)
     logging.info(f"ElasticBLAST submit_jobs.py {VERSION}")
-    logging.debug(f'AWS region: {args.region}')
 
-    cfg = ElasticBlastConfig(aws_region = args.region,
-                             program = args.program,
-                             db = args.db,
-                             queries = 'fake',
-                             results = args.results,
-                             task = ElbCommand.SUBMIT)
-    cfg.cluster.num_cpus = int(args.num_cpus)
-    cfg.blast.mem_limit = MemoryStr(args.mem_limit)
-    cfg.blast.options = args.blast_options
-    cfg.blast.taxidlist = args.taxidlist
+    cfg_uri = os.path.join(args.results, ELB_METADATA_DIR, ELB_META_CONFIG_FILE)
+    logging.debug(f"Loading {cfg_uri}")
+    with open_for_read(cfg_uri) as f:
+        cfg_json = f.read()
+    cfg = ElasticBlastConfig.from_json(cfg_json)
+    logging.debug(f'AWS region: {cfg.aws.region}')
     cfg.validate(ElbCommand.SUBMIT)
-
-    if 'ELB_CLUSTER_NAME' in os.environ:
-        cfg.cluster.name = os.environ['ELB_CLUSTER_NAME']
-
     eb = ElasticBlastAws(cfg, False)
 
     bucket = cfg.cluster.results
@@ -74,16 +67,7 @@ def main():
 def create_arg_parser():
     """ Create the command line options parser object for this script. """
     parser = argparse.ArgumentParser(description=DESC)
-
-    parser.add_argument('--program', metavar='PROG', type=str, help='BLAST program', required=True)
-    parser.add_argument('--db', metavar='DB', type=str, help='BLAST database', required=True)
-    parser.add_argument('--num-cpus', metavar='NUM', type=str, help='Number of CPUs', required=True)
-    parser.add_argument('--mem-limit', metavar='STR', type=str, help='Memory limit for the BLAST search', required=True)
-    parser.add_argument('--blast-options', metavar='STR', type=str, help='BLAST options', required=True)
-    parser.add_argument('--taxidlist', metavar='STR', type=str, help='Taxid list file')
     parser.add_argument('--results', metavar='STR', type=str, help='Results bucket', required=True)
-    parser.add_argument('--region', metavar='STR', type=str, help='AWS region', required=True)
-
     parser.add_argument("--logfile", default='stderr', type=str,
                         help=f"Default: stderr")
     parser.add_argument("--loglevel", default='DEBUG',

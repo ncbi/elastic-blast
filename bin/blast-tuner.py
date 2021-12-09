@@ -34,8 +34,7 @@ from elastic_blast.util import ElbSupportedPrograms, UserReportError
 from elastic_blast.util import get_query_batch_size, config_logging
 from elastic_blast.tuner import DbData, SeqData, MTMode, MolType
 from elastic_blast.tuner import get_mt_mode, get_num_cpus, get_batch_length
-from elastic_blast.tuner import aws_get_machine_type, get_mem_limit
-from elastic_blast.tuner import gcp_get_machine_type
+from elastic_blast.tuner import get_machine_type, get_mem_limit
 from elastic_blast.base import DBSource, PositiveInteger, MemoryStr
 from elastic_blast.constants import CFG_CLOUD_PROVIDER, CFG_CP_AWS_REGION, CFG_CP_GCP_REGION
 from elastic_blast.constants import ELB_DFLT_GCP_REGION, ELB_DFLT_AWS_REGION
@@ -94,9 +93,12 @@ def main():
         else:
             conf[CFG_CLOUD_PROVIDER][CFG_CP_GCP_REGION] = args.region
 
-        query_data = SeqData(args.total_query_length,
-                             sp.get_query_mol_type(args.program))
-        mt_mode = get_mt_mode(args.program, args.options, db_data, query_data)
+        query_data = None
+        # The total_query_length argument is only relevant for small searches. If a query has fewer than 10k residues or 2.5M bases there is no need for MT mode 1. We could also reduce number of CPUs if there is not enough work for 15 or 16. The small searches will typically run pretty quickly, so this would be only tiny cost optimization.
+        if args.total_query_length:
+            query_data = SeqData(args.total_query_length,
+                                 sp.get_query_mol_type(args.program))
+        mt_mode = get_mt_mode(args.program, args.options, db_metadata, query_data)
         options += f' {mt_mode}'
 
         num_cpus = get_num_cpus(cloud_provider = cloud_provider,
@@ -104,7 +106,8 @@ def main():
                                 mt_mode = mt_mode,
                                 query = query_data)
         conf[CFG_BLAST][CFG_BLAST_PROGRAM] = args.program
-        conf[CFG_BLAST][CFG_BLAST_BATCH_LEN] = str(get_batch_length(program = args.program,
+        conf[CFG_BLAST][CFG_BLAST_BATCH_LEN] = str(get_batch_length(cloud_provider = cloud_provider,
+                                                          program = args.program,
                                                           mt_mode = mt_mode,
                                                           num_cpus = num_cpus))
 
@@ -118,18 +121,10 @@ def main():
             if cloud_provider != CSP.AWS:
                 raise UserReportError(INPUT_ERROR, f'The "optimal" instance type is only allowed for AWS')
         else:
-            if cloud_provider == CSP.AWS:
-                if args.db == 'nt':
-                    machine_type = 'c5ad.16xlarge'
-                elif args.db == 'nr':
-                    machine_type = 'm5ad.16xlarge'
-                else:
-                    machine_type = aws_get_machine_type(db = db_data,
-                                                        num_cpus = num_cpus,
-                                                        region = args.region)
-            else:
-                machine_type = gcp_get_machine_type(db = db_data,
-                                                    num_cpus = num_cpus)
+            machine_type = get_machine_type(cloud_provider = cloud_provider,
+                                            db = db_metadata,
+                                            num_cpus = num_cpus,
+                                            region = args.region)
 
         conf[CFG_CLUSTER][CFG_CLUSTER_MACHINE_TYPE] = machine_type
 
@@ -165,11 +160,11 @@ def create_arg_parser():
     required.add_argument("--db", type=str, help="BLAST database to search", required=True)
     required.add_argument("--program", type=str, help="BLAST program to run",
                         choices=ElbSupportedPrograms().get(), required=True)
-    required.add_argument("--total-query-length", type=PositiveInteger, required=True,
-                        help='Number of residues or bases in query sequecnes')
     required.add_argument("--csp-target", type=str, help="Which Cloud Service Provider to use, default: AWS", choices=['AWS', 'GCP'], default='AWS')
     required.add_argument('--out', type=argparse.FileType('w'), help='Save configuration in this file', default='-')
 
+    optional.add_argument("--total-query-length", type=PositiveInteger,
+                        help='Number of residues or bases in query sequecnes')
     optional.add_argument("--db-source", type=str, help="Where NCBI-provided databases are downloaded from, default: AWS", choices=['AWS', 'GCP', 'NCBI'])
     optional.add_argument("--region", type=str, help=f'Cloud Service Provider region. Defaults: {ELB_DFLT_AWS_REGION} for AWS; {ELB_DFLT_GCP_REGION} for GCP')
     optional.add_argument("--options", type=str, help='BLAST options', default='')

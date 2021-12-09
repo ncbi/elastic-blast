@@ -53,14 +53,12 @@ def _status(args, cfg: ElasticBlastConfig, clean_up_stack: List[Any]) -> int:
         verbose_result = ''
         elastic_blast = ElasticBlastFactory(cfg, False, clean_up_stack)
         while True:
-            status = elastic_blast.status()
+            status, counts, verbose_result = elastic_blast.check_status(args.verbose)
             result = str(status)
-            if status in (ElbStatus.RUNNING, ElbStatus.SUCCESS, ElbStatus.FAILURE):
-                counts, verbose_result = elastic_blast.check_status(args.verbose)
-                if counts:
-                    result = '\n'.join([f'{x} {counts[x.lower()]}' for x in
-                        ('Pending', 'Running', 'Succeeded', 'Failed')
-                    ])
+            if counts:
+                result = '\n'.join([f'{x} {counts[x.lower()]}' for x in
+                    ('Pending', 'Running', 'Succeeded', 'Failed')
+                ])
 
             logging.debug(result)
             if not args.wait or status in (ElbStatus.SUCCESS, ElbStatus.FAILURE, ElbStatus.UNKNOWN):

@@ -59,6 +59,9 @@ fi
 
 #${GCLOUD} container clusters get-credentials ${ELB_CLUSTER_NAME} --project ${ELB_GCP_PROJECT} --zone ${ELB_GCP_ZONE}
 
+# TODO: EB-1356 wait for all init-ssd-{n} jobs for local SSD case, don't need to
+# delete jobs and wait for unmount
+
 # Wait for init-pv job completion
 while true; do
     s=`${KUBECTL} get jobs init-pv -o jsonpath='{.status.conditions[*].type}'`
@@ -121,6 +124,8 @@ if ${GSUTIL_COPY} ${ELB_RESULTS}/${ELB_METADATA_DIR}/job.yaml.template . &&
         printf "SPEED to submit-jobs %f jobs/second\n" $(( $num_jobs/($end-$start) ))
     fi
     echo $num_jobs | ${GSUTIL_COPY} /dev/stdin ${ELB_RESULTS}/${ELB_METADATA_DIR}/${ELB_NUM_JOBS_SUBMITTED}
-    ${GCLOUD} container clusters update ${ELB_CLUSTER_NAME} --enable-autoscaling --min-nodes 1 --max-nodes ${ELB_NUM_NODES} --project ${ELB_GCP_PROJECT} --zone ${ELB_GCP_ZONE}
+    if [ ${ELB_NUM_NODES} -ne 1 ] ; then
+        ${GCLOUD} container clusters update ${ELB_CLUSTER_NAME} --enable-autoscaling --node-pool default-pool --min-nodes 0 --max-nodes ${ELB_NUM_NODES} --project ${ELB_GCP_PROJECT} --zone ${ELB_GCP_ZONE}
+    fi
     ${KUBECTL} logs -l 'app=setup' -c ${K8S_JOB_SUBMIT_JOBS} --timestamps --since=24h --tail=-1 | ${GSUTIL_COPY} /dev/stdin ${ELB_RESULTS}/logs/k8s-${K8S_JOB_SUBMIT_JOBS}.log
 fi

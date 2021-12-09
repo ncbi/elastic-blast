@@ -1,3 +1,4 @@
+wheel
 setuptools
 importlib-resources
 importlib-metadata

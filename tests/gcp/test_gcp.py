@@ -39,7 +39,7 @@ from elastic_blast.db_metadata import DbMetadata
 from tests.utils import MockedCompletedProcess
 from tests.utils import mocked_safe_exec, get_mocked_config
 from tests.utils import GCP_PROJECT, GCP_DISKS, GKE_PVS, GKE_CLUSTERS
-from tests.utils import GKEMock, gke_mock
+from tests.utils import GKEMock, gke_mock, GCP_REGIONS
 
 # Mocked tests
 
@@ -94,6 +94,7 @@ def test_set_gcp_project(gke_mock):
     gcp.safe_exec.assert_called()
 
 
+@patch(target='elastic_blast.elb_config.gcp_get_regions', new=MagicMock(return_value=GCP_REGIONS))
 def test_get_disks(gke_mock):
     """Test getting a list of GCP persistent disks"""
     cfg = get_mocked_config()
@@ -103,6 +104,7 @@ def test_get_disks(gke_mock):
 
 
 @patch(target='elastic_blast.elb_config.get_db_metadata', new=MagicMock(return_value=DB_METADATA))
+@patch(target='elastic_blast.elb_config.gcp_get_regions', new=MagicMock(return_value=GCP_REGIONS))
 def test_get_disks_bad_output(mocker):
     """Test that gcp.get_disks raises RuntimeError for bad gcloud output"""
 
@@ -113,12 +115,15 @@ def test_get_disks_bad_output(mocker):
         return MockedCompletedProcess('some-non-json-string')
 
     mocker.patch('elastic_blast.gcp.safe_exec', side_effect=safe_exec_bad_gcloud)
-    cfg = get_mocked_config()
+    with patch(target='elastic_blast.elb_config.safe_exec', new=MagicMock(side_effect=GKEMock().mocked_safe_exec)):
+        with patch(target='elastic_blast.util.safe_exec', new=MagicMock(side_effect=GKEMock().mocked_safe_exec)):
+            cfg = get_mocked_config()
     with pytest.raises(RuntimeError):
         gcp.get_disks(cfg)
     gcp.safe_exec.assert_called()
 
 
+@patch(target='elastic_blast.elb_config.gcp_get_regions', new=MagicMock(return_value=GCP_REGIONS))
 def test_delete_disk(gke_mock):
     """Test deleting a GCP disk"""
     cfg = get_mocked_config()
@@ -126,6 +131,7 @@ def test_delete_disk(gke_mock):
     gcp.safe_exec.assert_called()
 
 
+@patch(target='elastic_blast.elb_config.gcp_get_regions', new=MagicMock(return_value=GCP_REGIONS))
 @patch(target='elastic_blast.elb_config.get_db_metadata', new=MagicMock(return_value=DB_METADATA))
 def test_delete_nonexistent_disk(mocker):
     """Test that deleting a GCP disk that does not exits raises util.SafeExecError"""
@@ -136,14 +142,18 @@ def test_delete_nonexistent_disk(mocker):
         raise subprocess.CalledProcessError(returncode=1, cmd=cmd, output=b'',
                                             stderr=b'')
 
+    with patch(target='elastic_blast.elb_config.safe_exec', new=MagicMock(side_effect=GKEMock().mocked_safe_exec)):
+        with patch(target='elastic_blast.util.safe_exec', new=MagicMock(side_effect=GKEMock().mocked_safe_exec)):
+            cfg = get_mocked_config()
+
     mocker.patch('subprocess.run', side_effect=fake_subprocess_run)
 
-    cfg = get_mocked_config()
     with pytest.raises(SafeExecError):
         gcp.delete_disk('some-disk', cfg)
     subprocess.run.assert_called()
 
 
+@patch(target='elastic_blast.elb_config.gcp_get_regions', new=MagicMock(return_value=GCP_REGIONS))
 def test_delete_disk_empty_name(gke_mock):
     """Test that deleting disk with and empty name results in ValueError"""
     cfg = get_mocked_config()
@@ -151,6 +161,7 @@ def test_delete_disk_empty_name(gke_mock):
         gcp.delete_disk('', cfg)
 
 
+@patch(target='elastic_blast.elb_config.gcp_get_regions', new=MagicMock(return_value=GCP_REGIONS))
 def test_get_gke_clusters(gke_mock):
     """Test listing GKE clusters"""
     cfg = get_mocked_config()
@@ -160,6 +171,7 @@ def test_get_gke_clusters(gke_mock):
 
 
 @patch(target='elastic_blast.elb_config.get_db_metadata', new=MagicMock(return_value=DB_METADATA))
+@patch(target='elastic_blast.elb_config.gcp_get_regions', new=MagicMock(return_value=GCP_REGIONS))
 def test_get_gke_clusters_empty(mocker):
     """Test listing GKE clusters for an empty list"""
 
@@ -168,11 +180,14 @@ def test_get_gke_clusters_empty(mocker):
         return MockedCompletedProcess('[]')
 
     mocker.patch('elastic_blast.gcp.safe_exec', side_effect=safe_exec_empty)
-    cfg = get_mocked_config()
+    with patch(target='elastic_blast.elb_config.safe_exec', new=MagicMock(side_effect=GKEMock().mocked_safe_exec)):
+        with patch(target='elastic_blast.util.safe_exec', new=MagicMock(side_effect=GKEMock().mocked_safe_exec)):
+            cfg = get_mocked_config()
     assert len(gcp.get_gke_clusters(cfg)) == 0
     gcp.safe_exec.assert_called()
 
 
+@patch(target='elastic_blast.elb_config.gcp_get_regions', new=MagicMock(return_value=GCP_REGIONS))
 def test_delete_cluster_with_cleanup(gke_mock):
     """Test deleting GKE cluster and its persistent disks"""
     cfg = get_mocked_config()
@@ -181,6 +196,7 @@ def test_delete_cluster_with_cleanup(gke_mock):
     kubernetes.safe_exec.assert_called()
 
 
+@patch(target='elastic_blast.elb_config.gcp_get_regions', new=MagicMock(return_value=GCP_REGIONS))
 def test_delete_cluster_with_cleanup_no_cluster(gke_mock):
     """Test deleting GKE cluster with cleanup when no cluster is present"""
     # no cluster found in GKE
@@ -192,6 +208,7 @@ def test_delete_cluster_with_cleanup_no_cluster(gke_mock):
     gcp.safe_exec.assert_called()
 
 
+@patch(target='elastic_blast.elb_config.gcp_get_regions', new=MagicMock(return_value=GCP_REGIONS))
 def test_delete_cluster_with_cleanup_disk_left(gke_mock, mocker):
     """Test that disk is deleted even if k8s did not delete it"""
     def mocked_get_disks(cfg, dry_run):
@@ -231,6 +248,7 @@ def test_delete_cluster_with_cleanup_disk_left(gke_mock, mocker):
     gcp.delete_cluster.assert_called_with(cfg)
 
 
+@patch(target='elastic_blast.elb_config.gcp_get_regions', new=MagicMock(return_value=GCP_REGIONS))
 def test_delete_cluster_with_cleanup_failed_kubectl(gke_mock, mocker):
     """Test that cluster deletion is called when we cannot communicate with
     it with kubectl"""
@@ -249,6 +267,7 @@ def test_delete_cluster_with_cleanup_failed_kubectl(gke_mock, mocker):
     gcp.delete_cluster.assert_called_with(cfg)
 
 
+@patch(target='elastic_blast.elb_config.gcp_get_regions', new=MagicMock(return_value=GCP_REGIONS))
 def test_delete_cluster_with_cleanup_failed_get_disks(gke_mock, mocker):
     """Test that cluster and disk deletion are called when getting a list of
     GCP disks failed"""
@@ -290,6 +309,7 @@ def test_delete_cluster_with_cleanup_failed_get_disks(gke_mock, mocker):
     gcp.delete_disk.assert_called_with(GCP_DISKS[0], cfg)
 
 
+@patch(target='elastic_blast.elb_config.gcp_get_regions', new=MagicMock(return_value=GCP_REGIONS))
 def test_delete_cluster_with_cleanup_cluster_provisioning(gke_mock, mocker):
     """Test that cluster provisioning is handled when deleting the cluster.
     The code should wait until cluster status is RUNNING and delete it then."""
@@ -324,6 +344,7 @@ def test_delete_cluster_with_cleanup_cluster_provisioning(gke_mock, mocker):
     gcp.delete_cluster.assert_called()
 
 
+@patch(target='elastic_blast.elb_config.gcp_get_regions', new=MagicMock(return_value=GCP_REGIONS))
 def test_delete_cluster_with_cleanup_cluster_reconciling(gke_mock, mocker):
     """Test that cluster status RECONCILING is handled when deleting the
     cluster. The code should wait until cluster status is RUNNING and delete
@@ -359,6 +380,7 @@ def test_delete_cluster_with_cleanup_cluster_reconciling(gke_mock, mocker):
     gcp.delete_cluster.assert_called()
 
 
+@patch(target='elastic_blast.elb_config.gcp_get_regions', new=MagicMock(return_value=GCP_REGIONS))
 def test_delete_cluster_with_cleanup_cluster_error(gke_mock, mocker):
     """Test deleting a cluster with ERROR status"""
     def mocked_check_cluster(cfg):
@@ -378,6 +400,7 @@ def test_delete_cluster_with_cleanup_cluster_error(gke_mock, mocker):
     gcp.delete_cluster.assert_called()
 
 
+@patch(target='elastic_blast.elb_config.gcp_get_regions', new=MagicMock(return_value=GCP_REGIONS))
 def test_delete_cluster_with_cleanup_cluster_status_unrecognized(gke_mock, mocker):
     """Test deleting a cluster with unrecognized status"""
     def mocked_check_cluster(cfg):
@@ -397,6 +420,7 @@ def test_delete_cluster_with_cleanup_cluster_status_unrecognized(gke_mock, mocke
     gcp.delete_cluster.assert_called()
 
 
+@patch(target='elastic_blast.elb_config.gcp_get_regions', new=MagicMock(return_value=GCP_REGIONS))
 def test_delete_cluster_with_cleanup_cluster_stopping(gke_mock, mocker):
     """Test deleting cluster with the cluster is beeing stopped. The code
     should raise RuntimeError"""
@@ -415,6 +439,7 @@ def test_delete_cluster_with_cleanup_cluster_stopping(gke_mock, mocker):
     assert 'already being deleted' in errinfo.value.message
 
 
+@patch(target='elastic_blast.elb_config.gcp_get_regions', new=MagicMock(return_value=GCP_REGIONS))
 def test_remove_split_query(mocker):
     """Test that util.remove_split_query calls safe_exec with correct command"""
 
@@ -428,11 +453,13 @@ def test_remove_split_query(mocker):
         return MockedCompletedProcess('')
 
     mocker.patch('elastic_blast.gcp.safe_exec', side_effect=safe_exec_gsutil_rm)
-    cfg = ElasticBlastConfig(gcp_project = 'test-gcp-project',
-                             gcp_region = 'test-gcp-region',
-                             gcp_zone = 'test-gcp-zone',
-                             results = 'gs://test-bucket',
-                             task = ElbCommand.DELETE)
+    with patch(target='elastic_blast.elb_config.safe_exec', new=MagicMock(side_effect=GKEMock().mocked_safe_exec)):
+        with patch(target='elastic_blast.util.safe_exec', new=MagicMock(side_effect=GKEMock().mocked_safe_exec)):
+            cfg = ElasticBlastConfig(gcp_project = 'test-gcp-project',
+                                     gcp_region = 'test-gcp-region',
+                                     gcp_zone = 'test-gcp-zone',
+                                     results = 'gs://test-bucket',
+                                     task = ElbCommand.DELETE)
 
     cfg.cluster.results = RESULTS
     gcp.remove_split_query(cfg)
@@ -528,3 +555,4 @@ def test_get_gke_credentials_no_cluster_real():
     assert cfg.cluster.name not in gcp.get_gke_clusters(cfg)
     with pytest.raises(SafeExecError):
         gcp.get_gke_credentials(cfg)
+

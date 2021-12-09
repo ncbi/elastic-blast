@@ -33,7 +33,7 @@ Author: Victor Joukov joukovv@ncbi.nlm.nih.gov
 """
 
 import subprocess, os, io, gzip, tarfile, re, tempfile, shutil
-import logging, ast
+import logging
 import urllib.request
 from string import digits
 from random import sample
@@ -507,12 +507,3 @@ def _is_local_file(filename: str) -> bool:
         return False
     return True
 
-
-def thaw_config(results_bucket: str) -> dict:
-    """ Recover a saved ElasticBLAST configuration from its results bucket """
-    filename = os.path.join(results_bucket, ELB_METADATA_DIR, ELB_META_CONFIG_FILE)
-    if _is_local_file(results_bucket):
-        # Allow this to facilitate unit testing
-        filename = results_bucket
-    with open_for_read(filename) as infile:
-        return ast.literal_eval(infile.read())

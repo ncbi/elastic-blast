@@ -47,6 +47,7 @@ class ElbCommand(Enum):
 class ElbStatus(Enum):
     """ Defines the status of an ElasticBLAST search """
     CREATING = auto()
+    DELETING = auto()
     SUBMITTING = auto()
     SUCCESS = auto()
     FAILURE = auto()
@@ -115,6 +116,8 @@ ELB_FTP_PREFIX = 'ftp://'
 ELB_UNKNOWN_NUMBER_OF_QUERY_SPLITS = -1
 ELB_UNKNOWN_MAX_NUMBER_OF_CONCURRENT_JOBS = -1
 
+ELB_UNKNOWN = 'Unknown'
+
 # Ancillary ElasticBLAST "directories" and files in output bucket
 ELB_QUERY_BATCH_DIR = 'query_batches'
 ELB_QUERY_BATCH_FILE_PREFIX = 'batch_'
@@ -123,7 +126,7 @@ ELB_STATE_DISK_ID_FILE = 'disk-id.txt'
 ELB_LOG_DIR = 'logs'
 ELB_BACKEND_LOG = 'backends.log'
 ELB_TAXIDLIST_FILE = 'taxidlist.txt'
-ELB_META_CONFIG_FILE = 'elastic-blast-config.ini'
+ELB_META_CONFIG_FILE = 'elastic-blast-config.json'
 ELB_AWS_JOB_IDS = 'job-ids.json'
 ELB_QUERY_LENGTH = 'query_length.txt'
 ELB_GCP_BATCH_LIST = 'batch_list.txt'
@@ -144,7 +147,7 @@ ELB_DFLT_BLAST_JOB_TEMPLATE = 'resource:templates/blast-batch-job.yaml.template'
 ELB_LOCAL_SSD_BLAST_JOB_TEMPLATE = 'resource:templates/blast-batch-job-local-ssd.yaml.template'
 GCS_DFLT_BUCKET = 'gs://blast-db'
 
-GCP_APIS = ['container', 'storage-api', 'storage-component']
+GCP_APIS = ['serviceusage', 'container', 'storage-api', 'storage-component']
 # https://cloud.google.com/kubernetes-engine/docs/how-to/creating-managing-labels#requirements
 GCP_MAX_NUM_LABELS = 64
 # https://cloud.google.com/kubernetes-engine/docs/how-to/creating-managing-labels#requirements
@@ -197,9 +200,9 @@ ELB_DFLT_GCP_REGION = 'us-east4'
 ELB_DFLT_AWS_REGION = 'us-east-1'
 
 ELB_DOCKER_VERSION = '1.0.0'
-ELB_QS_DOCKER_VERSION = '0.0.4'
-ELB_JANITOR_DOCKER_VERSION = '0.0.3'
-ELB_JOB_SUBMIT_DOCKER_VERSION = '0.1.3'
+ELB_QS_DOCKER_VERSION = '0.0.6'
+ELB_JANITOR_DOCKER_VERSION = '0.1.1'
+ELB_JOB_SUBMIT_DOCKER_VERSION = '1.1.2'
 
 ELB_DOCKER_IMAGE_GCP = f'gcr.io/ncbi-sandbox-blast/ncbi/elb:{ELB_DOCKER_VERSION}'
 ELB_DOCKER_IMAGE_AWS = f'public.ecr.aws/ncbi-elasticblast/elasticblast-elb:{ELB_DOCKER_VERSION}'
@@ -246,7 +249,6 @@ CFG_CLUSTER_DRY_RUN = 'dry-run'
 CFG_CLUSTER_NAME = 'name'
 CFG_CLUSTER_MACHINE_TYPE = 'machine-type'
 CFG_CLUSTER_LABELS = 'labels'
-CFG_CLUSTER_RUN_LABEL = 'run-label'
 CFG_CLUSTER_NUM_NODES = 'num-nodes'
 CFG_CLUSTER_NUM_CPUS = 'num-cpus'
 CFG_CLUSTER_DISK_TYPE = 'disk-type'
@@ -278,6 +280,8 @@ APP_STATE_DISK_ID = 'disk-id'
 APP_STATE_RESULTS_MD5 = 'results-md5'
 
 AWS_ROLE_PREFIX = 'arn:aws:iam::'
+
+AWS_JANITOR_ROLE_NAME = 'ncbi-elasticblast-janitor-role'
 
 # Kubernetes job names
 
@@ -318,5 +322,5 @@ ELB_AWS_JANITOR_CFN_TEMPLATE = 'https://elb-camacho.s3.amazonaws.com/templates/e
 QUERY_LIST_EXT = '.query-list'
 
 ELB_DFLT_NUM_BATCHES_FOR_TESTING = 100
-ELB_DFLT_LOGLEVEL = 'INFO'
+ELB_DFLT_LOGLEVEL = 'DEBUG'
 ELB_DFLT_LOGFILE = 'elastic-blast.log'

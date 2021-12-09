@@ -28,6 +28,7 @@ Created: Tue 09 Feb 2021 03:52:31 PM EDT
 import os
 from dataclasses import dataclass
 from dataclasses import InitVar, field, fields, asdict
+from dataclasses_json import dataclass_json, LetterCase, config
 import getpass
 from hashlib import md5
 import configparser
@@ -37,7 +38,10 @@ import socket
 import logging
 import shlex
 from collections import defaultdict
-from typing import Optional, List
+import json
+import boto3 # type: ignore
+from enum import Enum
+from typing import Optional, List, Dict, Any
 from typing import cast
 from . import VERSION
 from .constants import CSP, ElbCommand
@@ -77,25 +81,28 @@ from .constants import SYSTEM_MEMORY_RESERVE, ELB_AWS_ARM_INSTANCE_TYPE_REGEX
 from .constants import ELB_DFLT_AWS_NUM_CPUS, ELB_DFLT_GCP_NUM_CPUS
 from .constants import ELB_S3_PREFIX, ELB_GCS_PREFIX, ELB_UNKNOWN_MAX_NUMBER_OF_CONCURRENT_JOBS
 from .constants import AWS_ROLE_PREFIX, CFG_CP_AWS_AUTO_SHUTDOWN_ROLE
-from .constants import BLASTDB_ERROR
-from .util import validate_gcp_string, validate_aws_region
+from .constants import BLASTDB_ERROR, ELB_UNKNOWN
+from .util import validate_gcp_string, check_aws_region_for_invalid_characters
 from .util import validate_gke_cluster_name, ElbSupportedPrograms
 from .util import get_query_batch_size
-from .util import UserReportError
+from .util import UserReportError, safe_exec
+from .util import gcp_get_regions
 from .gcp_traits import get_machine_properties as gcp_get_machine_properties
 from .aws_traits import get_machine_properties as aws_get_machine_properties
+from .aws_traits import get_regions as aws_get_regions
 from .aws_traits import create_aws_config
 from .base import InstanceProperties, PositiveInteger, Percentage
 from .base import ParamInfo, ConfigParserToDataclassMapper, DBSource, MemoryStr
 from .config import validate_cloud_storage_object_uri, _validate_csp
 from .db_metadata import DbMetadata, get_db_metadata
-from .tuner import get_mem_limit
+from .tuner import get_mem_limit, get_machine_type, get_mt_mode, get_batch_length
+from .tuner import MTMode
 
 
 # Config parameter types
 
 class CloudURI(str):
-    """A subclass of str that only acceppts valid cloud bucket URIs and
+    """A subclass of str that only accepts valid cloud bucket URIs and
     computes md5 hash value of the URI. The value
     is validated before object creation. The hashed value is available via
     class attribute md5 or via method compute_md5"""
@@ -121,23 +128,52 @@ class CloudURI(str):
             self.md5 = short_digest
         return self.md5
 
+    def get_cloud_provider(self) -> CSP:
+        """Find URI's cloud provider"""
+        if self.startswith(ELB_S3_PREFIX):
+            return CSP.AWS
+        elif self.startswith(ELB_GCS_PREFIX):
+            return CSP.GCP
+        else:
+            raise ValueError(f'Unrecognized cloud bucket prefix in: "{self}". Object URI must start with {ELB_GCS_PREFIX} or {ELB_S3_PREFIX}.')
+
 
 class GCPString(str):
     """A subclass of str that only accepts valid GCP names. The value
-    is validated before object creation"""
+    is screend for invalid characters before object creation"""
     def __new__(cls, value):
         """Constructor, validates that argumant is a valid GCP name"""
         validate_gcp_string(str(value))
         return super(cls, cls).__new__(cls, value)
 
+    def validate(self, dry_run: bool = False):
+        """ Validate the value of this object is one of the valid GCP
+        regions. """
+        if dry_run: return
+        regions = gcp_get_regions()
+        if not regions:
+            raise RuntimeError(f'Got no GCP regions')
+        if self not in regions:
+            msg = f'{self} is not a valid GCP region'
+            raise ValueError(msg)
+
 
 class AWSRegion(str):
     """A subclass of str that only accepts valid AWS strings. The value
-    is validated before object creation"""
+    is screened for invalid characters before object creation"""
     def __new__(cls, value):
         """Constructor, validates that argumant is a valid GCP name"""
-        validate_aws_region(str(value))
+        check_aws_region_for_invalid_characters(str(value))
         return super(cls, cls).__new__(cls, value)
+
+    def validate(self, dry_run: bool = False):
+        """ Validate the value of this object is one of the valid AWS
+        regions. Requires AWS credentials to invoke proper APIs """
+        if dry_run: return
+        regions = aws_get_regions()
+        if str(self) not in regions:
+            msg = f'{str(self)} is not a valid AWS region'
+            raise ValueError(msg)
 
 
 class BLASTProgram(str):
@@ -154,8 +190,10 @@ class BLASTProgram(str):
 # Classes that define config sections
 # Classes that inherit from ConfigParserToDataMapper can be initialized
 # from a ConfigParser object. They must define mapping attribute where
-# each config paraeter, defined as a dataclass atribute is mapped to an
+# each config parameter, defined as a dataclass atribute is mapped to an
 # parameter in the ConfigParser object.
+# Note that parameters may be in different ConfigParser sections than a
+# corresponding class.
 
 @dataclass
 class CloudProviderBaseConfig:
@@ -164,8 +202,10 @@ class CloudProviderBaseConfig:
     from it."""
     # name of a cloud provider, must be initialized by a child class
     cloud: CSP = field(init=False)
+    region: str
 
 
+@dataclass_json(letter_case=LetterCase.KEBAB)
 @dataclass
 class GCPConfig(CloudProviderBaseConfig, ConfigParserToDataclassMapper):
     """GCP config for ElasticBLAST"""
@@ -174,6 +214,7 @@ class GCPConfig(CloudProviderBaseConfig, ConfigParserToDataclassMapper):
     zone: GCPString
     network: Optional[str] = None
     subnet: Optional[str] = None
+    user: Optional[str] = None
 
     # mapping to class attributes to ConfigParser parameters so that objects
     # can be initialized from ConfigParser objects
@@ -181,19 +222,24 @@ class GCPConfig(CloudProviderBaseConfig, ConfigParserToDataclassMapper):
                'region': ParamInfo(CFG_CLOUD_PROVIDER, CFG_CP_GCP_REGION),
                'zone': ParamInfo(CFG_CLOUD_PROVIDER, CFG_CP_GCP_ZONE),
                'cloud': None,
+               'user': None,
                'network': ParamInfo(CFG_CLOUD_PROVIDER, CFG_CP_GCP_NETWORK),
                'subnet': ParamInfo(CFG_CLOUD_PROVIDER, CFG_CP_GCP_SUBNETWORK)}
  
     def __post_init__(self):
         self.cloud = CSP.GCP
+        self.user = ELB_UNKNOWN
+
+        p = safe_exec('gcloud config get-value account')
+        if p.stdout:
+            self.user = p.stdout.decode('utf-8').rstrip()
 
     def validate(self, errors: List[str], task: ElbCommand):
         """Validate config"""
         if bool(self.network) != bool(self.subnet):
             errors.append('Both gcp-network and gcp-subnetwork need to be specified if one of them is specified')
 
-    
-
+@dataclass_json(letter_case=LetterCase.KEBAB)
 @dataclass
 class AWSConfig(CloudProviderBaseConfig, ConfigParserToDataclassMapper):
     """AWS config for ElasticBLAST"""
@@ -207,6 +253,7 @@ class AWSConfig(CloudProviderBaseConfig, ConfigParserToDataclassMapper):
     batch_service_role: Optional[str] = None
     spot_fleet_role: Optional[str] = None
     auto_shutdown_role: Optional[str] = None
+    user : Optional[str] = None
 
     mapping = {'region': ParamInfo(CFG_CLOUD_PROVIDER, CFG_CP_AWS_REGION),
                'vpc': ParamInfo(CFG_CLOUD_PROVIDER, CFG_CP_AWS_VPC),
@@ -218,11 +265,13 @@ class AWSConfig(CloudProviderBaseConfig, ConfigParserToDataclassMapper):
                'batch_service_role': ParamInfo(CFG_CLOUD_PROVIDER, CFG_CP_AWS_BATCH_SERVICE_ROLE),
                'spot_fleet_role': ParamInfo(CFG_CLOUD_PROVIDER, CFG_CP_AWS_SPOT_FLEET_ROLE),
                'auto_shutdown_role': ParamInfo(CFG_CLOUD_PROVIDER, CFG_CP_AWS_AUTO_SHUTDOWN_ROLE),
-               'cloud': None}
+               'cloud': None,
+               'user': None}
 
 
     def __post_init__(self):
         self.cloud = CSP.AWS
+        self.user = boto3.client('sts').get_caller_identity()['Arn']
 
     def validate(self, errors: List[str], task: ElbCommand):
         """Validate config"""
@@ -236,28 +285,18 @@ class AWSConfig(CloudProviderBaseConfig, ConfigParserToDataclassMapper):
         if self.auto_shutdown_role and not str(self.auto_shutdown_role).startswith(AWS_ROLE_PREFIX):
             errors.append(f'{CFG_CLOUD_PROVIDER}.{CFG_CP_AWS_AUTO_SHUTDOWN_ROLE} must start with {AWS_ROLE_PREFIX}')
 
+
+@dataclass_json(letter_case=LetterCase.KEBAB)
 @dataclass
 class BlastConfig(ConfigParserToDataclassMapper):
     """ElasticBLAST BLAST parameters"""
-    # these are additonal parameters to class constructor, not part of config
-    # spec
-    cloud_provider: InitVar[CloudProviderBaseConfig]
-    machine_type: InitVar[str]
-    num_cpus: InitVar[PositiveInteger]
-
-    # these are config parameters
     program: BLASTProgram  # maybe enum?
     db: str
     queries_arg: str
-    # This field is required only when machine-type == optimal.
-    mem_limit: MemoryStr = MemoryStr(ELB_NOT_INITIALIZED_MEM)
     batch_len: PositiveInteger = PositiveInteger(ELB_NOT_INITIALIZED_NUM)
-    db_source: DBSource = field(init=False)
     queries: List[str] = field(default_factory=list, init=False)
     options: str = f'-outfmt {ELB_DFLT_OUTFMT}'
-    # FIXME: Consider moving mem_request and mem_limit to ClusterConfig
-    mem_request: Optional[MemoryStr] = field(init=False)
-    taxidlist: Optional[str] = field(init=False, default=None)
+    taxidlist: Optional[str] = None
     db_mem_margin: float = ELB_BLASTDB_MEMORY_MARGIN
     user_provided_batch_len: bool = False
 
@@ -266,13 +305,10 @@ class BlastConfig(ConfigParserToDataclassMapper):
 
     mapping = {'program': ParamInfo(CFG_BLAST, CFG_BLAST_PROGRAM),
                'db': ParamInfo(CFG_BLAST, CFG_BLAST_DB),
-               'db_source': ParamInfo(CFG_BLAST, CFG_BLAST_DB_SRC),
                'queries_arg': ParamInfo(CFG_BLAST, CFG_BLAST_QUERY),
                'queries': None,
                'batch_len': ParamInfo(CFG_BLAST, CFG_BLAST_BATCH_LEN),
                'options': ParamInfo(CFG_BLAST, CFG_BLAST_OPTIONS),
-               'mem_limit': ParamInfo(CFG_BLAST, CFG_BLAST_MEM_LIMIT),
-               'mem_request': ParamInfo(CFG_BLAST, CFG_BLAST_MEM_REQUEST),
                # taxid list is parsed from BLAST options
                'taxidlist': None,
                'db_mem_margin': ParamInfo(CFG_BLAST, CFG_BLAST_DB_MEM_MARGIN),
@@ -280,39 +316,9 @@ class BlastConfig(ConfigParserToDataclassMapper):
                'user_provided_batch_len': None}
                
 
-    def __post_init__(self, cloud_provider, machine_type, num_cpus):
-        self.db_source = DBSource[cloud_provider.cloud.name]
-
-        if self.batch_len == ELB_NOT_INITIALIZED_NUM:
-            self.batch_len = PositiveInteger(get_query_batch_size(self.program))
-        else:
-            logging.debug(f'User provided batch length {self.batch_len}')
-            self.user_provided_batch_len = True
-
-        if not self.mem_request:
-            self.mem_request = MemoryStr('0.5G')
-
-        if self.mem_limit == ELB_NOT_INITIALIZED_MEM:
-            if machine_type == 'optimal':
-                msg = 'You specified "optimal" cluster.machine-type, which requires configuring blast.mem-limit. Please provide that configuration parameter or change cluster.machine-type.'
-                raise UserReportError(returncode=INPUT_ERROR, message=msg)
-            self.mem_limit = get_mem_limit(cloud_provider.cloud, machine_type, num_cpus,
-                    cloud_region=cloud_provider.region)
-
+    def __post_init__(self):
         if self.options.find('-outfmt') < 0:
             self.options += f' -outfmt {ELB_DFLT_OUTFMT}'
-
-        try:
-            self.db_metadata = get_db_metadata(self.db, ElbSupportedPrograms().get_db_mol_type(self.program),
-                                               self.db_source)
-        except FileNotFoundError:
-            # database metadata file is not mandatory for a user database (yet) EB-1308
-            logging.info('No database metadata')
-            if not self.db.startswith(ELB_S3_PREFIX) and not self.db.startswith(ELB_GCS_PREFIX):
-                raise UserReportError(returncode=BLASTDB_ERROR,
-                                      message=f'Metadata for BLAST database "{self.db}" was not found. Please, make sure that the database exists and database molecular type corresponds to your blast program: "{self.program}". To get a list of NCBI provided databases, please see https://github.com/ncbi/blast_plus_docs#blast-databases.')
-            else:
-                logging.warning('Database metadata file was not provided. We recommend creating and providing a BLAST database metadata file. Benefits include better elastic-blast performance and error checking. Please, see https://blast.ncbi.nlm.nih.gov/doc/elastic-blast/tutorials/create-blastdb-metadata.html for more information and instructions.')
 
 
     def validate(self, errors: List[str], task: ElbCommand):
@@ -320,6 +326,18 @@ class BlastConfig(ConfigParserToDataclassMapper):
         if task != ElbCommand.SUBMIT:
             return
 
+        UNSUPPORTED_OPTIONS = set([
+            '-remote',
+            '-seqidlist',
+            '-negative_seqidlist',
+            '-gilist',
+            '-negative_gilist',
+            '-filtering_db',
+            '-use_index',
+            '-index_name',
+            '-in_pssm',
+            '-in_msa'
+        ])
         for query_file in self.queries_arg.split():
             if query_file.startswith(ELB_S3_PREFIX) or query_file.startswith(ELB_GCS_PREFIX):
                 try:
@@ -327,30 +345,38 @@ class BlastConfig(ConfigParserToDataclassMapper):
                 except ValueError as err:
                     errors.append(f'Incorrect queries URI "{query_file}": {str(err)}')
         try:
-            shlex.split(self.options)
+            options = shlex.split(self.options)
+            unsupported_options = set(options).intersection(UNSUPPORTED_OPTIONS)
+            if unsupported_options:
+                unsup_opts_str = ', '.join(map(lambda x: "'" + x + "'", unsupported_options))
+                if len(unsupported_options) == 1:
+                    msg = f"The BLAST+ option {unsup_opts_str} is not supported in ElasticBLAST. Please remove this command line option from your configuration and try again."
+                else:
+                    msg = f"The BLAST+ options {unsup_opts_str} are not supported in ElasticBLAST. Please remove these command line options from your configuration and try again."
+                errors.append(msg) 
         except ValueError as err:
             errors.append(f'Incorrect BLAST options: {str(err)} in "{self.options}"')
 
 
+@dataclass_json(letter_case=LetterCase.KEBAB)
 @dataclass
 class ClusterConfig(ConfigParserToDataclassMapper):
     """ElasticBLAST cluster config"""
-    # these are additinal parameters for class constructor, not config
-    # parameters
-    cloud_provider: InitVar[CloudProviderBaseConfig]
-
-    # these are config parameters
     results: CloudURI
-    name: str = field(init=False)
+    name: str = ''
     machine_type: str = ''
-    pd_size: str = field(init=False)
+    pd_size: str = ''
     num_cpus: PositiveInteger = PositiveInteger(ELB_NOT_INITIALIZED_NUM)
+    # This field is required only when machine-type == optimal.
+    mem_limit: MemoryStr = MemoryStr(ELB_NOT_INITIALIZED_MEM)
+    mem_request: Optional[MemoryStr] = None
     num_nodes: PositiveInteger = PositiveInteger(ELB_DFLT_NUM_NODES)
     use_preemptible: bool = ELB_DFLT_USE_PREEMPTIBLE
     disk_type: str = ELB_DFLT_AWS_DISK_TYPE
     iops: Optional[int] = None
     bid_percentage: Percentage = Percentage(ELB_DFLT_AWS_SPOT_BID_PERCENTAGE)
     labels: str = ''
+    db_source: DBSource = field(init=False)
     use_local_ssd: bool = False
     enable_stackdriver: bool = False
     dry_run: bool = False
@@ -362,12 +388,15 @@ class ClusterConfig(ConfigParserToDataclassMapper):
                'machine_type': ParamInfo(CFG_CLUSTER, CFG_CLUSTER_MACHINE_TYPE),
                'pd_size': ParamInfo(CFG_CLUSTER, CFG_CLUSTER_PD_SIZE),
                'num_cpus': ParamInfo(CFG_CLUSTER, CFG_CLUSTER_NUM_CPUS),
+               'mem_limit': ParamInfo(CFG_BLAST, CFG_BLAST_MEM_LIMIT),
+               'mem_request': ParamInfo(CFG_BLAST, CFG_BLAST_MEM_REQUEST),
                'num_nodes': ParamInfo(CFG_CLUSTER, CFG_CLUSTER_NUM_NODES),
                'use_preemptible': ParamInfo(CFG_CLUSTER, CFG_CLUSTER_USE_PREEMPTIBLE),
                'disk_type': ParamInfo(CFG_CLUSTER, CFG_CLUSTER_DISK_TYPE),
                'iops': ParamInfo(CFG_CLUSTER, CFG_CLUSTER_PROVISIONED_IOPS),
                'bid_percentage': ParamInfo(CFG_CLUSTER, CFG_CLUSTER_BID_PERCENTAGE),
                'labels': ParamInfo(CFG_CLUSTER, CFG_CLUSTER_LABELS),
+               'db_source': ParamInfo(CFG_BLAST, CFG_BLAST_DB_SRC),
                'use_local_ssd': ParamInfo(CFG_CLUSTER, CFG_CLUSTER_EXP_USE_LOCAL_SSD),
                'enable_stackdriver': ParamInfo(CFG_CLUSTER, CFG_CLUSTER_ENABLE_STACKDRIVER),
                'dry_run': ParamInfo(CFG_CLUSTER, CFG_CLUSTER_DRY_RUN),
@@ -376,40 +405,39 @@ class ClusterConfig(ConfigParserToDataclassMapper):
    }
     
 
-    def __post_init__(self, cloud_provider):
+    def __post_init__(self):
+        # needed for deserialization, because JSON decoder does not know about
+        # types defined here, like CloudURL or MemoryStr
+        self.re_initialize_values()
+        try:
+            cloud_provider = self.results.get_cloud_provider()
+        except ValueError as err:
+            raise UserReportError(returncode=INPUT_ERROR,
+                                  message=f'Incorrect results URI: {err}')
+        self.db_source = DBSource[cloud_provider.name]
+
         # default machine type and pd size
-        if cloud_provider.cloud == CSP.GCP:
-            if not self.machine_type:
-                self.machine_type = ELB_DFLT_GCP_MACHINE_TYPE
+        if cloud_provider == CSP.GCP:
             if not self.pd_size:
                 self.pd_size = ELB_DFLT_GCP_PD_SIZE
         else:
-            if not self.machine_type:
-                self.machine_type = ELB_DFLT_AWS_MACHINE_TYPE
             if not self.pd_size:
                 self.pd_size = ELB_DFLT_AWS_PD_SIZE
 
         # default number of CPUs
         if self.num_cpus == ELB_NOT_INITIALIZED_NUM:
-            if cloud_provider.cloud == CSP.GCP:
+            if cloud_provider == CSP.GCP:
                 self.num_cpus = PositiveInteger(ELB_DFLT_GCP_NUM_CPUS)
             else:
                 self.num_cpus = PositiveInteger(ELB_DFLT_AWS_NUM_CPUS)
 
-        # Sanity check for the instance type and num CPUs
-        if self.machine_type != 'optimal' and not self.dry_run:
-            instance_props = get_instance_props(cloud_provider, self.machine_type)
-            self.num_cores_per_instance = instance_props.ncpus
-            self.instance_memory = MemoryStr(f'{instance_props.memory}G')
-            if self.num_cores_per_instance < self.num_cpus:
-                self.num_cpus = PositiveInteger(self.num_cores_per_instance)
-                if cloud_provider.cloud == CSP.GCP:
-                    self.num_cpus = PositiveInteger(self.num_cores_per_instance - 1)
-                logging.debug(f'Requested number of vCPUs lowered to {self.num_cpus} because of instance type choice {self.machine_type}')
-            
+        # default memory request for a blast search job
+        if not self.mem_request:
+            self.mem_request = MemoryStr('0.5G')
+
         # default cluster name
-        username = getpass.getuser().lower()
-        self.name = f'elasticblast-{username}-{self.results.md5}'
+        if not self.name:
+            self.name = generate_cluster_name(self.results)
 
         # Experimental: this is to facilitate performance testing
         if 'ELB_PERFORMANCE_TESTING' in os.environ:
@@ -421,9 +449,6 @@ class ClusterConfig(ConfigParserToDataclassMapper):
         if task != ElbCommand.SUBMIT:
             return
 
-        if self.use_local_ssd:
-            raise NotImplementedError('Usage of local SSD is EXPERIMENTAL and is not supported with autoscaling')
-
         if self.machine_type.lower() == 'optimal':
             logging.warning("Optimal AWS instance type is NOT FULLY TESTED - for internal development ONLY")
 
@@ -432,6 +457,7 @@ class ClusterConfig(ConfigParserToDataclassMapper):
             errors.append(msg)
 
 
+@dataclass_json(letter_case=LetterCase.KEBAB)
 @dataclass
 class TimeoutsConfig(ConfigParserToDataclassMapper):
     """Timeouts config"""
@@ -442,6 +468,7 @@ class TimeoutsConfig(ConfigParserToDataclassMapper):
                'blast_k8s': ParamInfo(CFG_TIMEOUTS, CFG_TIMEOUT_BLAST_K8S_JOB)}
 
 
+@dataclass_json(letter_case=LetterCase.KEBAB)
 @dataclass
 class AppState:
     """Application state values"""
@@ -470,6 +497,7 @@ class ElasticBlastConfig:
     cluster: ClusterConfig
     timeouts: TimeoutsConfig
     appstate: AppState
+    version: str = VERSION
 
     # FIXME: blast, cluster, and timeouts should be Optional types, but then
     # mypy will insist on checking whether they are None each time they are
@@ -519,8 +547,14 @@ class ElasticBlastConfig:
             ValueError and UserReportError: for incorrect user input
             AttributeError: method called with incorrect arguments
         """
-        # ArrtibuteError is raises below because the exceptions would be
+        # AttributeError is raised below because the exceptions would be
         # caused by incorrect code rather than user input.
+
+        # A single argument of value None creates an empty object: all attributes
+        # are None. This is used for deserialization.
+        if len(args) == 1 and args[0] is None and not kwargs:
+            return
+
         dry_run = False
         if len(args) > 2 or \
                (len(args) > 0 and not isinstance(args[0], configparser.ConfigParser)):
@@ -550,6 +584,92 @@ class ElasticBlastConfig:
             dry_run = kwargs.get('dry_run', False)
 
         # post-init activities
+
+        try:
+            self.cloud_provider.region.validate(dry_run)
+        except ValueError as err:
+            raise UserReportError(returncode=INPUT_ERROR, message=str(err))
+
+        # get database metadata
+        if self.blast and not self.blast.db_metadata:
+            try:
+                self.blast.db_metadata = get_db_metadata(self.blast.db, ElbSupportedPrograms().get_db_mol_type(self.blast.program),
+                                                         self.cluster.db_source)
+            except FileNotFoundError:
+                # database metadata file is not mandatory for a user database (yet) EB-1308
+                logging.info('No database metadata')
+                if not self.blast.db.startswith(ELB_S3_PREFIX) and not self.blast.db.startswith(ELB_GCS_PREFIX):
+                    raise UserReportError(returncode=BLASTDB_ERROR,
+                                          message=f'Metadata for BLAST database "{self.blast.db}" was not found. Please, make sure that the database exists and database molecular type corresponds to your blast program: "{self.blast.program}". To get a list of NCBI provided databases, please see https://github.com/ncbi/blast_plus_docs#blast-databases.')
+                else:
+                    logging.warning('Database metadata file was not provided. We recommend creating and providing a BLAST database metadata file. Benefits include better elastic-blast performance and error checking. Please, see https://blast.ncbi.nlm.nih.gov/doc/elastic-blast/tutorials/create-blastdb-metadata.html for more information and instructions.')
+
+        # select machine type
+        if not self.cluster.machine_type:
+            if self.blast and self.blast.db_metadata:
+                self.cluster.machine_type = get_machine_type(self.cloud_provider.cloud,
+                                                             self.blast.db_metadata,
+                                                             self.cluster.num_cpus,
+                                                             self.cloud_provider.region)
+            else:
+                if self.cloud_provider.cloud == CSP.AWS:
+                    self.cluster.machine_type = ELB_DFLT_AWS_MACHINE_TYPE
+                else:
+                    self.cluster.machine_type = ELB_DFLT_GCP_MACHINE_TYPE
+
+        # Sanity check for instance type and num CPUs
+        if self.cluster.machine_type != 'optimal' and not self.cluster.dry_run:
+            instance_props = get_instance_props(self.cloud_provider.cloud,
+                                                self.cloud_provider.region,
+                                                self.cluster.machine_type)
+            self.cluster.num_cores_per_instance = instance_props.ncpus
+            self.cluster.instance_memory = MemoryStr(f'{instance_props.memory}G')
+            if self.cluster.num_cores_per_instance < self.cluster.num_cpus:
+                self.cluster.num_cpus = PositiveInteger(self.cluster.num_cores_per_instance)
+                if self.cloud_provider.cloud == CSP.GCP:
+                    self.cluster.num_cpus = PositiveInteger(self.cluster.num_cores_per_instance - 1)
+                logging.debug(f'Requested number of vCPUs lowered to {self.cluster.num_cpus} because of instance type choice {self.cluster.machine_type}')
+
+        # default memory limit for a blast search job
+        if self.cluster.mem_limit == ELB_NOT_INITIALIZED_MEM:
+            if self.cluster.machine_type == 'optimal':
+                msg = 'You specified "optimal" cluster.machine-type, which requires configuring blast.mem-limit. Please provide that configuration parameter or change cluster.machine-type.'
+                raise UserReportError(returncode=INPUT_ERROR, message=msg)
+            self.cluster.mem_limit = get_mem_limit(self.cloud_provider.cloud,
+                                                   self.cluster.machine_type,
+                                                   self.cluster.num_cpus,
+                                                   cloud_region=self.cloud_provider.region)
+
+        # set mt_mode
+        if self.blast:
+            mt_mode = MTMode.ZERO
+            if '-mt_mode' in self.blast.options:
+                mode = re.findall(r'-mt_mode\s+(\d)', self.blast.options)
+                if not mode or int(mode[0]) > 1:
+                    raise UserReportError(returncode=INPUT_ERROR,
+                                          message=f'Incorrect -mt_mode parameter value "{mode[0]}" in blast.options: "{self.blast.options}". -mt_mode must be either 0 or 1, please see https://www.ncbi.nlm.nih.gov/books/NBK571452/ for details.')
+                mt_mode = MTMode(int(mode[0]))
+                if self.blast.program in ['tblastx', 'psiblast'] and mt_mode == MTMode.ZERO:
+                    raise UserReportError(returncode=INPUT_ERROR,
+                                          message=f'{self.blast.program} does not support "-mt_mode" option')
+            else:
+                mt_mode = get_mt_mode(self.blast.program, self.blast.options,
+                                      self.blast.db_metadata)
+                if mt_mode == MTMode.ONE:
+                    self.blast.options += f' {mt_mode}'
+
+            # set batch length
+            if self.blast.batch_len == ELB_NOT_INITIALIZED_NUM:
+                self.blast.batch_len = get_batch_length(self.cloud_provider.cloud,
+                                                        self.blast.program,
+                                                        mt_mode,
+                                                        self.cluster.num_cpus,
+                                                        self.blast.db_metadata)
+            else:
+                logging.debug(f'User provided batch length {self.blast.batch_len}')
+                self.blast.user_provided_batch_len = True
+
+
         # set resources labels
         self.cluster.labels = create_labels(self.cloud_provider.cloud,
                                             self.cluster.results,
@@ -595,17 +715,11 @@ class ElasticBlastConfig:
             self.cloud_provider = GCPConfig.create_from_cfg(cfg)
             # for mypy
             self.gcp = cast(GCPConfig, self.cloud_provider)
-            
 
-        self.cluster = ClusterConfig.create_from_cfg(cfg,
-                                     cloud_provider = self.cloud_provider)
+        self.cluster = ClusterConfig.create_from_cfg(cfg)
 
         if task == ElbCommand.SUBMIT:
-            self.blast = BlastConfig.create_from_cfg(cfg,
-                                       cloud_provider = self.cloud_provider,
-                                       machine_type = self.cluster.machine_type,
-                                       num_cpus = self.cluster.num_cpus)
-
+            self.blast = BlastConfig.create_from_cfg(cfg)
 
         self.timeouts = TimeoutsConfig.create_from_cfg(cfg)
         self.appstate = AppState()
@@ -622,7 +736,8 @@ class ElasticBlastConfig:
                               db: Optional[str] = None,
                               queries: Optional[str] = None,
                               dry_run: Optional[bool] = None,
-                              cluster_name: Optional[str] = None):
+                              cluster_name: Optional[str] = None,
+                              machine_type: str = ''):
         """Initialize config object from required parameters"""
         if aws_region and (gcp_project or gcp_region or gcp_zone):
             raise ValueError('Cloud provider config contains entries for more than one cloud provider. Only one cloud provider can be used')
@@ -643,7 +758,7 @@ class ElasticBlastConfig:
             self.gcp = cast(GCPConfig, self.cloud_provider)
 
         self.cluster = ClusterConfig(results = CloudURI(results),
-                                     cloud_provider = self.cloud_provider)
+                                     machine_type = machine_type)
         if cluster_name:
             self.cluster.name = cluster_name
 
@@ -656,10 +771,7 @@ class ElasticBlastConfig:
                 raise ValueError('BLAST queries are missing')
             self.blast = BlastConfig(program = BLASTProgram(program),
                                      db = db,
-                                     queries_arg = queries,
-                                     cloud_provider = self.cloud_provider,
-                                     machine_type = self.cluster.machine_type,
-                                     num_cpus = self.cluster.num_cpus)
+                                     queries_arg = queries)
 
             self.timeouts = TimeoutsConfig()
             self.appstate = AppState()
@@ -722,13 +834,14 @@ class ElasticBlastConfig:
             # validate number of CPUs and memory limit for searching a batch
             # of queries
             if not dry_run and self.cluster.machine_type.lower() != 'optimal':
-                instance_props = get_instance_props(self.cloud_provider,
+                instance_props = get_instance_props(self.cloud_provider.cloud,
+                                                    self.cloud_provider.region,
                                                     self.cluster.machine_type)
                 if instance_props.ncpus < self.cluster.num_cpus:
                     errors.append(f'Requested number of CPUs for a single search job "{self.cluster.num_cpus}" exceeds the number of CPUs ({instance_props.ncpus}) on the selected instance type "{self.cluster.machine_type}". Please, reduce the number of CPUs or select an instance type with more available CPUs.')
 
-                if instance_props.memory - SYSTEM_MEMORY_RESERVE < self.blast.mem_limit.asGB():
-                    errors.append(f'Memory limit "{self.blast.mem_limit}" exceeds memory available on the selected machine type {self.cluster.machine_type}: {instance_props.memory - SYSTEM_MEMORY_RESERVE}GB. Please, select machine type with more memory or lower memory limit')
+                if instance_props.memory - SYSTEM_MEMORY_RESERVE < self.cluster.mem_limit.asGB():
+                    errors.append(f'Memory limit "{self.cluster.mem_limit}" exceeds memory available on the selected machine type {self.cluster.machine_type}: {instance_props.memory - SYSTEM_MEMORY_RESERVE}GB. Please, select machine type with more memory or lower memory limit')
 
                 if self.blast.db_metadata:
                     bytes_to_cache_gb = round(self.blast.db_metadata.bytes_to_cache / (1024 ** 3), 1)
@@ -739,8 +852,33 @@ class ElasticBlastConfig:
             raise UserReportError(returncode=INPUT_ERROR,
                                   message='\n'.join(errors))
 
+    @staticmethod
+    def _clean_dict(indict: Dict[str, Any]):
+        """Remove unimportant config parameters (mapping and equal to None) from
+        the object converted to a dictionary."""
+        remove: List[Any] = []
+        if 'mapping' in indict:
+            remove.append('mapping')
+        for key in indict:
+            if indict[key] is None:
+                remove.append(key)
+        for key in remove:
+            del indict[key]
 
-    def asdict(self):
+        remove = []
+        for key_1 in indict:
+            if not isinstance(indict[key_1], dict):
+                continue
+            if 'mapping' in indict[key_1]:
+                remove.append((key_1, 'mapping'))
+            for key_2 in indict[key_1]:
+                if indict[key_1][key_2] is None:
+                    remove.append((key_1, key_2))
+        for key_1, key_2 in remove:
+            del indict[key_1][key_2]
+
+
+    def asdict(self) -> Dict[str, Any]:
         """Convert ElasticBlastConfig object to a dictionary, removing mapping
         attributes, parameters set to None and cloud_provider, because it is
         the same as aws or gcp"""
@@ -750,27 +888,52 @@ class ElasticBlastConfig:
         if self.cloud_provider is self.aws or self.cloud_provider is self.gcp:
             del retval['cloud_provider']
 
-        remove = []
-        if 'mapping' in retval:
-            remove.append('mapping')
-        for key in retval:
-            if retval[key] is None:
-                remove.append(key)
-        for key in remove:
-            del retval[key]
-
-        remove = []
-        for key_1 in retval:
-            if not isinstance(retval[key_1], dict):
-                continue
-            if 'mapping' in retval[key_1]:
-                remove.append((key_1, 'mapping'))
-            for key_2 in retval[key_1]:
-                if retval[key_1][key_2] is None:
-                    remove.append((key_1, key_2))
-        for key_1, key_2 in remove:
-            del retval[key_1][key_2]
+        self._clean_dict(retval)
         return retval
+
+
+    def to_json(self) -> str:
+        """Serialize to JSON"""
+        config_as_dict = {'blast': self.blast.to_dict(),
+                          'cluster': self.cluster.to_dict(),
+                          'timeouts': self.timeouts.to_dict(),
+                          'appstate': self.appstate.to_dict(), # type: ignore
+                          'version': self.version
+        }
+        if self.cloud_provider.cloud == CSP.AWS:
+            config_as_dict['aws'] = self.aws.to_dict()
+        else:
+            config_as_dict['gcp'] = self.gcp.to_dict()
+
+        self._clean_dict(config_as_dict)
+        return json.dumps(config_as_dict, indent=4, cls=JSONEnumEncoder)
+
+
+    @classmethod
+    def from_json(cls, json_str: str):
+        """Deserialize from a JSON string"""
+        cfg = ElasticBlastConfig(None)
+        cfg_dict = json.loads(json_str)
+        if 'aws' in cfg_dict:
+            cfg.aws = AWSConfig.from_dict(cfg_dict['aws'])  # type: ignore
+            cfg.cloud_provider = cfg.aws
+        elif 'gcp' in cfg_dict:
+            cfg.gcp = GCPConfig.from_dict(cfg_dict['gcp']) # type: ignore
+            cfg.cloud_provider = cfg.gcp
+        cfg.blast = BlastConfig.from_dict(cfg_dict['blast']) # type: ignore
+        cfg.cluster = ClusterConfig.from_dict(cfg_dict['cluster']) # type: ignore
+        cfg.timeouts = TimeoutsConfig.from_dict(cfg_dict['timeouts']) # type: ignore
+        cfg.appstate = AppState.from_dict(cfg_dict['appstate']) # type: ignore
+
+        # blast.user_provided_batch_len is a boolean with a default value that
+        # depends on whether blast.batch_len has the default value, which cannot
+        # be checked after BlastConfig object is initialized and must be set
+        # here by hand to ensure the correct value
+        # FIXME: Changing blast.user_provided_batch_len to blast.default.batch_len
+        # may help setting this value correctly in BlastConfig.__post_init__
+        cfg.blast.user_provided_batch_len = cfg_dict['blast']['user-provided-batch-len']
+
+        return cfg
 
 
     def get_max_number_of_concurrent_blast_jobs(self) -> int:
@@ -778,7 +941,7 @@ class ElasticBlastConfig:
         provided configuration.
         Pre-condition: the object has been initialized
         """
-        assert self.blast.mem_request is not None
+        assert self.cluster.mem_request is not None
         retval = ELB_UNKNOWN_MAX_NUMBER_OF_CONCURRENT_JOBS
         if self.cluster.dry_run:
             return retval
@@ -795,11 +958,16 @@ class ElasticBlastConfig:
         # Catch the event that ELB_NOT_INITIALIZED_NUM is changed to a constant with a small value
         assert mem_num_concurrent_jobs >= 2**32
         if self.cloud_provider.cloud == CSP.AWS:
-            mem_num_concurrent_jobs = int(self.cluster.instance_memory.asGB() / self.blast.mem_limit.asGB()) * self.cluster.num_nodes
-        elif self.blast.mem_request: # to pacify mypy
-            mem_num_concurrent_jobs = int(self.cluster.instance_memory.asGB() / self.blast.mem_request.asGB()) * self.cluster.num_nodes
+            mem_num_concurrent_jobs = int(self.cluster.instance_memory.asGB() / self.cluster.mem_limit.asGB()) * self.cluster.num_nodes
+        elif self.cluster.mem_request: # to pacify mypy
+            mem_num_concurrent_jobs = int(self.cluster.instance_memory.asGB() / self.cluster.mem_request.asGB()) * self.cluster.num_nodes
         return min((cpu_num_concurrent_jobs, mem_num_concurrent_jobs))
 
+
+def generate_cluster_name(results: CloudURI) -> str:
+    """ Returns the default cluster name """
+    username = getpass.getuser().lower()
+    return f'elasticblast-{username}-{results.md5}'
 
 
 def create_labels(cloud_provider: CSP,
@@ -904,15 +1072,24 @@ def sanitize_aws_tag(input_label: str) -> str:
     return re.sub(r'[^\w_\.:/+@]', '-', input_label, flags=re.ASCII)[:AWS_MAX_TAG_LENGTH]
 
 
-def get_instance_props(cloud_provider: CloudProviderBaseConfig, machine_type: str) -> InstanceProperties:
+def get_instance_props(cloud_provider: CSP, region: str, machine_type: str) -> InstanceProperties:
     """Get properties of a cloud instance."""
     try:
-        if cloud_provider.cloud == CSP.GCP:
+        if cloud_provider == CSP.GCP:
             instance_props = gcp_get_machine_properties(machine_type)
         else:
-            aws = cast(AWSConfig, cloud_provider)
-            instance_props = aws_get_machine_properties(machine_type, create_aws_config(aws.region))
+            instance_props = aws_get_machine_properties(machine_type, create_aws_config(region))
     except NotImplementedError as err:
         raise UserReportError(returncode=INPUT_ERROR,
                               message=f'Invalid machine type. Machine type name "{machine_type}" is incorrect or not supported by ElasticBLAST: {str(err)}')
     return instance_props
+
+
+class JSONEnumEncoder(json.JSONEncoder):
+    """JSON encoder that handles basic types and Enum"""
+    def default(self, o):
+        """Handle encoding"""
+        if issubclass(type(o), Enum):
+            return o.name
+        else:
+            return json.JSONEncoder(self, o)

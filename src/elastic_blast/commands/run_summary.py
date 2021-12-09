@@ -197,6 +197,8 @@ def _run_summary(args, cfg, clean_up_stack):
     summary['runtime'] = {}
     #summary['runtime']['wallClock'] = PositiveInteger(blast_run_time)
     summary['runtime']['wallClock'] = blast_run_time
+    # Map from instance id to an array of all instance registered times
+    instance_info = defaultdict(list)
     for phase in run.phase_names:
         phase_data = run.phases[phase]
         # List of JobInfo tuples, one tuple per job
@@ -217,6 +219,10 @@ def _run_summary(args, cfg, clean_up_stack):
         cpu_percent = list(map(lambda info: int(info.cpu_info.percent) if info.cpu_info else -1, phase_data))
         if max(cpu_percent) > -1:
             summary['runtime'][phase]['cpuPercent'] = cpu_percent
+        for ji in phase_data:
+            instance_info[ji.instance_id].append(ji.start)
+            instance_info[ji.instance_id].append(ji.end)
+
 
     summary['blastData'] = {}
     if hasattr(run, 'query_length'):
@@ -229,7 +235,13 @@ def _run_summary(args, cfg, clean_up_stack):
     if hasattr(run, 'query_length') and hasattr(run, 'max_vcpus'):
         vcpus = run.max_vcpus
         if blast_run_time > 0 and vcpus > 0:
-            summary['lettersPerSecondPerCpu'] = int(round(run.query_length / blast_run_time / vcpus))
+            summary['lettersPerSecondPerCpuFixedClusterSize'] = round(run.query_length / blast_run_time / vcpus, 2)
+        if hasattr(run, 'instance_vcpus') and run.instance_vcpus > 0 and instance_info:
+            total_instance_time = 0
+            for instance_times in instance_info.values():
+                total_instance_time += max(instance_times) - min(instance_times)
+            cpu_seconds = run.instance_vcpus * total_instance_time / 1000
+            summary['lettersPerSecondPerCpu'] = round(run.query_length / cpu_seconds, 2)
     summary['numJobs'] = run.njobs
     summary['numJobsFailed'] = nfailed
     summary['exitCode'] = 0 if nfailed == 0 else 1 

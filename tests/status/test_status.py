@@ -30,7 +30,7 @@ from elastic_blast.config import configure
 from elastic_blast.elb_config import ElasticBlastConfig
 
 from elastic_blast.gcp import ElasticBlastGcp
-from elastic_blast.constants import ElbCommand
+from elastic_blast.constants import ElbCommand, ElbStatus
 from tests.utils import gke_mock
 
 DATA_DIR = os.path.join(os.path.dirname(__file__), 'data')
@@ -41,5 +41,6 @@ def test_status(gke_mock):
     args = Namespace(cfg=INI)
     cfg = ElasticBlastConfig(configure(args), task = ElbCommand.STATUS)
     elastic_blast = ElasticBlastGcp(cfg)
-    counters, _ = elastic_blast.check_status()
+    status, counters, _ = elastic_blast.check_status()
+    assert status == ElbStatus.FAILURE
     assert counters ==  {'failed': 1, 'succeeded': 1, 'pending': 1, 'running': 1}

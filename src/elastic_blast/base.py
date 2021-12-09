@@ -27,7 +27,7 @@ Created: Tue 09 Feb 2021 03:52:31 PM EDT
 
 import configparser
 import re
-from dataclasses import dataclass, field, fields, _MISSING_TYPE
+from dataclasses import dataclass, field, Field, fields, _MISSING_TYPE
 from enum import Enum, auto
 from typing import Dict, List, Union, Optional, NamedTuple
 
@@ -289,6 +289,25 @@ class ConfigParserToDataclassMapper:
                 cls.initialize_value(field, mapped, parser, errors)
 
 
+    @staticmethod
+    def get_non_union_type(field: Field):
+        """For a dataclass field, if the type is a Union, return the first type
+        that is not None. Otherwise return field's type.
+
+        Arguments:
+            field: Dataclass field
+
+        Returns:
+            If fieds.type is a Union, then the first type that is not None,
+            otherwise field.type"""
+        ftype = field.type
+        # FIXME: in python3.8 this can be done via typing.get_origin()
+        if getattr(ftype, '__origin__', None) is not None and \
+               ftype.__origin__ == Union:
+            ftype = [t for t in ftype.__args__ if t != type(None)][0]
+        return ftype
+
+
     @classmethod
     def initialize_value(cls, field, mapped, parser, errors):
         """Helper function to initialize a single attribute from a
@@ -301,14 +320,10 @@ class ConfigParserToDataclassMapper:
             errors: Error messages will be added to thie list
         """
         # dataclass attribute type
-        ftype = field.type
         # Union types cannot be initialized, types like Optional[int] are
         # really Union[int, None]. If the attribute type is a Union,
         # initialize the first type that is not None.
-        # FIXME: in python3.8 this can be done via typing.get_origin()
-        if getattr(ftype, '__origin__', None) is not None and \
-               ftype.__origin__ == Union:
-            ftype = [t for t in ftype.__args__ if t != type(None)][0]
+        ftype = cls.get_non_union_type(field)
 
         # if attribute type is an enum, initialize it from str
         if issubclass(ftype, Enum):
@@ -341,6 +356,26 @@ class ConfigParserToDataclassMapper:
         return value
 
 
+    def re_initialize_values(self):
+        """Reinitialize all dataclass attributes to have them in the appropriate
+        type. Useful if an object was initialized with values of only basic types,
+        for example in deserializaton."""
+        for field in fields(self):
+            if field.name == 'mapping':
+                continue
+            # If this function is called from self.__post_init__, not all
+            # attributes will be initialized yet. Skip those.
+            try:
+                value = self.__getattribute__(field.name)
+            except AttributeError:
+                continue
+            if value is None:
+                continue
+            ftype = self.get_non_union_type(field)
+            if ftype != type(self.__getattribute__(field.name)):
+                self.__setattr__(field.name, ftype(value))
+
+
     # FIXME: this function does not really belong in this class and should
     # be part of another class or a class decorator
     def __setattr__(self, name, value):
@@ -348,7 +383,7 @@ class ConfigParserToDataclassMapper:
         attribute values. Raises AttributeError if a value is being assigned to
         a new class attribute."""
         if name not in [i.name for i in fields(self)]:
-            raise AttributeError(f'Attribute {name} does not exit in class {type(self)}')
+            raise AttributeError(f'Attribute {name} does not exist in class {type(self)}')
         super().__setattr__(name, value)
 
 

@@ -128,7 +128,6 @@ class TestSplitResultMatchesOriginal(unittest.TestCase):
 {query_num}{query_num}
 {self.batch_dir}
 batch_{query_num}
-{self.batch_dir}/batch_{query_num}.fa
 {TEST_RESULTS}
 ${{SOME_NON_EXISTING_VARIABLE}}
 {self.value_of_test_substitution_variable}"""

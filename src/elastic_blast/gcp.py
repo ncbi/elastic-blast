@@ -71,6 +71,9 @@ class ElasticBlastGcp(ElasticBlast):
         self.cached_status = None
         self.cached_counts: DefaultDict[str, int] = defaultdict(int)
         self.cached_result = ''
+        # TODO: EB-1356 Change this when cloud submission works
+        # with local SSD
+        self.cloud_job_submission = self.cloud_job_submission and not self.cfg.cluster.use_local_ssd
 
     def cloud_query_split(self, query_files: List[str]) -> None:
         """ Submit the query sequences for splitting to the cloud.
@@ -106,8 +109,9 @@ class ElasticBlastGcp(ElasticBlast):
         if len(queries) > k8s_job_limit:
             batch_len = self.cfg.blast.batch_len
             suggested_batch_len = int(query_length / k8s_job_limit) + 1
-            msg = f'The batch size specified ({batch_len}) led to creating {len(queries)} kubernetes jobs, which exceeds the limit on number of jobs ({k8s_job_limit}).' \
-                  f' Please increase the batch-len parameter to at least {suggested_batch_len}.'
+            msg = 'Your ElasticBLAST search has failed and its computing resources will be deleted.\n' \
+                  f'The batch size specified ({batch_len}) led to creating {len(queries)} kubernetes jobs, which exceeds the limit on number of jobs ({k8s_job_limit}).' \
+                  f' Please increase the batch-len parameter to at least {suggested_batch_len} and repeat the search.'
             raise UserReportError(INPUT_ERROR, msg)
 
     def submit(self, query_batches: List[str], query_length, one_stage_cloud_query_split: bool) -> None:
@@ -128,13 +132,14 @@ class ElasticBlastGcp(ElasticBlast):
             kubernetes.submit_job_submission_job(self.cfg)
         else:
             self._generate_and_submit_jobs(query_batches)
-            logging.info('Enable autoscaling')
-            cmd = f'gcloud container clusters update {self.cfg.cluster.name} --enable-autoscaling --node-pool default-pool --min-nodes 0 --max-nodes {self.cfg.cluster.num_nodes} --project {self.cfg.gcp.project} --zone {self.cfg.gcp.zone}'
-            if self.dry_run:
-                logging.info(cmd)
-            else:
-                safe_exec(cmd)
-            logging.info('Done enabling autoscaling')
+            if self.cfg.cluster.num_nodes != 1:
+                logging.info('Enable autoscaling')
+                cmd = f'gcloud container clusters update {self.cfg.cluster.name} --enable-autoscaling --node-pool default-pool --min-nodes 0 --max-nodes {self.cfg.cluster.num_nodes} --project {self.cfg.gcp.project} --zone {self.cfg.gcp.zone}'
+                if self.dry_run:
+                    logging.info(cmd)
+                else:
+                    safe_exec(cmd)
+                logging.info('Done enabling autoscaling')
 
         # Sync mode disabled per EB-700
         #if args.sync:
@@ -163,37 +168,49 @@ class ElasticBlastGcp(ElasticBlast):
         self.cleanup_stack.clear()
         self.cleanup_stack.append(lambda: kubernetes.collect_k8s_logs(self.cfg))
 
-    def check_status(self, extended=False) -> Tuple[Dict[str, int], str]:
-        """ Check job status, if anything wrong with cluster return empty
-            result.
+    def check_status(self, extended=False) -> Tuple[ElbStatus, Dict[str, int], str]:
+        """ Check execution status of ElasticBLAST search
+        Parameters:
+            extended - do we need verbose information about jobs
+        Returns:
+            tuple of
+                status - cluster status, ElbStatus
+                counts - job counts for all job states
+                verbose_result - detailed info about jobs
         """
         try:
             return self._check_status(extended)
         except SafeExecError as err:
             # cluster is not valid, return empty result
-            logging.info(err.message.strip())
-            return defaultdict(int), ''
+            msg = err.message.strip()
+            logging.info(msg)
+            return ElbStatus.UNKNOWN, defaultdict(int), msg
 
-    def _check_status(self, extended=False) -> Tuple[Dict[str, int], str]:
+    def _check_status(self, extended=False) -> Tuple[ElbStatus, Dict[str, int], str]:
+        # We cache only status from gone cluster - it can't change anymore
         if self.cached_status:
-            return self.cached_counts, self.cached_result
+            return self.cached_status, self.cached_counts, self.cached_result
         counts: DefaultDict[str, int] = defaultdict(int)
         self._enable_gcp_apis()
+        status = self._status_from_results()
+        if status != ElbStatus.UNKNOWN:
+            return status, self.cached_counts, self.cached_result
 
         gke_status = check_cluster(self.cfg)
         if not gke_status:
-            if self.dry_run:
-                return {}, str(ElbStatus.SUBMITTING)
-            else:
-                raise SafeExecError(returncode=CLUSTER_ERROR,
-                                message=f'Cluster {self.cfg.cluster.name} was not found')
+            return ElbStatus.UNKNOWN, {}, f'Cluster "{self.cfg.cluster.name}" was not found'
 
         logging.debug(f'GKE status: {gke_status}')
         if gke_status in [GKE_CLUSTER_STATUS_RECONCILING, GKE_CLUSTER_STATUS_PROVISIONING]:
-            return {}, str(ElbStatus.SUBMITTING)
+            return ElbStatus.SUBMITTING, {}, ''
 
         if gke_status == GKE_CLUSTER_STATUS_STOPPING:
-            return {}, 'DELETING'
+            # TODO: This behavior is consistent with current tests, consider returning a value
+            # as follows, and changing test in tests/app/test_elasticblast.py::test_cluster_error
+            # return ElbStatus.DELETING, {}, ''
+            raise UserReportError(returncode=CLUSTER_ERROR,
+                            message=f'Cluster "{self.cfg.cluster.name}" exists, but is not responding. '
+                                'It may be still initializing, please try checking status again in a few minutes.')
 
         k8s_ctx = self._get_gke_credentials()
         selector = 'app=blast'
@@ -229,8 +246,48 @@ class ElasticBlastGcp(ElasticBlast):
         # correct number of pending jobs: running jobs were counted twice,
         # as running and pending
         counts['pending'] -= counts['running']
+        status = ElbStatus.UNKNOWN
+        if counts['failed'] > 0:
+            status = ElbStatus.FAILURE
+        elif counts['running'] > 0 or counts['pending'] > 0:
+            status = ElbStatus.RUNNING
+        elif counts['succeeded']:
+            status = ElbStatus.SUCCESS
+        else:
+            # TODO: check init-pv and submit-jobs status
+            status = ElbStatus.SUBMITTING
 
-        return counts, ''
+        return status, counts, ''
+
+    def _parse_results_status(self, text):
+        for line in text.split('\n'):
+            parts = line .split()
+            if len(parts) != 2:
+                continue
+            try:
+                count = int(parts[1])
+                self.cached_counts[parts[0].lower()] = count
+            except ValueError:
+                pass
+    
+    def _status_from_results(self):
+        cfg = self.cfg
+        status = ElbStatus.UNKNOWN
+        with open_for_read(os.path.join(cfg.cluster.results, ELB_METADATA_DIR, 'FAILURE.txt')) as f:
+            res = f.read()
+            if len(res):
+                status = ElbStatus.FAILURE
+                self.cached_status = status
+                self.cached_result = res
+                return status
+        with open_for_read(os.path.join(cfg.cluster.results, ELB_METADATA_DIR, 'DONE.txt')) as f:
+            done = f.read()
+            if len(done):
+                status = ElbStatus.SUCCESS
+                self.cached_status = status
+                self._parse_results_status(done)
+        return status
+
 
     def delete(self):
         enable_gcp_api(self.cfg)
@@ -248,8 +305,8 @@ class ElasticBlastGcp(ElasticBlast):
         clean_up_stack.append(lambda: logging.debug('Before creating cluster'))
         clean_up_stack.append(lambda: delete_cluster_with_cleanup(cfg))
         clean_up_stack.append(lambda: kubernetes.collect_k8s_logs(cfg))
-        subs = self.job_substitutions()
         if self.cloud_job_submission:
+            subs = self.job_substitutions()
             job_template = read_job_template(cfg=cfg)
             s = substitute_params(job_template, subs)
             bucket_job_template = os.path.join(cfg.cluster.results, ELB_METADATA_DIR, 'job.yaml.template')
@@ -260,6 +317,18 @@ class ElasticBlastGcp(ElasticBlast):
 
         self._get_gke_credentials()
 
+        self._label_nodes()
+
+        # EB-1356
+        # Storage initialization includes cloud split (if requested) for regular PV
+        # but not for local SSD - there are many of them and we use batches from GS
+        # We need to include cloud split job and wait for it here or in cloud submission
+        # It would be easier if these jobs - init-pv or init-ssd-{n} and cloud split
+        # comprise a separate label - not unlike app:setup - and we wait on jobs with
+        # this specific label either in initialize storage or in cloud-job-submit.sh
+        # Something like kubectl get jobs -l phase=data-setup or kubectl get pods -l phase=data-setup
+        # I would not reuse app:setup because there can be other dependencies on it,
+        # though it should be looked at.
         logging.info('Initializing storage')
         clean_up_stack.append(lambda: logging.debug('Before initializing storage'))
         kubernetes.initialize_storage(cfg, query_files,
@@ -271,6 +340,34 @@ class ElasticBlastGcp(ElasticBlast):
         else:
             kubernetes.submit_janitor_cronjob(cfg)
 
+    def _label_nodes(self):
+        """ Label nodes by ordinal numbers for proper initialization.
+
+            When we use local SSD the storage of each node should be
+            initialized individually (as opposed to the case of persistent
+            volumes). For this we create number of jobs and assign every init-ssd
+            job to corresponding node using affinity label of form ordinal:{number}.
+            See src/elastic_blast/templates/job-init-local-ssd.yaml.template
+        """
+        use_local_ssd = self.cfg.cluster.use_local_ssd
+        dry_run = self.cfg.cluster.dry_run
+        k8s_ctx = self._get_gke_credentials()
+        kubectl = f'kubectl --context={k8s_ctx}'
+        if use_local_ssd:
+            # Label nodes in the cluster for affinity
+            cmd = kubectl + " get nodes -o jsonpath={.items[*]['metadata.name']}"
+            if dry_run:
+                logging.info(cmd)
+                res = ' '.join([f'gke-node-{i}' for i in range(self.cfg.cluster.num_nodes)])
+            else:
+                proc = safe_exec(cmd)
+                res = proc.stdout.decode()
+            for i, name in enumerate(res.split()):
+                cmd = f'{kubectl} label nodes {name} ordinal={i}'
+                if dry_run:
+                    logging.info(cmd)
+                else:
+                    safe_exec(cmd)
 
     def job_substitutions(self) -> Dict[str, str]:
         """ Prepare substitution dictionary for job generation """
@@ -287,8 +384,8 @@ class ElasticBlastGcp(ElasticBlast):
             'ELB_BLAST_PROGRAM': blast_program,
             'ELB_DB': db,
             'ELB_DB_LABEL': db_label,
-            'ELB_MEM_REQUEST': str(cfg.blast.mem_request),
-            'ELB_MEM_LIMIT': str(cfg.blast.mem_limit),
+            'ELB_MEM_REQUEST': str(cfg.cluster.mem_request),
+            'ELB_MEM_LIMIT': str(cfg.cluster.mem_limit),
             'ELB_BLAST_OPTIONS': cfg.blast.options,
             # FIXME: EB-210
             'ELB_BLAST_TIMEOUT': str(cfg.timeouts.blast_k8s * 60),
@@ -342,75 +439,6 @@ class ElasticBlastGcp(ElasticBlast):
             with open_for_write_immediate(os.path.join(cfg.cluster.results, ELB_METADATA_DIR, ELB_NUM_JOBS_SUBMITTED)) as f:
                 f.write(str(len(job_names)))
 
-    def status(self) -> ElbStatus:
-        # We cache only status from gone cluster - it can't change anymore
-        if self.cached_status:
-            return self.cached_status
-        self._enable_gcp_apis()
-        status = self._status_from_results()
-        if status != ElbStatus.UNKNOWN:
-            return status
-        try:
-            self._get_gke_credentials()
-            counts, _ = self._check_status()
-            if not counts:
-                # empty counts is a result of GKE in PROVISIONING or
-                # RECONCILING state
-                status = ElbStatus.RUNNING
-            elif counts['failed'] > 0:
-                status = ElbStatus.FAILURE
-            elif counts['running'] > 0 or counts['pending'] > 0:
-                status = ElbStatus.RUNNING
-            elif counts['succeeded']:
-                status = ElbStatus.SUCCESS
-            else:
-                # TODO: check init-pv and submit-jobs status
-                status = ElbStatus.SUBMITTING
-        except SafeExecError as err:
-            # Cluster is gone, check results bucket for metadata
-            results_status = self._status_from_results()
-            if results_status == ElbStatus.UNKNOWN:
-                msg = err.message.rstrip().replace('\n', ' | ')
-                logging.debug(f'kubectl error: {msg}')
-                # if the cluster exists, assume it is initializing
-                cluster_name = self.cfg.cluster.name
-                if check_cluster(self.cfg):
-                    message = f'The cluster "{cluster_name}" exists, but is not responding. It may be still initializing, please try checking status again in a few minutes.'
-                else:
-                    message = f'The cluster "{cluster_name}" was not found'
-                raise UserReportError(CLUSTER_ERROR, message)
-            logging.info(err.message.strip())
-            return results_status
-        return status
-
-    def _parse_results_status(self, text):
-        for line in text.split('\n'):
-            parts = line .split()
-            if len(parts) != 2:
-                continue
-            try:
-                count = int(parts[1])
-                self.cached_counts[parts[0].lower()] = count
-            except ValueError:
-                pass
-    
-    def _status_from_results(self):
-        cfg = self.cfg
-        status = ElbStatus.UNKNOWN
-        with open_for_read(os.path.join(cfg.cluster.results, ELB_METADATA_DIR, 'FAILURE.txt')) as f:
-            res = f.read()
-            if len(res):
-                status = ElbStatus.FAILURE
-                self.cached_status = status
-                self.cached_result = res
-                return status
-        with open_for_read(os.path.join(cfg.cluster.results, ELB_METADATA_DIR, 'DONE.txt')) as f:
-            done = f.read()
-            if len(done):
-                status = ElbStatus.SUCCESS
-                self.cached_status = status
-                self._parse_results_status(done)
-        return status
 
     def get_disk_quota(self) -> Tuple[float, float]:
         """ Get the Persistent Disk SSD quota (SSD_TOTAL_GB)
@@ -594,7 +622,7 @@ def delete_cluster_with_cleanup(cfg: ElasticBlastConfig) -> None:
     else:
         logging.debug(f'PD id {" ".join(pds)}')
 
-    # detrmine the course of action based on cluster status
+    # determine the course of action based on cluster status
     while True:
         status = check_cluster(cfg)
         if not status:
@@ -603,7 +631,19 @@ def delete_cluster_with_cleanup(cfg: ElasticBlastConfig) -> None:
                 logging.error(msg)
                 return
             else:
-                raise UserReportError(returncode=CLUSTER_ERROR, message=msg)
+                # TODO: to avoid this hack make delete_cluster_with_cleanup
+                # a method of ElasticBlastGcp
+                elastic_blast = ElasticBlastGcp(cfg, False)
+                status = elastic_blast._status_from_results()
+                if status == ElbStatus.UNKNOWN:
+                    raise UserReportError(returncode=CLUSTER_ERROR, message=msg)
+                # Check for status of gone cluster, delete data if
+                # necessary
+                remove_split_query(cfg)
+                _remove_ancillary_data(cfg, ELB_LOG_DIR)
+                _remove_ancillary_data(cfg, ELB_METADATA_DIR)
+                return
+                
         logging.debug(f'Cluster status "{status}"')
 
         if status == GKE_CLUSTER_STATUS_RUNNING or status == GKE_CLUSTER_STATUS_RUNNING_WITH_ERROR:
@@ -807,6 +847,7 @@ def start_cluster(cfg: ElasticBlastConfig):
     dry_run = cfg.cluster.dry_run
 
     actual_params = ["gcloud", "container", "clusters", "create", cluster_name]
+    actual_params.append('--no-enable-autoupgrade')
     actual_params.append('--project')
     actual_params.append(f'{cfg.gcp.project}')
     actual_params.append('--zone')
@@ -816,7 +857,14 @@ def start_cluster(cfg: ElasticBlastConfig):
     actual_params.append(machine_type)
 
     actual_params.append('--num-nodes')
-    actual_params.append(str(ELB_DFLT_MIN_NUM_NODES))
+    # Autoscaling for clusters with local SSD works only by shrinking
+    # so to support it we start cluster with maximum nodes.
+    # Thus the nodes are properly initialized and autoscaler
+    # later can remove them if/when they're not needed.
+    if use_local_ssd:
+        actual_params.append(str(cfg.cluster.num_nodes))
+    else:
+        actual_params.append(str(ELB_DFLT_MIN_NUM_NODES))
 
     if use_preemptible:
         actual_params.append('--preemptible')
@@ -853,24 +901,6 @@ def start_cluster(cfg: ElasticBlastConfig):
     end = timer()
     logging.debug(f'RUNTIME cluster-create {end-start} seconds')
 
-    # FIXME: this code needs to be moved outside this function, after
-    # get_gke_credentials is called so the proper --context kubectl 
-    # argument can be used
-    if use_local_ssd:
-        # Label nodes in the cluster for affinity
-        cmd = "kubectl get nodes -o jsonpath={.items[*]['metadata.name']}"
-        if dry_run:
-            logging.info(cmd)
-            res = ' '.join([f'gke-node-{i}' for i in range(num_nodes)])
-        else:
-            proc = safe_exec(cmd)
-            res = proc.stdout.decode()
-        for i, name in enumerate(res.split()):
-            cmd = f'kubectl label nodes {name} ordinal={i}'
-            if dry_run:
-                logging.info(cmd)
-            else:
-                safe_exec(cmd)
     return cluster_name
 
 
@@ -939,3 +969,4 @@ def _remove_ancillary_data(cfg: ElasticBlastConfig, bucket_prefix: str) -> None:
         except SafeExecError as e:
             message = e.message.strip().translate(str.maketrans('\n', '|'))
             logging.warning(message)
+

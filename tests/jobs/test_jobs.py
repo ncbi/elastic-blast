@@ -45,7 +45,6 @@ def test_jobs(test_dir):
 $QUERY_NUM
 ${QUERY}
 $QUERY_PATH/some_file
-$QUERY_FQN
 ${RESULTS}/results.aln
 $SOME_UNDEFINED_VARIABLE"""
     map_obj = {
@@ -55,7 +54,6 @@ $SOME_UNDEFINED_VARIABLE"""
 {query_num}
 {query}
 {query_path}/some_file
-{batch_file}
 {results}/results.aln
 $SOME_UNDEFINED_VARIABLE"""
     jobs = write_job_files(test_dir, 'job_', template, [batch_file], **map_obj)

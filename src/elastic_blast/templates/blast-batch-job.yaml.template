@@ -35,7 +35,7 @@ spec:
         - echo "BASH version ${BASH_VERSION}";
           start=`date +%s`;
           log() { ts=`date +'%F %T'`; printf '%s RUNTIME %s %f seconds\n' "$ts" "$1" "$2"; };
-          blastdb_path -dbtype ${ELB_DB_MOL_TYPE} -db ${ELB_DB} -getvolumespath | tr ' ' '\n' | parallel -t vmtouch -tm 5G;
+          blastdb_path -dbtype ${ELB_DB_MOL_TYPE} -db ${ELB_DB} -getvolumespath | tr ' ' '\n' | parallel vmtouch -tqm 5G;
           exit_code=$?;
           end=`date +%s`;
           log "cache-blastdbs-to-ram" $(($end-$start));

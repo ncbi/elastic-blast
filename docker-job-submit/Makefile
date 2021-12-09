@@ -18,7 +18,8 @@
 #   
 # Please cite NCBI in any work or product based on this material.
 
-# Makefile for building a container to run an ElasticBLAST demo
+# Makefile for building a container to run the ElasticBLAST job submission on
+# the cloud
 #
 # Author: Christiam Camacho
 # Created: Tue Aug 31 11:29:06 EDT 2021
@@ -27,7 +28,7 @@ SHELL=/bin/bash
 .PHONY: all pre-check check clean build publish gcp-build gcp-check gcp-clean
 
 IMG?=ncbi/elasticblast-job-submit
-VERSION?=0.1.3
+VERSION?=1.1.2
 GCP_PROJECT?=$(shell gcloud config get-value project 2>/dev/null)
 GCP_TEST_BUCKET?=gs://elasticblast-test/cloud-job-submission
 AWS_REGION?=us-east-1

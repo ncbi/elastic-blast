@@ -31,7 +31,7 @@ spec:
         args:
         - mkdir -p /shared/requests;
           mkdir -p /shared/results;
-          gsutil -mq cp ${QUERY_FQN} /shared/requests;
+          gsutil -mq cp ${ELB_RESULTS}/query_batches/batch_${JOB_NUM}.fa /shared/requests;
       containers:
       - name: ${K8S_JOB_BLAST}
         image: gcr.io/ncbi-sandbox-blast/ncbi/blast:latest

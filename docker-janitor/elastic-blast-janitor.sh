@@ -92,7 +92,7 @@ if [[ ${ELB_RESULTS} =~ ^gs:// ]]; then
                     $KUBECTL logs -l 'job-name=init-pv' -c $c --timestamps --since=24h --tail=-1 | $GSUTIL -q cp - ${ELB_RESULTS}/logs/k8s-init-pv-$c.log
                 done
                 $KUBECTL logs -l 'job-name=submit-jobs' -c submit-jobs --timestamps --since=24h --tail=-1 | $GSUTIL -q cp - ${ELB_RESULTS}/logs/k8s-submit-jobs.log
-                elastic-blast delete --loglevel DEBUG --logfile stderr --results ${ELB_RESULTS} --gcp-project ${ELB_GCP_PROJECT} --gcp-region ${ELB_GCP_REGION} --gcp-zone ${ELB_GCP_ZONE}
+                elastic-blast delete --results ${ELB_RESULTS} --gcp-project ${ELB_GCP_PROJECT} --gcp-region ${ELB_GCP_REGION} --gcp-zone ${ELB_GCP_ZONE}
             fi
             exit 0
         fi
@@ -105,7 +105,7 @@ if $init_failed; then
     num_succeeded=0
     num_running=0
 else
-    elastic-blast status --verbose --logfile ${ELB_LOGFILE} | tee $TMP
+    elastic-blast status --verbose | tee $TMP
 
     num_failed=`grep '^Failed ' $TMP | cut -f 2 -d ' '`;
     num_pending=`grep '^Pending ' $TMP | cut -f 2 -d ' '`;
@@ -131,7 +131,7 @@ if [ $((num_pending + num_running)) -eq 0 ]; then
             $KUBECTL get jobs -o json | $GSUTIL -q cp - ${ELB_RESULTS}/metadata/DONE_details.json
         fi
     fi
-    elastic-blast delete --logfile ${ELB_LOGFILE} ${DRY_RUN}
+    elastic-blast delete ${DRY_RUN}
 fi
 
 if [ $num_failed -gt 0 ] ; then
@@ -143,5 +143,5 @@ if [ $num_failed -gt 0 ] ; then
         set +e
         $KUBECTL get jobs -o json | $GSUTIL -q cp - ${ELB_RESULTS}/metadata/FAILURE_details.json
     fi
-    elastic-blast delete --logfile ${ELB_LOGFILE} ${DRY_RUN}
+    elastic-blast delete ${DRY_RUN}
 fi

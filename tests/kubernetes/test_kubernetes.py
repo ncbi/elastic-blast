@@ -33,7 +33,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 from tests.utils import MockedCompletedProcess
 from tests.utils import mocked_safe_exec
-from tests.utils import GKE_PVS, GCP_DISKS, K8S_JOBS, gke_mock
+from tests.utils import GKE_PVS, GCP_DISKS, K8S_JOBS, gke_mock, GKEMock
 
 from elastic_blast import kubernetes
 from elastic_blast import gcp
@@ -157,14 +157,17 @@ def safe_exec_mock(mocker):
                 print(f.read())
         if cmd.startswith('gcloud compute disks update'):
             assert(cmd.startswith(f'gcloud compute disks update gke-some-synthetic-name --update-labels {FAKE_LABELS}'))
+            return MockedCompletedProcess()
         if 'kubectl' in cmd and 'logs' in cmd:
             return MockedCompletedProcess(stdout='2020-06-18T04:48:33.320344002Z test log entry')
-        return MockedCompletedProcess()
+        return GKEMock().mocked_safe_exec(cmd)
 
     # we need kubernetes.safe_exec instead of util.safe exec here, because
     # safe_exec is imported in kubernetes.py with 'from util import safe_exec'
     # and safe_exec in kubernetes is seen as local, python is funny this way
     mocker.patch('elastic_blast.kubernetes.safe_exec', side_effect=print_safe_exec)
+    mocker.patch('elastic_blast.elb_config.safe_exec', side_effect=print_safe_exec)
+    mocker.patch('elastic_blast.util.safe_exec', side_effect=print_safe_exec)
 
 
 DB_METADATA = DbMetadata(version = '1',
@@ -180,7 +183,7 @@ DB_METADATA = DbMetadata(version = '1',
                          number_of_volumes = 1)
 
 @patch(target='elastic_blast.elb_config.get_db_metadata', new=MagicMock(return_value=DB_METADATA))
-def test_initialize_persistent_disk(safe_exec_mock, mocker):
+def test_initialize_persistent_disk(gke_mock, safe_exec_mock, mocker):
     """Exercises initialize_persistent_disk with mock safe_exec and prints out
     arguments to safe_exec
     Run pytest -s -v tests/kubernetes to verify correct order of calls"""
@@ -197,7 +200,7 @@ def test_initialize_persistent_disk(safe_exec_mock, mocker):
 
 
 @patch(target='elastic_blast.elb_config.get_db_metadata', new=MagicMock(return_value=DB_METADATA))
-def test_initialize_persistent_disk_failed(mocker):
+def test_initialize_persistent_disk_failed(gke_mock, mocker):
     def fake_safe_exec_failed_job(cmd):
         fn = os.path.join(TEST_DATA_DIR, 'job-status-failed.json')
         return MockedCompletedProcess(stdout=Path(fn).read_text())

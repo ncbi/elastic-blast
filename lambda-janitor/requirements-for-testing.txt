@@ -1,0 +1,2 @@
+elastic-blast==0.0.74
+--extra-index-url https://test.pypi.org/simple/

@@ -25,6 +25,7 @@ Author: Greg Boratyn boratyng@ncbi.nlm.nih.gov
 """
 import os
 from elastic_blast.aws_traits import get_machine_properties, create_aws_config, get_availability_zones_for
+from elastic_blast.aws_traits import get_regions
 from elastic_blast.base import InstanceProperties
 from elastic_blast.util import UserReportError
 from elastic_blast.constants import INPUT_ERROR, ELB_DFLT_AWS_REGION
@@ -43,6 +44,17 @@ def test_create_default_config():
     config = create_aws_config()
     assert config
     assert config.region_name == ELB_DFLT_AWS_REGION
+
+
+@pytest.mark.skipif(os.getenv('TEAMCITY_VERSION') is not None, reason='AWS credentials not set in TC')
+def test_get_regions():
+    regions = get_regions()
+    assert len(regions)
+    assert 'us-east-1' in regions
+    assert 'eu-north-1' in regions
+    assert 'us-east1' not in regions
+    assert 'us-east4' not in regions
+    assert 'dummy' not in regions
 
 
 @pytest.mark.skipif(os.getenv('TEAMCITY_VERSION') is not None, reason='AWS credentials not set in TC')

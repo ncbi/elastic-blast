@@ -122,7 +122,7 @@ def get_query_batch_size(program: str) -> int:
     switcher = {
         "blastp":       10000,
         "blastn":       5000000,
-        "blastx":       20000,
+        "blastx":       20004,
         "psiblast":     100000,
         "rpsblast":     100000,
         "rpstblastn":   100000,
@@ -241,7 +241,7 @@ def gcp_get_blastdb_latest_path() -> str:
     """Get latest path of GCP-based blastdb repository"""
     cmd = f'gsutil cat {GCS_DFLT_BUCKET}/latest-dir'
     proc = safe_exec(cmd)
-    return GCS_DFLT_BUCKET + '/' + proc.stdout.decode()
+    return os.path.join(GCS_DFLT_BUCKET, proc.stdout.decode().rstrip())
 
 
 def gcp_get_blastdb_size(db: str) -> float:
@@ -474,15 +474,12 @@ def validate_gcp_string(val: str) -> None:
         raise ValueError(f'"{val}" is not a legal GCP id. The string can only contain lowercase letters, digits, underscores, and dashes.')
 
 
-def validate_aws_region(val: str) -> None:
+def check_aws_region_for_invalid_characters(val: str) -> None:
     """Test whether a given string is an acceptable AWS region name:
     alphanumeric characters, plus dashes.
 
     Raises:
         ValueError if the string is not a legal AWS region name"""
-    # TODO: Even though invoking describe_regions would likely require AWS
-    # credentials, this is probably necessary to do better error checking
-    # https://boto3.amazonaws.com/v1/documentation/api/latest/guide/ec2-example-regions-avail-zones.html#example
     if re.match(r'^[A-Za-z0-9\-]+$', val) is None:
         raise ValueError(f'{val} is not a legal AWS region name. The string can only contain letters, numbers, and dashes.')
 
@@ -521,3 +518,18 @@ def get_usage_reporting() -> bool:
     if usage_reporting.lower() == 'false':
         return False
     return True
+
+
+def gcp_get_regions() -> List[str]:
+    """ Retrieves a list of available GCP region names """
+    cmd = "gcloud compute regions list --format json"
+    retval = []
+    try:
+        p = safe_exec(cmd)
+        region_info = json.loads(p.stdout.decode())
+        retval = [i['name'] for i in region_info]
+    except Exception as err:
+        logging.debug(err)
+    return retval
+
+

@@ -59,7 +59,7 @@ from elastic_blast.filehelper import parse_bucket_name_key
 from elastic_blast.base import InstanceProperties, DBSource
 from elastic_blast.elb_config import ElasticBlastConfig, PositiveInteger
 from elastic_blast.db_metadata import DbMetadata
-from tests.utils import aws_credentials, gke_mock
+from tests.utils import aws_credentials, gke_mock, MockedStsClient, GKEMock
 
 from botocore.exceptions import ClientError #type: ignore
 from unittest.mock import call, patch, MagicMock
@@ -157,7 +157,7 @@ def create_roles():
 def initialize_cfg() -> ElasticBlastConfig:
     """Create minimal config for an AWS search"""
 
-    cfg = ElasticBlastConfig(aws_region = 'us-east-1',
+    cfg = ElasticBlastConfig(aws_region = 'test-region',
                              program = 'blastn',
                              db = 'test-db',
                              results = f's3://elasticblast-{getpass.getuser()}',
@@ -335,7 +335,7 @@ def test_create_config_from_file(gke_mock, mocker):
     cfg.read(f"{TEST_DATA_DIR}/elb-aws-blastn-pdbnt.ini")
     cfg = ElasticBlastConfig(cfg, task = ElbCommand.SUBMIT)
     assert cfg.cloud_provider.cloud == CSP.AWS
-    assert cfg.blast.db_source == DBSource.AWS
+    assert cfg.cluster.db_source == DBSource.AWS
 
 
 @pytest.mark.skipif(os.getenv('TEAMCITY_VERSION') is not None, reason='AWS credentials not set in TC')
@@ -509,6 +509,8 @@ DB_METADATA = DbMetadata(version = '1',
 @patch(target='elastic_blast.elb_config.aws_get_machine_properties', new=MagicMock(return_value=InstanceProperties(32, 128)))
 @patch(target='elastic_blast.elb_config.get_db_metadata', new=MagicMock(return_value=DB_METADATA))
 @patch(target='elastic_blast.tuner.aws_get_machine_properties', new=MagicMock(return_value=InstanceProperties(32, 128)))
+@patch(target='elastic_blast.aws.get_machine_properties', new=MagicMock(return_value=InstanceProperties(32, 128)))
+@patch(target='elastic_blast.tuner.aws_get_machine_type', new=MagicMock(return_value='test-machine-type'))
 def test_report_cloudformation_create_errors(batch, s3, iam, ec2, mocker):
     """Test proper reporting of cloudformation stack creation errors"""
 
@@ -529,7 +531,16 @@ def test_report_cloudformation_create_errors(batch, s3, iam, ec2, mocker):
             return ec2
         return None
 
+    def mocked_client(name, config = None):
+        """Mocked boto3 client funtion"""
+        if name == 'sts':
+            return MockedStsClient()
+        if name == 'batch':
+            return batch
+        return GKEMock().mocked_client(name, config)
+
     mocker.patch('boto3.resource', side_effect=mocked_resource)
+    mocker.patch('boto3.client', side_effect=mocked_client)
 
     cfg = initialize_cfg()
     with pytest.raises(UserReportError) as err:

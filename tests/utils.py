@@ -77,12 +77,15 @@ DB_METADATA_PROT = """{
 """
 DB_METADATA_PROT_FILE_NAME = 'testdb-prot-metadata.json'
 
+GCP_REGIONS = [ 'us-east4', 'us-east1', 'test-gcp-region', 'mocked-gcp-region', 'test-region' ]
+AWS_REGIONS = [ 'us-east-1', 'test-region' ]
+
 DB_METADATA_NUCL = """{
   "dbname": "testdb",
   "version": "1.1",
   "dbtype": "Nucleotide",
   "description": "Non-redundant UniProtKB/SwissProt sequences",
-  "number-of-letters": 180911227,
+  "number-of-letters": 500000000000,
   "number-of-sequences": 477327,
   "files": [
     "gs://blast-db/2021-09-28-01-05-02/swissprot.ppi",
@@ -185,6 +188,8 @@ def gke_mock(mocker):
     mocker.patch('elastic_blast.kubernetes.safe_exec', side_effect=mock.mocked_safe_exec)
     mocker.patch('elastic_blast.util.safe_exec', side_effect=mock.mocked_safe_exec)
     mocker.patch('elastic_blast.filehelper.safe_exec', side_effect=mock.mocked_safe_exec)
+    mocker.patch('elastic_blast.elb_config.safe_exec', side_effect=mock.mocked_safe_exec)
+    mocker.patch('elastic_blast.tuner.aws_get_machine_type', new=MagicMock(return_value='test-machine-type'))
 #    mocker.patch('subprocess.Popen', new=MagicMock(return_value=MockedCompletedProcess()))
     mocker.patch('subprocess.Popen', side_effect=mock.mocked_popen)
     mocker.patch('boto3.resource', side_effect=mock.mocked_resource)
@@ -197,8 +202,8 @@ def gke_mock(mocker):
 
 # constants used in mocked_safe_exec
 GCP_PROJECT = 'mocked-gcp-project'
-GCP_ZONE = 'mocked-gcp-zone'
-GCP_REGION = 'mocked-gcp-region'
+GCP_ZONE = 'test-gcp-zone'
+GCP_REGION = 'test-gcp-region'
 GCP_DISKS = ['mock-gcp-disk-1', 'mock-gcp-disk-2']
 GKE_PVS = ['disk-1', 'disk-2']
 GKE_CLUSTERS = ['mock-gke-cluster-1', 'mock-gke-cluster-2']
@@ -258,6 +263,10 @@ def mocked_safe_exec(cmd: Union[List[str], str], cloud_state: CloudResources = N
     if ' '.join(cmd) == 'gcloud config get-value project':
         return MockedCompletedProcess(GCP_PROJECT)
 
+    # get GCP account name
+    elif ' '.join(cmd) == 'gcloud config get-value account':
+        return MockedCompletedProcess('the-gcp-account-name')
+
     # set GCP project
     elif ' '.join(cmd[:-1]) == 'gcloud config set project':
         return MockedCompletedProcess()
@@ -292,6 +301,10 @@ def mocked_safe_exec(cmd: Union[List[str], str], cloud_state: CloudResources = N
     elif ' '.join(cmd).startswith('gcloud container clusters delete'):
         return MockedCompletedProcess()
 
+    # Get GCP regions
+    elif ' '.join(cmd).startswith('gcloud compute regions list'):
+        return MockedCompletedProcess('[{"name":"us-east4"},{"name":"us-east1"},{"name":"test-gcp-region"},{"name":"mocked-gcp-region"},{"name": "test-region"}]')
+
     # check GCP APIs
     elif ' '.join(cmd).startswith('gcloud services '):
         return MockedCompletedProcess()
@@ -309,6 +322,18 @@ def mocked_safe_exec(cmd: Union[List[str], str], cloud_state: CloudResources = N
         for i in K8S_JOBS:
             result['items'].append({'metadata': {'name': i}})
         return MockedCompletedProcess(json.dumps(result))
+
+    elif cmd[0] == 'kubectl' and 'get pv,pvc -o=NAME' in ' '.join(cmd):
+        return MockedCompletedProcess('persistentvolume/pvc-3aafea07-4d87-4349-bcfa-fce4cf8c0197')
+
+    elif cmd[0] == 'kubectl' and 'get pv -o custom-columns=CLAIM:' in ' '.join(cmd):
+        return MockedCompletedProcess(stdout='CLAIM PDNAME\nblast-dbs-pvc gke-some-synthetic-name')
+
+    elif cmd[0] == 'kubectl' and 'describe' in ' '.join(cmd):
+        return MockedCompletedProcess('')
+
+    elif cmd[0] == 'kubectl' and 'patch' in ' '.join(cmd):
+        return MockedCompletedProcess('')
 
     # get kubernetes job status with one pod deleted due to failure
     elif cmd[0] == 'kubectl' and 'get pods -o custom-columns=STATUS' in ' '.join(cmd):
@@ -335,6 +360,10 @@ def mocked_safe_exec(cmd: Union[List[str], str], cloud_state: CloudResources = N
 
     # check if kubernetes client is installed or cluster is alive
     elif ' '.join(cmd).startswith('kubectl') and 'version' in ' '.join(cmd):
+        return MockedCompletedProcess()
+
+    # delete a kubernetes resopurce by file
+    elif cmd[0] == 'kubectl' and 'delete -f' in ' '.join(cmd):
         return MockedCompletedProcess()
 
     # list BLAST databases available in the cloud
@@ -491,6 +520,10 @@ class GKEMock:
         """Mocked boto3.resource function"""
         if client == 's3':
             return MockedS3Client(self.cloud.storage)
+        elif client == 'sts':
+            return MockedStsClient()
+        elif client == 'ec2':
+            return MockedEC2Client()
         else:
             raise NotImplementedError(f'boto3 mock for {client} client is not implemented')
 
@@ -528,6 +561,18 @@ class MockedS3Object:
         """Raise ClientError if the object is not in storage, otherwise do nothing"""
         if self.obj not in self.storage:
             raise ClientError(None, None)
+
+
+class MockedEC2ClientBase:
+    """ Mocked EC2 client """
+    def describe_regions(self):
+        retval = { 'Regions': [ ] }
+        for r in AWS_REGIONS:
+            retval['Regions'].append({'RegionName': r})
+        return retval
+
+class MockedEC2Client(MockedEC2ClientBase):
+    """ Mocked EC2 client """
 
 
 class MockedS3Resource:
@@ -576,6 +621,15 @@ class MockedS3Client:
         if key not in self.storage:
             raise
         return {'Body': MockedStream(self.storage[key])}
+
+
+class MockedStsClient:
+    """Mocked boto3 STS client object"""
+    def get_caller_identity(self):
+        """Get IAM user or role name"""
+        return {'UserId': 'test-user',
+                'Account': 'test-account',
+                'Arn': 'test-arn'}
 
 
 class MockedCloudformationStack:

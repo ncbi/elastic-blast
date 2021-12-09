@@ -657,7 +657,6 @@ Resources:
       Type: container
       JobDefinitionName: !Join [-, [elasticblast-submit-jobs, !Ref Owner, !Ref RandomToken]]
       Parameters:
-        taxidlist: NONE
         logfile: stderr
         loglevel: INFO
       ContainerProperties:
@@ -665,14 +664,7 @@ Resources:
         Vcpus: 1
         Memory: 80000
         Command: ["submit_jobs.py",
-                  "--program", "Ref::blast-program",
-                  "--db", "Ref::db",
-                  "--blast-options", "Ref::blast-options",
                   "--results", "Ref::bucket",
-                  "--num-cpus", "Ref::num-vcpus",
-                  "--mem-limit", "Ref::mem-limit",
-                  "--taxidlist", "Ref::taxidlist",
-                  "--region", "Ref::region",
                   "--loglevel", "Ref::loglevel",
                   "--logfile", "Ref::logfile"
         ]

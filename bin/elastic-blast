@@ -200,11 +200,9 @@ def create_submit_arg_parser(subparser, common_opts_parser):
     elb_opts.add_argument("--mem-limit", type=str,
                         help="Memory limit for each BLAST job")
 
+    # Sync mode disabled per EB-700
     #parser.add_argument("--sync", action='store_true', 
     #                    help="Run in synchronous mode")
-    # FIXME: EB-132
-    parser.add_argument("--run-label", type=str,
-                        help="Run-label to tag this ElasticBLAST search, format: key:value")
     parser.set_defaults(func=elb_submit)
     return parser
 
@@ -214,9 +212,6 @@ def create_delete_arg_parser(subparser, common_opts_parser):
     parser = subparser.add_parser('delete',
                                   parents=[common_opts_parser],
                                   help='Delete resources associated with an ElasticBLAST search')
-    # FIXME: EB-132
-    parser.add_argument("--run-label", type=str,
-                        help="Run-label for the ElasticBLAST search to delete, format: key:value")
     parser.set_defaults(func=elb_delete)
 
 

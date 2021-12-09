@@ -42,14 +42,3 @@ def test_tar_merge_read():
         contents = f.read()
         assert(contents == expected)
 
-def test_thaw_legacy_config():
-    with pytest.raises(ValueError) as err:
-        filehelper.thaw_config(os.path.join(TEST_DATA_DIR, 'elastic-blast-config-unquoted-csp.ini'))
-
-def test_thaw_good_config():
-    cf = filehelper.thaw_config(os.path.join(TEST_DATA_DIR, 'elastic-blast-config-good.ini'))
-    assert 'blastp' == cf["blast"]["program"]
-    assert 'swissprot' == cf["blast"]["db"]
-    assert 'elasticblast-camacho-723edf81a' == cf["cluster"]["name"]
-    assert 's3://elasticblast-camacho/cloud_split/split-only-ebs-viralmeta-approach2' == cf["cluster"]["results"]
-

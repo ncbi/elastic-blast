@@ -32,14 +32,29 @@ spec:
         - echo "BASH version ${BASH_VERSION}";
           start=`date +%s`;
           log() { ts=`date +'%F %T'`; printf '%s RUNTIME %s %f seconds\n' "$ts" "$1" "$2"; };
-          update_blastdb.pl ${ELB_DB} --source ${ELB_BLASTDB_SRC} --verbose --verbose --verbose --verbose --verbose --verbose;
-          exit_code=$?;
+          if [ -z '${ELB_DB_PATH}' ]; then
+            echo update_blastdb.pl ${ELB_DB} --source ${ELB_BLASTDB_SRC} --verbose --verbose --verbose --verbose --verbose --verbose;
+            update_blastdb.pl ${ELB_DB} --source ${ELB_BLASTDB_SRC} --verbose --verbose --verbose --verbose --verbose --verbose;
+            exit_code=$?;
+          else
+            echo gsutil -mq cp ${ELB_DB_PATH} .;
+            gsutil -mq cp ${ELB_DB_PATH} .;
+            exit_code=$?;
+            [ $exit_code -eq 0 ] || exit $exit_code;
+            [ -f ${ELB_DB}.tar.gz ] && tar xzf ${ELB_DB}.tar.gz;
+            echo gsutil -mq cp ${ELB_TAX_DB_PATH} .;
+            gsutil -mq cp ${ELB_TAX_DB_PATH} .;
+            exit_code=$?;
+            [ -f ${ELB_DB}.tar.gz ] && rm ${ELB_DB}.tar.gz;
+          fi;
           end=`date +%s`;
           log "download-blastdbs" $(($end-$start));
           [ $exit_code -eq 0 ] || exit $exit_code;
+          echo blastdbcmd -info -db ${ELB_DB} -dbtype ${ELB_DB_MOL_TYPE};
           blastdbcmd -info -db ${ELB_DB} -dbtype ${ELB_DB_MOL_TYPE};
           exit_code=$?;
           [ $exit_code -eq 0 ] || exit $exit_code;
+          echo blastdbcheck -db ${ELB_DB} -dbtype ${ELB_DB_MOL_TYPE} -no_isam -ends 5;
           blastdbcheck -db ${ELB_DB} -dbtype ${ELB_DB_MOL_TYPE} -no_isam -ends 5;
           exit_code=$?;
           [ $exit_code -eq 0 ] || exit $exit_code;
@@ -58,3 +73,4 @@ spec:
         command: ["run.sh", "-i", "${INPUT_QUERY}", "-o", "${ELB_RESULTS}", "-b", "${BATCH_LEN}", "-c", "${COPY_ONLY}", "-q", "/blast/queries/"]
       restartPolicy: Never
   backoffLimit: 9
+  activeDeadlineSeconds: ${TIMEOUT}

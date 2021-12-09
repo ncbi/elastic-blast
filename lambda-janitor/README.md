@@ -37,10 +37,13 @@ stack with the necessary role for the nested CloudFormation stack to execute.
 Maintainer instructions
 -----------------------
 
-* Testing lambda function code in isolation: `make test-lambda`
+* Creating the admin role needed to run the janitor: `make create-lambda-role`
+* Testing the janitor function in the local host: `make -C.. aws-janitor-smoke-test`
+* Testing lambda function code in isolation: `make test-lambda`. Be sure to
+  refresh or set the `VENV and ELB_RESULTS Makefile` variables accordingly.
 * Deploying lambda standalone function: `make deploy`
 * Remove lambda standalone function: `make undeploy`
 * Test lambda function deployed via CLI: `make invoke`
 * Deploy cloudformation stack for janitor: `make upload-template`
-* Deploy to production: `make deploy-for-elasticblast`
+* Deploy to production: `make deploy-to-production`
 

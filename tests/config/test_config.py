@@ -56,7 +56,7 @@ from elastic_blast.gcp_traits import get_machine_properties
 from elastic_blast.base import InstanceProperties, DBSource
 from elastic_blast.elb_config import ElasticBlastConfig
 from elastic_blast.db_metadata import DbMetadata
-from tests.utils import gke_mock
+from tests.utils import gke_mock, GKEMock, mocked_safe_exec
 
 TEST_DATA_DIR = os.path.join(os.path.dirname(__file__), 'data')
 
@@ -64,7 +64,7 @@ DB_METADATA = DbMetadata(version = '1',
                          dbname = 'some-name',
                          dbtype = 'Protein',
                          description = 'A test database',
-                         number_of_letters = 25,
+                         number_of_letters = int(25e9),
                          number_of_sequences = 25,
                          files = [],
                          last_updated = 'some-date',
@@ -72,7 +72,10 @@ DB_METADATA = DbMetadata(version = '1',
                          bytes_to_cache = 25,
                          number_of_volumes = 1)
 
+
 @patch(target='elastic_blast.elb_config.get_db_metadata', new=MagicMock(return_value=DB_METADATA))
+@patch(target='elastic_blast.elb_config.safe_exec', new=MagicMock(side_effect=mocked_safe_exec))
+@patch(target='elastic_blast.util.safe_exec', new=MagicMock(side_effect=mocked_safe_exec))
 class ElbConfigLibTester(unittest.TestCase):
 
     """ Testing class for this module. """
@@ -163,13 +166,6 @@ class ElbConfigLibTester(unittest.TestCase):
         self.cfg[CFG_TIMEOUTS][CFG_TIMEOUT_BLAST_K8S_JOB] = '1'
         ElasticBlastConfig(self.cfg, task = ElbCommand.SUBMIT)
 
-        # Test some explicitly set incompatible values: auto-scaling and local SSD
-        self.cfg[CFG_CLUSTER][CFG_CLUSTER_EXP_USE_LOCAL_SSD] = 'yes'
-        with self.assertRaises(NotImplementedError):
-            ElasticBlastConfig(self.cfg, task = ElbCommand.SUBMIT)
-        self.cfg.remove_option(CFG_CLUSTER, CFG_CLUSTER_EXP_USE_LOCAL_SSD)
-        ElasticBlastConfig(self.cfg, task = ElbCommand.SUBMIT)
-
         # Test some explicitly set incorrect values: blast.blastdb-src
         self.cfg[CFG_BLAST][CFG_BLAST_DB_SRC] = 'none'
         with self.assertRaises(UserReportError):
@@ -216,10 +212,11 @@ class ElbConfigLibTester(unittest.TestCase):
 
     @patch(target='elastic_blast.elb_config.aws_get_machine_properties', new=MagicMock(return_value=InstanceProperties(32, 120)))
     def test_provisioned_iops(self):
-        self.cfg.read(f"{TEST_DATA_DIR}/elb-aws-blastn-pdbnt.ini")
-        ElasticBlastConfig(self.cfg, task = ElbCommand.SUBMIT)
-        self.cfg[CFG_CLUSTER][CFG_CLUSTER_PROVISIONED_IOPS] = '2000'
-        ElasticBlastConfig(self.cfg, task = ElbCommand.SUBMIT)
+        with patch('boto3.client', side_effect=GKEMock().mocked_client):
+            self.cfg.read(f"{TEST_DATA_DIR}/elb-aws-blastn-pdbnt.ini")
+            ElasticBlastConfig(self.cfg, task = ElbCommand.SUBMIT)
+            self.cfg[CFG_CLUSTER][CFG_CLUSTER_PROVISIONED_IOPS] = '2000'
+            ElasticBlastConfig(self.cfg, task = ElbCommand.SUBMIT)
 
     def test_correct_configuration(self):
         self.cfg.read(f"{TEST_DATA_DIR}/correct-cfg-file.ini")
@@ -231,18 +228,18 @@ class ElbConfigLibTester(unittest.TestCase):
         self.cfg = configure(args)
         cfg = ElasticBlastConfig(self.cfg, task = ElbCommand.SUBMIT)
 
-        self.assertTrue(cfg.blast.db_source)
-        self.assertEqual(cfg.blast.db_source, DBSource.GCP)
+        self.assertTrue(cfg.cluster.db_source)
+        self.assertEqual(cfg.cluster.db_source, DBSource.GCP)
 
         self.assertTrue(cfg.blast.batch_len)
-        self.assertEqual(cfg.blast.batch_len, 10000)
+        self.assertEqual(cfg.blast.batch_len, 20000)
 
-        self.assertTrue(cfg.blast.mem_request)
-        self.assertEqual(cfg.blast.mem_request, '0.5G')
+        self.assertTrue(cfg.cluster.mem_request)
+        self.assertEqual(cfg.cluster.mem_request, '0.5G')
 
-        self.assertTrue(cfg.blast.mem_limit)
+        self.assertTrue(cfg.cluster.mem_limit)
         expected_mem_limit = f'{get_machine_properties(cfg.cluster.machine_type).memory - SYSTEM_MEMORY_RESERVE}G'
-        self.assertEqual(cfg.blast.mem_limit, expected_mem_limit)
+        self.assertEqual(cfg.cluster.mem_limit, expected_mem_limit)
 
         self.assertTrue(cfg.timeouts.init_pv > 0)
         self.assertTrue(cfg.timeouts.blast_k8s > 0)
@@ -306,7 +303,7 @@ class ElbConfigLibTester(unittest.TestCase):
     def test_two_cloud_providers(self):
         self.cfg.read(f"{TEST_DATA_DIR}/correct-cfg-file.ini")
         ElasticBlastConfig(self.cfg, task = ElbCommand.SUBMIT)
-        self.cfg[CFG_CLOUD_PROVIDER][CFG_CP_AWS_REGION] = 'us-east-1'
+        self.cfg[CFG_CLOUD_PROVIDER][CFG_CP_AWS_REGION] = 'test-region'
         with self.assertRaises(UserReportError) as err:
             ElasticBlastConfig(self.cfg, task = ElbCommand.SUBMIT)
         assert 'more than one cloud provider' in str(err.exception)
@@ -328,7 +325,7 @@ def test_validate_gcp_config(gke_mock):
 
     # test correct parameter values
     cfg[CFG_CLOUD_PROVIDER] = {CFG_CP_GCP_PROJECT: 'correct-gcp-project',
-                               CFG_CP_GCP_REGION: 'correct-region-123',
+                               CFG_CP_GCP_REGION: 'test-gcp-region',
                                CFG_CP_GCP_ZONE: 'correct-zone-456'}
     ElasticBlastConfig(cfg, task = ElbCommand.SUBMIT)
 
@@ -367,7 +364,7 @@ def test_validate_aws_config(gke_mock):
                       CFG_BLAST_QUERY: 'test-queries'}
 
     valid_aws_provider = {
-        CFG_CP_AWS_REGION: 'correct-Region-1',
+        CFG_CP_AWS_REGION: 'test-region',
         CFG_CP_AWS_SUBNET: 'subnet-2345145',
         CFG_CP_AWS_KEY_PAIR: 'foo',
         CFG_CP_AWS_SECURITY_GROUP: 'sg-2345145'
@@ -422,7 +419,7 @@ def test_validate_results_bucket_config(gke_mock):
 
     # test bucket consistent with cloud provider
     cfg[CFG_CLOUD_PROVIDER] = {
-        CFG_CP_AWS_REGION: 'us-east-1',
+        CFG_CP_AWS_REGION: 'test-region',
         CFG_CP_AWS_SUBNET: 'subnet-2345145',
         CFG_CP_AWS_KEY_PAIR: 'foo',
         CFG_CP_AWS_SECURITY_GROUP: 'sg-2345145'
@@ -467,7 +464,7 @@ def test_validate_queries_config(gke_mock):
 
     # set up test config
     cfg[CFG_CLOUD_PROVIDER] = {
-        CFG_CP_AWS_REGION: 'us-east-1',
+        CFG_CP_AWS_REGION: 'test-region',
         CFG_CP_AWS_SUBNET: 'subnet-2345145',
         CFG_CP_AWS_KEY_PAIR: 'foo',
         CFG_CP_AWS_SECURITY_GROUP: 'sg-2345145'
@@ -508,7 +505,7 @@ def env_config():
     """Set ELB_* environment variables and clean them up after a test"""
     # setup
     env = {'ELB_GCP_PROJECT': 'expected-gcp-project',
-           'ELB_GCP_REGION': 'expected-gcp-region',
+           'ELB_GCP_REGION': 'test-gcp-region',
            'ELB_GCP_ZONE': 'expected-gcp-zone',
            'ELB_BATCH_LEN': '93',
            'ELB_CLUSTER_NAME': 'expected-cluster-name',
@@ -551,7 +548,7 @@ def check_common_defaults(cfg):
 
     assert cfg.cluster.use_preemptible == constants.ELB_DFLT_USE_PREEMPTIBLE
     assert cfg.blast.options == f'-outfmt {int(constants.ELB_DFLT_OUTFMT)}'
-    assert cfg.blast.db_source.name == cfg.cloud_provider.cloud.name
+    assert cfg.cluster.db_source.name == cfg.cloud_provider.cloud.name
     assert cfg.blast.db_mem_margin == constants.ELB_BLASTDB_MEMORY_MARGIN
 
 
@@ -644,7 +641,7 @@ def test_mem_limit_too_high(gke_mock):
 
 @patch(target='elastic_blast.elb_config.aws_get_machine_properties', new=MagicMock(return_value=InstanceProperties(4, 2)))
 @patch(target='elastic_blast.tuner.aws_get_machine_properties', new=MagicMock(return_value=InstanceProperties(4, 2)))
-def test_instance_too_small_aws():
+def test_instance_too_small_aws(gke_mock):
     """Test that using too small an instance triggers an error"""
     args = argparse.Namespace(cfg=os.path.join(TEST_DATA_DIR, 'instance-too-small-aws.ini'))
     with pytest.raises(UserReportError) as err:
@@ -654,7 +651,7 @@ def test_instance_too_small_aws():
     print(err.value.message)
     assert 'does not have enough memory' in err.value.message
     
-def test_instance_too_small_gcp():
+def test_instance_too_small_gcp(gke_mock):
     """Test that using too small an instance triggers an error"""
     args = argparse.Namespace(cfg=os.path.join(TEST_DATA_DIR, 'instance-too-small-gcp.ini'))
     with pytest.raises(UserReportError) as err:

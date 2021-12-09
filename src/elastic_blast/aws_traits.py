@@ -28,7 +28,7 @@ import boto3 # type: ignore
 from botocore.exceptions import ClientError, NoCredentialsError # type: ignore
 import logging
 from typing import Optional, List, Any
-from .util import UserReportError, validate_aws_region
+from .util import UserReportError, check_aws_region_for_invalid_characters
 from .base import InstanceProperties, PositiveInteger, MemoryStr
 from .constants import ELB_DFLT_AWS_REGION, INPUT_ERROR, PERMISSIONS_ERROR
 
@@ -43,9 +43,19 @@ def create_aws_config(region: Optional[str] = None) -> Config:
     return retval
 
 
+def get_regions(boto_cfg: Config = None) -> List[str]:
+    """ Retrieves a list of available AWS region names """
+    ec2 = boto3.client('ec2') if boto_cfg == None else boto3.client('ec2', config=boto_cfg)
+    try:
+        return [r['RegionName'] for r in ec2.describe_regions()['Regions']]
+    except ClientError as err:
+        logging.debug(err)
+    return []
+
+
 def get_availability_zones_for(region: str) -> List[str]:
     """ Get a list of availability zones for the given region """
-    validate_aws_region(region)
+    check_aws_region_for_invalid_characters(region)
     ec2 = boto3.client('ec2', region_name=region)
     try:
         response = ec2.describe_availability_zones(Filters=[{'Name':'region-name', 'Values': [region]}])

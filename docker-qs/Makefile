@@ -18,7 +18,8 @@
 #   
 # Please cite NCBI in any work or product based on this material.
 
-# Makefile for building a container to run an ElasticBLAST demo
+# Makefile for building a container to run the ElasticBLAST query splitting
+# module on the cloud
 #
 # Author: Christiam Camacho
 # Created: Wed Jun 23 13:32:04 EDT 2021
@@ -27,7 +28,7 @@ SHELL=/bin/bash
 .PHONY: all pre-check check clean build publish gcp-build gcp-check gcp-clean
 
 IMG?=ncbi/elasticblast-query-split
-VERSION?=0.0.4
+VERSION?=0.0.6
 GCP_PROJECT?=$(shell gcloud config get-value project 2>/dev/null)
 GCP_TEST_BUCKET?=gs://elasticblast-test/query-split-run-test
 AWS_REGION?=us-east-1

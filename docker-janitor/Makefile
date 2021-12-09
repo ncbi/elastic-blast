@@ -27,7 +27,7 @@ SHELL=/bin/bash
 .PHONY: all pre-check check clean build publish gcp-build gcp-check gcp-clean
 
 IMG?=ncbi/elasticblast-janitor
-VERSION?=0.0.3
+VERSION?=0.1.1
 GCP_PROJECT?=$(shell gcloud config get-value project 2>/dev/null)
 GCP_TEST_BUCKET?=gs://elasticblast-test/query-split-run-test
 
@@ -59,17 +59,13 @@ check:
 gcp-build:
 	gcloud builds submit --config cloudbuild.yaml --substitutions _VERSION=${VERSION},_IMG=${IMG}
 
-TAG?=${USER}
 # Use this target to build an image from your local sources as opposed to those on PyPI.org
-# Your image will be named gcr.io/${GCP_PROJECT}/${IMG}:${USER} and aliased as
-# gcr.io/${GCP_PROJECT}/${IMG}:latest
 .PHONY: gcp-build-from-local-sources
-gcp-build-from-local-sources: VERSION=$(shell elastic-blast --version | cut -f 2 -d ' ')
 gcp-build-from-local-sources:
 	rsync -a ../setup.py ../setup.cfg_cloud ../src ../bin ../requirements ${PWD}/
 	sed -i~ -e '/^value = $${VERSION}/d;' setup.cfg_cloud
 	echo "value = ${VERSION}" >> setup.cfg_cloud
-	-gcloud builds submit --config cloudbuild.yaml --substitutions _VERSION=${TAG},_IMG=${IMG},_DOCKERFILE='Dockerfile-build-from-local-sources.gcp'
+	-gcloud builds submit --config cloudbuild.yaml --substitutions _VERSION=${VERSION},_IMG=${IMG},_DOCKERFILE='Dockerfile-build-from-local-sources.gcp'
 	rm -fr src bin requirements setup.cfg_cloud setup.py
 
 .PHONY: gcp-test
