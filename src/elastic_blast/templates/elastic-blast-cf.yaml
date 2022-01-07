@@ -569,6 +569,15 @@ Resources:
 
             #!/bin/bash -xe
 
+            # See better way of handling AWS NVME disks
+            # https://serverfault.com/a/952864
+            if [ "${UseSSD}" = true -a -b /dev/nvme1n1 ]; then
+              # mount the ephemeral storage
+              mkfs.ext4 /dev/nvme1n1
+              mkdir -m0777 /blast
+              mount -t ext4 /dev/nvme1n1 /blast/
+            fi
+
             yum install -y unzip
             curl -s "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
             unzip awscliv2.zip
@@ -583,15 +592,6 @@ Resources:
             aws ec2 create-tags --resources $ROOT_VOLUME_IDS --region ${AWS::Region} --tags Key=billingcode,Value=elastic-blast
             aws ec2 create-tags --resources $ROOT_VOLUME_IDS --region ${AWS::Region} --tags Key=Project,Value=BLAST
             aws ec2 create-tags --resources $ROOT_VOLUME_IDS --region ${AWS::Region} --tags Key=Created-For-Instance-ID,Value=$AWS_INSTANCE_ID
-
-            # See better way of handling AWS NVME disks
-            # https://serverfault.com/a/952864
-            if [ "${UseSSD}" = true -a -b /dev/nvme1n1 ]; then
-              # mount the ephemeral storage
-              mkfs.ext4 /dev/nvme1n1
-              mkdir -m0777 /blast
-              mount -t ext4 /dev/nvme1n1 /blast/
-            fi
 
             --==MYBOUNDARY==
         BlockDeviceMappings:

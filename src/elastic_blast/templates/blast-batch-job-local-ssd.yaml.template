@@ -60,13 +60,15 @@ spec:
         args:
         - echo "BASH version ${BASH_VERSION}";
           BLAST_RUNTIME=`mktemp`;
+          ERROR_FILE=`mktemp`;
           DATE_NOW=`date -u +${ELB_TIMEFMT}`;
           blastdbcmd -info -db ${ELB_DB} | awk '/total/ {print $3}' | tr -d , > /shared/results/BLASTDB_LENGTH.out;
           start=`date +%s`;
           echo run start ${JOB_NUM} ${ELB_BLAST_PROGRAM} ${ELB_DB};
-          TIME="${DATE_NOW} run start ${JOB_NUM} ${ELB_BLAST_PROGRAM} ${ELB_DB} %e %U %S %P" \time -o ${BLAST_RUNTIME} ${ELB_BLAST_PROGRAM} -db ${ELB_DB} -query /shared/requests/batch_${JOB_NUM}.fa -out /shared/results/batch_${JOB_NUM}-${ELB_BLAST_PROGRAM}-${ELB_DB}.out -num_threads ${ELB_NUM_CPUS} ${ELB_BLAST_OPTIONS};
+          TIME="${DATE_NOW} run start ${JOB_NUM} ${ELB_BLAST_PROGRAM} ${ELB_DB} %e %U %S %P" \time -o ${BLAST_RUNTIME} ${ELB_BLAST_PROGRAM} -db ${ELB_DB} -query /shared/requests/batch_${JOB_NUM}.fa -out /shared/results/batch_${JOB_NUM}-${ELB_BLAST_PROGRAM}-${ELB_DB}.out -num_threads ${ELB_NUM_CPUS} ${ELB_BLAST_OPTIONS} 2>$ERROR_FILE;
           BLAST_EXIT_CODE=$?;
           end=`date +%s`;
+          cat $ERROR_FILE;
           printf 'RUNTIME %s %f seconds\n' "blast-job-${JOB_NUM}" $(($end-$start));
           echo run end ${JOB_NUM} ${BLAST_EXIT_CODE};
           echo `date -u +${ELB_TIMEFMT}` run exitCode ${JOB_NUM} ${BLAST_EXIT_CODE} >>${BLAST_RUNTIME};
@@ -74,6 +76,11 @@ spec:
           gzip /shared/results/batch_${JOB_NUM}-${ELB_BLAST_PROGRAM}-${ELB_DB}.out;
           cp $BLAST_RUNTIME /shared/results/BLAST_RUNTIME-${JOB_NUM}.out;
           echo $BLAST_EXIT_CODE > /shared/results/BLAST_EXIT_CODE.out;
+          if [[ $BLAST_EXIT_CODE -ne 0 ]] ; then
+              if ! gsutil stat ${ELB_RESULTS}/metadata/FAILURE.txt ; then
+                  gsutil -qm cp $ERROR_FILE ${ELB_RESULTS}/metadata/FAILURE.txt;
+              fi;
+          fi;
       - name: ${K8S_JOB_RESULTS_EXPORT}
         image: google/cloud-sdk:slim
         volumeMounts:

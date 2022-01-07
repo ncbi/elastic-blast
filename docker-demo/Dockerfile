@@ -31,11 +31,13 @@ LABEL Maintainer=camacho@ncbi.nlm.nih.gov
 
 USER root
 
+COPY requirements.txt .
+
 RUN apt-get -y -m update && \
     apt-get install -y python3 kubectl && \
     pip3 install --no-cache-dir --upgrade pip && \
-    pip3 install --no-cache-dir awscli elastic-blast && \
-    rm -rf /var/lib/apt/lists/*
+    pip3 install --no-cache-dir -r requirements.txt && \
+    rm -rf /var/lib/apt/lists/* requirements.txt
 
 RUN groupadd -r ${grpname} && \
     useradd --no-log-init -r -g ${grpname} ${username} && \

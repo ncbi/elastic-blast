@@ -27,6 +27,7 @@ LABEL Version=${version}
 LABEL Vendor="NCBI/NLM/NIH"
 LABEL Maintainer=camacho@ncbi.nlm.nih.gov
 
+COPY requirements.txt .
 COPY elastic-blast-janitor.sh /usr/bin/
 
 RUN chmod +x /usr/bin/elastic-blast-janitor.sh && \
@@ -36,6 +37,6 @@ RUN chmod +x /usr/bin/elastic-blast-janitor.sh && \
 	curl -LO https://storage.googleapis.com/kubernetes-release/release/`curl -s https://storage.googleapis.com/kubernetes-release/release/stable.txt`/bin/linux/amd64/kubectl && \
 	chmod +x ./kubectl && \
 	mv kubectl /usr/bin/ && \
-    pip3 install --no-cache-dir elastic-blast && rm -rf /var/cache/apk/*
+    pip3 install --no-cache-dir -r requirements.txt && rm -rf /var/cache/apk/* requirements.txt
 
 CMD ["/usr/bin/elastic-blast-janitor.sh"]

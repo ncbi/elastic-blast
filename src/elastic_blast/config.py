@@ -103,10 +103,6 @@ def configure(args: argparse.Namespace) -> configparser.ConfigParser:
         logging.debug(f'Reading {args.cfg}')
         retval.read(args.cfg)
 
-    # If set in config file - ignore it and calculate from results later
-    if CFG_CLUSTER_NAME in retval[CFG_CLUSTER]:
-        retval.remove_option(CFG_CLUSTER, CFG_CLUSTER_NAME)
-
     _load_config_from_environment(retval)
 
     # These command line options override the config value settings

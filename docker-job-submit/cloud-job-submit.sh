@@ -40,6 +40,9 @@ GCLOUD=gcloud
 KUBECTL=kubectl
 
 log() { ts=`date +'%F %T'`; printf '%s RUNTIME %s %f seconds\n' "$ts" "$1" "$2"; };
+copy_job_logs_to_results_bucket() {
+    ${KUBECTL} logs -l "app=$1" -c "$2" --timestamps --since=24h --tail=-1 | ${GSUTIL_COPY} /dev/stdin "${ELB_RESULTS}/logs/k8s-$1-$2.log" || true
+}
 
 TEST=${ELB_LOCAL_TEST:-}
 if [ "x$TEST" == "x1" ]; then
@@ -59,15 +62,21 @@ fi
 
 #${GCLOUD} container clusters get-credentials ${ELB_CLUSTER_NAME} --project ${ELB_GCP_PROJECT} --zone ${ELB_GCP_ZONE}
 
-# TODO: EB-1356 wait for all init-ssd-{n} jobs for local SSD case, don't need to
-# delete jobs and wait for unmount
-
-# Wait for init-pv job completion
+# Wait for all previous setup jobs completion
 while true; do
-    s=`${KUBECTL} get jobs init-pv -o jsonpath='{.status.conditions[*].type}'`
-    [ $? -ne 0 ] || [ "x$s" != "xComplete" ] || break
+    s=`${KUBECTL} get jobs -l app=setup -o jsonpath='{.items[?(@.status.active)].metadata.name}'`
+    [ $? -ne 0 ] || [ -n "$s" ] || break
+    echo Waiting for jobs $s
     sleep 30
 done
+
+s=`${KUBECTL} get jobs -l app=setup -o jsonpath='{.items[*].status.conditions[*].type}'`
+if [[ "$s" != Complete*( Complete) ]]; then
+    echo "Setup job(s) failed:" `${KUBECTL} get jobs -l app=setup -o jsonpath='{.items[?(@.status.failed)].metadata.name}'` 
+    copy_job_logs_to_results_bucket setup "${K8S_JOB_GET_BLASTDB}"
+    copy_job_logs_to_results_bucket setup "${K8S_JOB_IMPORT_QUERY_BATCHES}"
+    exit 1
+fi
 
 # Unmount ReadWrite blastdb volume, necessary for cluster use
 pods=`kubectl get pods -l job-name=init-pv -o jsonpath='{.items[*].metadata.name}'`
@@ -79,13 +88,17 @@ done
 if [ ! -z "$pods" ]; then
     ${KUBECTL} delete job init-pv
     # Wait for disk to be unmounted
+    echo Waiting for $ELB_PAUSE_AFTER_INIT_PV sec to unmount PV disk
     sleep $ELB_PAUSE_AFTER_INIT_PV
 fi
 
+# Debug job fail - set env variable ELB_DEBUG_SUBMIT_JOB_FAIL to non empty value
+[ -n "${ELB_DEBUG_SUBMIT_JOB_FAIL:-}" ] && echo Job submit job failed for debug && exit 1
 
 # Get template, batch list, and submit BLAST jobs
 if ${GSUTIL_COPY} ${ELB_RESULTS}/${ELB_METADATA_DIR}/job.yaml.template . && 
    ${GSUTIL_COPY} ${ELB_RESULTS}/${ELB_METADATA_DIR}/batch_list.txt . ; then
+    echo Submitting jobs
     i=0; j=0; job_dir_num=0; job_dir="jobs/$job_dir_num"
     start=`date +%s`
     mkdir -p $job_dir
@@ -123,9 +136,12 @@ if ${GSUTIL_COPY} ${ELB_RESULTS}/${ELB_METADATA_DIR}/job.yaml.template . &&
     if [ $(( ($end-$start) )) -ne 0 ] ; then
         printf "SPEED to submit-jobs %f jobs/second\n" $(( $num_jobs/($end-$start) ))
     fi
+    echo Submitted $num_jobs jobs
     echo $num_jobs | ${GSUTIL_COPY} /dev/stdin ${ELB_RESULTS}/${ELB_METADATA_DIR}/${ELB_NUM_JOBS_SUBMITTED}
     if [ ${ELB_NUM_NODES} -ne 1 ] ; then
+        echo Reconfiguring cluster to auto-scale to ${ELB_NUM_NODES} nodes
         ${GCLOUD} container clusters update ${ELB_CLUSTER_NAME} --enable-autoscaling --node-pool default-pool --min-nodes 0 --max-nodes ${ELB_NUM_NODES} --project ${ELB_GCP_PROJECT} --zone ${ELB_GCP_ZONE}
     fi
-    ${KUBECTL} logs -l 'app=setup' -c ${K8S_JOB_SUBMIT_JOBS} --timestamps --since=24h --tail=-1 | ${GSUTIL_COPY} /dev/stdin ${ELB_RESULTS}/logs/k8s-${K8S_JOB_SUBMIT_JOBS}.log
+    copy_job_logs_to_results_bucket submit "${K8S_JOB_SUBMIT_JOBS}"
+    echo Done
 fi

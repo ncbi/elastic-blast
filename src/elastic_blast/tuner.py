@@ -31,7 +31,7 @@ from bisect import bisect_left
 import math
 from typing import Optional
 from .filehelper import open_for_read
-from .constants import BLASTDB_ERROR, INPUT_ERROR, ELB_BLASTDB_MEMORY_MARGIN
+from .constants import BLASTDB_ERROR, INPUT_ERROR
 from .constants import UNKNOWN_ERROR, MolType, CSP
 from .constants import ELB_S3_PREFIX, ELB_GCS_PREFIX
 from .constants import SYSTEM_MEMORY_RESERVE, MEMORY_FOR_BLAST_HITS
@@ -64,7 +64,7 @@ class DbData(SeqData):
         """Create an object from a database metadata object"""
         obj = cls(length = db_metadata.number_of_letters,
                   moltype = MolType[db_metadata.dbtype.upper()],
-                  bytes_to_cache_gb = db_metadata.bytes_to_cache / (1024 ** 3))
+                  bytes_to_cache_gb = max((db_metadata.bytes_to_cache / (1024 ** 3), 1)))
         return obj
 
 
@@ -83,6 +83,11 @@ class MTMode(Enum):
 # MT mode 1 query length per thread
 RESIDUES_PER_THREAD = 10000
 BASES_PER_THREAD = 2500000
+
+# Minimum query length for MT mode 1
+MIN_MT_ONE_QUERY_LENGTH_BLASTN = 2500000
+MIN_MT_ONE_QUERY_LENGTH_BLASTP = 10000
+MIN_MT_ONE_QUERY_LENGTH_BLASTX = 20004
 
 # Maximum database length for MT mode 1
 MAX_MT_ONE_DB_LENGTH_PROT = int(2e9)
@@ -109,8 +114,9 @@ def get_mt_mode(program: str, options: str = '', db_metadata: DbMetadata = None,
         query: Queries information
     """
     if query:
-        if (query.moltype == MolType.PROTEIN and query.length <= RESIDUES_PER_THREAD) or \
-           (query.moltype == MolType.NUCLEOTIDE and query.length <= BASES_PER_THREAD):
+        if (program.lower() == 'blastn' and query.length < MIN_MT_ONE_QUERY_LENGTH_BLASTN) or \
+            (program.lower() == 'blastp' and query.length < MIN_MT_ONE_QUERY_LENGTH_BLASTP) or \
+            (program.lower() == 'blastx' and query.length < MIN_MT_ONE_QUERY_LENGTH_BLASTX):
             return MTMode.ZERO
 
     if program.lower() == 'rpsblast' or program.lower() == 'rpstblastn':
@@ -118,9 +124,7 @@ def get_mt_mode(program: str, options: str = '', db_metadata: DbMetadata = None,
     elif program.lower() in ['tblastn', 'tblastx', 'psiblast']:
         return MTMode.ZERO
 
-    if '-taxids' in options or '-taxidlist' in options or \
-           '-gilist' in options or '-seqidlist' in options or \
-           '-negative_taxids' in options or '-negative_taxidlist' in options:
+    if '-taxids' in options or '-taxidlist' in options:
         return MTMode.ONE
 
     if db_metadata:
@@ -184,7 +188,7 @@ def get_batch_length(cloud_provider: CSP, program: str, mt_mode: MTMode,
                                   message=f"Invalid BLAST program '{program}'")
         max_num_cpus = MAX_NUM_THREADS_AWS if cloud_provider == CSP.AWS else MAX_NUM_THREADS_GCP
         batch_len *= min((num_cpus, max_num_cpus))
-        if program.lower() == 'rpsblast':
+        if program.lower() == 'rpsblast' or program.lower() == 'blastp':
             batch_len *= 2
     else:
         # MTMode.ZERO
@@ -299,19 +303,18 @@ def get_mem_limit(cloud_provider: CSP, machine_type: str, num_cpus: PositiveInte
     return MemoryStr(f'{mem_limit}G')
 
 
-def aws_get_machine_type(db: DbData, num_cpus: PositiveInteger, region: str) -> str:
+def aws_get_machine_type(memory: MemoryStr, num_cpus: PositiveInteger, region: str) -> str:
     """Select an AWS machine type that can accommodate the database and has
     enough VCPUs. The machine type is selected from a set of machines supported
     by AWS Batch and offered in a specific region.
 
     Arguments:
-        db: Database information
+        memory: Required memory
         num_cpus: Required number of CPUs
         region: Cloud provided region
 
     Returns:
-        Instance type with at least as much memory as db.bytes_to_cache_gb and
-        required number of CPUs"""
+        An AWS instance type with at least memory RAM and num_cpus vCPUs"""
     M5_FAMILY = ['m5ad.large', 'm5ad.xlarge'] + [f'm5ad.{i}xlarge' for i in [2, 4, 8, 12, 16, 24]]
     C5_FAMILY = ['c5ad.large', 'c5ad.xlarge'] + [f'c5ad.{i}xlarge' for i in [2, 4, 8, 12, 16, 24]]
     R5_FAMILY = ['r5ad.large', 'r5ad.xlarge'] + [f'r5ad.{i}xlarge' for i in [2, 4, 8, 12, 16, 24]]
@@ -323,25 +326,27 @@ def aws_get_machine_type(db: DbData, num_cpus: PositiveInteger, region: str) -> 
     supported_offerings = [tp for tp in offerings if tp in SUPPORTED_INSTANCE_TYPES]
 
     # get properties of suitable instances
-    suitable_props = get_suitable_instance_types(min_memory=MemoryStr(f'{db.bytes_to_cache_gb * ELB_BLASTDB_MEMORY_MARGIN}G'),
+    suitable_props = get_suitable_instance_types(min_memory=memory,
                                                  min_cpus=num_cpus,
                                                  instance_types=supported_offerings)
+    if not suitable_props:
+        raise UserReportError(returncode = UNKNOWN_ERROR,
+                              message = f'An AWS machine type with memory {memory.asGB()}GB and {num_cpus} CPUs could not be found')
 
     return sorted(suitable_props, key=lambda x: x['MemoryInfo']['SizeInMiB'])[0]['InstanceType']
 
 
-def gcp_get_machine_type(db: DbData, num_cpus: PositiveInteger) -> str:
+def gcp_get_machine_type(memory: MemoryStr, num_cpus: PositiveInteger) -> str:
     """Select a GCP machine type that can accommodate the database and has
     enough VCPUs. The instance type is selected from E2 and N1 instance
     families. One job per instance is assumed.
 
     Arguments:
-        db: Database metadata
+        memory: Required memory
         num_cpus: Required number of CPUs
 
     Returns:
-        Instance type with at least as much memory as mem_limit and
-        required number of CPUs"""
+        A GCP instance type with at least memory RAM and num_cpus vCPUs"""
     # machine type families ranked by memory to CPU ratio (order matters)
     FAMILIES_N1 = ['n1-highcpu',
                    'n1-standard',
@@ -352,22 +357,21 @@ def gcp_get_machine_type(db: DbData, num_cpus: PositiveInteger) -> str:
     # numbers of CPUs in GCP instance types
     CPUS = [1, 2, 4, 8, 16, 32, 64, 96]
 
-    idx = bisect_left(CPUS, num_cpus)
+    # 1 CPU per instance must be left for kubernetes
+    idx = bisect_left(CPUS, num_cpus + 1)
     if idx >= len(CPUS):
         raise UserReportError(returncode=UNKNOWN_ERROR,
                               message=f'GCP machine type with {num_cpus} CPUs could not be found')
 
-    memory = db.bytes_to_cache_gb + SYSTEM_MEMORY_RESERVE
-
     # E2 machine types are usually the cheapest, but have at most 128GB memory
-    machine_type_families = FAMILIES_E2 if memory < 120 and num_cpus <= 32 else FAMILIES_N1
+    machine_type_families = FAMILIES_E2 if memory.asGB() < 120 and num_cpus <= 32 else FAMILIES_N1
 
     machine_cpus = CPUS[idx]
-    mem_cpu_ratio = memory / machine_cpus
+    mem_cpu_ratio = memory.asGB() / machine_cpus
     family = None
     while idx < len(CPUS) and not family:
         machine_cpus = CPUS[idx]
-        mem_cpu_ratio = memory / machine_cpus
+        mem_cpu_ratio = memory.asGB() / machine_cpus
         for fam in machine_type_families:
             if mem_cpu_ratio <= GCP_MACHINES[fam]:
                 family = fam
@@ -377,12 +381,12 @@ def gcp_get_machine_type(db: DbData, num_cpus: PositiveInteger) -> str:
 
     if not family:
         raise UserReportError(returncode=UNKNOWN_ERROR,
-                              message=f'GCP machine type with memory {memory}GB and {num_cpus} CPUs could not be found')
+                              message=f'GCP machine type with memory {memory.asGB()}GB and {num_cpus} CPUs could not be found')
 
     return f'{family}-{machine_cpus}'
 
 
-def get_machine_type(cloud_provider: CSP, db: DbMetadata, num_cpus: PositiveInteger, region: str) -> str:
+def get_machine_type(cloud_provider: CSP, db: DbMetadata, num_cpus: PositiveInteger, mt_mode: MTMode, db_mem_margin: float, region: str) -> str:
     """Select a machine type that can accommodate the database and has enough
     vCPUs.
 
@@ -390,13 +394,24 @@ def get_machine_type(cloud_provider: CSP, db: DbMetadata, num_cpus: PositiveInte
         cloud_provider: Cloud service provider
         db: Database metadata
         num_cpus: Number of CPUs per BLAST search job
+        mt_mode: Multi-threading mode
         region: Cloud service provider region
 
     Returns:
-        Instance type with at least as much memory as db.bytes_to_cache_gb and
-        required number of CPUs"""
+        Instance type with at enough memory for BLAST to work and required
+        number of CPUs"""
     db_data = DbData.from_metadata(db)
+
+    # find memory required for BLAST to work (excluding cached database)
+    MIN_OPS_MEMORY_GB = 10
+    MAX_OPS_MEMORY_GB = 60
+    ops_memory_gb = db_data.bytes_to_cache_gb * (db_mem_margin - 1)
+    if mt_mode == MTMode.ONE:
+        ops_memory_gb *= num_cpus
+    ops_memory_gb = min(MAX_OPS_MEMORY_GB, max(MIN_OPS_MEMORY_GB, ops_memory_gb))
+    memory = MemoryStr(f'{db_data.bytes_to_cache_gb + ops_memory_gb + SYSTEM_MEMORY_RESERVE}G')
+
     if cloud_provider == CSP.AWS:
-        return aws_get_machine_type(db_data, num_cpus, region)
+        return aws_get_machine_type(memory, num_cpus, region)
     else:
-        return gcp_get_machine_type(db_data, num_cpus)
+        return gcp_get_machine_type(memory, num_cpus)

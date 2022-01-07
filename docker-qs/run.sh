@@ -19,7 +19,15 @@
 #   
 # Please cite NCBI in any work or product based on this material.
 #
-# run.sh: Splits FASTA and uploads it to S3
+# run.sh: 
+#   For AWS - Splits FASTA and uploads it to S3
+#   For GCP - depending on flags -c and -p
+#             -p 0 (default) is used for network attached shared drive
+#               if -c 0 (default) - splits query to local directory
+#               if -c 1 - copies batched from GS to local directory
+#             -p 1 -c 0 is used for local SSD cloud split, splits and copies batches to GS output bucket
+#             -p 1 -c 1 is not used - it's tautology, so in case of client split with local SSD this job
+#               is just ommitted
 #
 # Author: Christiam Camacho (camacho@ncbi.nlm.nih.gov)
 # Created: Wed Jul  7 13:42:14 EDT 2021
@@ -32,11 +40,12 @@ k8s_job_limit=5000
 batch_len=5000000
 show_help=0
 copy_only=0
+split_to_cloud=0
 input=''
 output_bucket=''
 local_output_dir='/blast/queries'
 
-while getopts "o:i:b:c:q:h" OPT; do
+while getopts "o:i:b:c:q:p:h" OPT; do
     case $OPT in 
         b) batch_len=${OPTARG}
             ;;
@@ -50,14 +59,18 @@ while getopts "o:i:b:c:q:h" OPT; do
             ;;
         c) copy_only=${OPTARG}
             ;;
+        p) split_to_cloud=${OPTARG}
+            ;;
     esac
 done
 
 [ -z "$output_bucket" ] && { echo "Missing OUTPUT_BUCKET argument"; show_help=1; }
 [ -z "$input" ] && { echo "Missing INPUT argument"; show_help=1; }
 
+[[ $copy_only -eq 1 ]] && [[ $split_to_cloud -eq 1 ]] && { echo "Options -c 1 and -p 1 must not be used together"; show_help=1; }
+
 if [ $show_help -eq 1 ] ;then
-    echo "Usage: $0 -i INPUT -o OUTPUT_BUCKET -b BATCH_LEN"
+    echo "Usage: $0 -i INPUT -o OUTPUT_BUCKET -b BATCH_LEN -p SPLIT_TO_CLOUD -c COPY_ONLY -q LOCAL_DIR_FOR_QUERIES"
     exit 0
 fi
 
@@ -85,6 +98,9 @@ EOF
       exit 0
     else
       time gsutil -qm cp $TMP $output_bucket/metadata/query_length.txt
+      if [ $split_to_cloud -eq 1 ]; then
+        gsutil -mq cp "$local_output_dir/batch_*.fa" $output_bucket/query_batches
+      fi
     fi
   fi
   find $local_output_dir -type f -name "batch_*.fa" | xargs -n1 basename > batch_list.txt

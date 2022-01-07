@@ -379,7 +379,8 @@ def mocked_safe_exec(cmd: Union[List[str], str], cloud_state: CloudResources = N
         return MockedCompletedProcess()
 
     # Check whether a file exists in GCS
-    elif ' '.join(cmd).startswith('gsutil -q stat'):
+    elif ' '.join(cmd).startswith('gsutil -q stat') or \
+         ' '.join(cmd).startswith('gsutil stat'):
         if cloud_state:
             if cmd[-1] in cloud_state.storage:
                 return MockedCompletedProcess()
@@ -415,8 +416,11 @@ def mocked_safe_exec(cmd: Union[List[str], str], cloud_state: CloudResources = N
     elif ' '.join(cmd).startswith('kubectl config current-context'):
         return MockedCompletedProcess(stdout='dummy-context',stderr='',returncode=0)
 
-    elif cmd[0] == 'kubectl' and  'apply -f' in ' '.join(cmd):
+    elif cmd[0] == 'kubectl' and 'apply -f' in ' '.join(cmd):
         return MockedCompletedProcess(stdout='',stderr='',returncode=0)
+
+    elif ' '.join(cmd).startswith('gcloud compute regions describe'):
+        return MockedCompletedProcess(stdout='{"quotas":[{"limit": 81920.0,"metric": "SSD_TOTAL_GB","usage": 2666.0}]}',stderr='',returncode=0)
 
     # raise ValueError for unrecognized command line
     else:
@@ -556,6 +560,7 @@ class MockedS3Object:
     def __init__(self, bucket, key):
         self.obj = f's3://{bucket}/{key}'
         self.storage = {}
+        self.content_length = 123456789
 
     def load(self):
         """Raise ClientError if the object is not in storage, otherwise do nothing"""

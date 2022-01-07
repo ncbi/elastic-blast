@@ -48,7 +48,7 @@ from .base import QuerySplittingResults
 from .util import safe_exec, SafeExecError
 from .constants import ELB_GCP_BATCH_LIST, ELB_METADATA_DIR, ELB_QUERY_LENGTH, ELB_QUERY_BATCH_DIR
 from .constants import ELB_S3_PREFIX, ELB_GCS_PREFIX, ELB_FTP_PREFIX, ELB_HTTP_PREFIX
-from .constants import ELB_QUERY_BATCH_FILE_PREFIX, ELB_META_CONFIG_FILE
+from .constants import ELB_QUERY_BATCH_FILE_PREFIX
 
 
 def harvest_query_splitting_results(bucket_name: str, dry_run: bool = False, boto_cfg: Config = None) -> QuerySplittingResults:
@@ -333,17 +333,23 @@ def unpack_stream(s:IO, gzipped:bool, tarred:bool) -> IO:
     return io.TextIOWrapper(gzip.GzipFile(fileobj=s)) if gzipped else s   #type: ignore
 
 
-def check_for_read(fname: str, dry_run=False) -> None:
+def check_for_read(fname: str, dry_run : bool = False, print_file_size: bool = False) -> None:
     """ Check that path on local, GS, AWS S3 or URL-available filesystem can be read from.
     raises FileNotFoundError if there is no such file
     """
     if fname.startswith(ELB_GCS_PREFIX):
-        cmd = f'gsutil -q stat {fname}'
+        cmd = f'gsutil stat {fname}' if print_file_size else f'gsutil -q stat {fname}'
         if dry_run:
             logging.info(cmd)
             return
         try:
-            safe_exec(cmd)
+            p = safe_exec(cmd)
+            if print_file_size and p.stdout:
+                lines = p.stdout.decode('utf-8').splitlines()
+                content_length = filter(lambda l: 'Content-Length' in l, lines)
+                if content_length:
+                    fsize = list(content_length).pop().split()[1]
+                    logging.debug(f'{fname} size {fsize}')
         except SafeExecError as e:
             raise FileNotFoundError(e.returncode, e.message)
         return
@@ -356,6 +362,8 @@ def check_for_read(fname: str, dry_run=False) -> None:
         try:
             obj = s3.Object(bucket, key)
             obj.load()
+            if print_file_size:
+                logging.debug(f'{fname} size {obj.content_length}')
         except ClientError as exn:
             raise FileNotFoundError(1, str(exn))
         return
@@ -365,13 +373,19 @@ def check_for_read(fname: str, dry_run=False) -> None:
             return
         req = urllib.request.Request(fname, method='HEAD')
         try:
-            urllib.request.urlopen(req)
+            url_obj = urllib.request.urlopen(req)
+            if print_file_size:
+                logging.debug(f"{fname} size {url_obj.info()['Content-Length']}")
         except:
             raise FileNotFoundError()
         return
     if dry_run:
         logging.info(f'Open file {fname} for read')
         return
+    if print_file_size:
+        try: logging.debug(f'{fname} size {os.path.getsize(fname)}')
+        except:
+            raise FileNotFoundError()
     open(fname, 'r')
 
 

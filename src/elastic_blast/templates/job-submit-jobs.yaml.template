@@ -4,12 +4,12 @@ kind: Job
 metadata:
   name: submit-jobs
   labels:
-    app: setup
+    app: submit
 spec:
   template:
     metadata:
       labels:
-        app: setup
+        app: submit
     spec:
       volumes:
       - name: workspace
@@ -29,9 +29,11 @@ spec:
           value: "${ELB_CLUSTER_NAME}"
         - name: ELB_NUM_NODES
           value: "${ELB_NUM_NODES}"
+        # - name: ELB_DEBUG_SUBMIT_JOB_FAIL
+        #   value: "1"
         workingDir: /workspace
         volumeMounts:
         - name: workspace
           mountPath: /workspace
       restartPolicy: Never
-  backoffLimit: 4
+  backoffLimit: 0

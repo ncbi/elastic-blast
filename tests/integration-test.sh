@@ -5,11 +5,13 @@
 # Created: Wed 06 May 2020 06:59:03 AM EDT
 
 SCRIPT_DIR=$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )
-set -euo pipefail
+set -xeuo pipefail
 
 # All other settings are specified in the config file
 CFG=${1:-"${SCRIPT_DIR}/../share/etc/elb-blastn-pdbnt.ini"}
 ROOT_DIR=${SCRIPT_DIR}/..
+ELB=$ROOT_DIR/elastic-blast
+#ELB=elastic-blast
 QUERY_BATCHES=${ELB_RESULTS}/query_batches
 export ELB_DONT_DELETE_SETUP_JOBS=1
 export BLAST_USAGE_REPORT=false
@@ -41,7 +43,7 @@ NTHREADS=$(get_num_cores)
 cleanup_resources_on_error() {
     set +e
     if grep -q '^aws-' $CFG; then
-        time $ROOT_DIR/elastic-blast delete --cfg $CFG --loglevel DEBUG --logfile $logfile $DRY_RUN
+        time $ELB delete --cfg $CFG --loglevel DEBUG --logfile $logfile $DRY_RUN
     fi
     exit 1;
 }
@@ -89,39 +91,37 @@ if [ ! -z "${ELB_TC_BRANCH+x}" ] ; then
         sed -i~ -e "/^\[cluster\]/a labels = branch=$ELB_TC_BRANCH" $CFG
     fi
 fi
-$ROOT_DIR/elastic-blast submit --cfg $CFG --loglevel DEBUG --logfile $logfile $DRY_RUN
+if [ ! -z "${ELB_TC_COMMIT_SHA+x}" ] ; then
+    if grep -q ^labels $CFG; then
+        sed -i~ -e "s@\(^labels.*\)@\1,commit=$ELB_TC_COMMIT_SHA@" $CFG
+    else
+        sed -i~ -e "/^\[cluster\]/a labels = commit=$ELB_TC_COMMIT_SHA" $CFG
+    fi
+fi
+$ELB submit --cfg $CFG --loglevel DEBUG --logfile $logfile $DRY_RUN
 
 attempts=0
 [ ! -z "$DRY_RUN" ] || sleep 10    # Should be enough for the BLAST k8s jobs to get started
 
 while [ $attempts -lt $timeout_minutes ]; do
-    $ROOT_DIR/elastic-blast status --verbose --cfg $CFG $DRY_RUN | tee $TMP
+    exit_code=0
+    $ELB status --verbose --exit-code --cfg $CFG $DRY_RUN || exit_code=$?
 
-    `grep -q '^SUCCESS' $TMP` || `grep -q '^FAILURE' $TMP` && break
-    set +e
-    num_failed=`grep '^Failed ' $TMP | cut -f 2 -d ' '`
-    num_pending=`grep '^Pending ' $TMP | cut -f 2 -d ' '`
-    num_succeeded=`grep '^Succeeded ' $TMP | cut -f 2 -d ' '`
-    num_running=`grep '^Running ' $TMP | cut -f 2 -d ' '`
-    num_jobs=$((${num_failed:-0} + ${num_pending:-0} + ${num_succeeded:-0} + ${num_running:-0}))
-    set -e
-    if ! `grep -q '^SUBMITTING' $TMP` && [ $num_jobs -ne 0 ]; then
-
-        [ $num_failed -gt 0 ] && break  # If there's a failure, break out of the loop
-
-        [ $num_pending -eq 0 ] && [ $num_running -eq 0 ] && break  # ElasticBLAST is done successfully
-    fi
+    # if succeeded or failed - break out of the wait cycle
+    [ $exit_code -eq 0 ] || [ $exit_code -eq 1 ] && break
 
     attempts=$((attempts+1))
     sleep 60
 done
 
 export PATH=$PATH:$ROOT_DIR
-$ROOT_DIR/share/tools/run-report.py --cfg $CFG --results ${ELB_RESULTS} -f csv | tee $run_report
+if [ $exit_code -eq 0 ]; then
+    $ROOT_DIR/share/tools/run-report.py --cfg $CFG --results ${ELB_RESULTS} -f csv | tee $run_report
+fi
 
 if ! grep -q '^aws-' $CFG; then
     make logs ELB_CLUSTER_NAME=`make -s results2clustername` 2>&1 | tee $logs
-    $ROOT_DIR/elastic-blast run-summary --cfg $CFG --loglevel DEBUG --logfile $logfile -o $runsummary_output $DRY_RUN
+    $ELB run-summary --cfg $CFG --loglevel DEBUG --logfile $logfile -o $runsummary_output $DRY_RUN
     # Get query batches
     gsutil -qm cp ${QUERY_BATCHES}/*.fa . || true
 
@@ -131,17 +131,15 @@ if ! grep -q '^aws-' $CFG; then
     gsutil -qm cp ${ELB_RESULTS}/logs/* .
     gsutil -qm cp ${ELB_RESULTS}/*.out.gz .
 else
-    $ROOT_DIR/elastic-blast run-summary --cfg $CFG --loglevel DEBUG --logfile $logfile -o $runsummary_output $DRY_RUN
-
+    $ELB run-summary --cfg $CFG --loglevel DEBUG --logfile $logfile -o $runsummary_output $DRY_RUN
     # Get query batches
     aws s3 cp ${QUERY_BATCHES}/ . --recursive --exclude '*' --include "*.fa" --exclude '*/*'
     # Get results
     aws s3 cp ${ELB_RESULTS}/ . --recursive --exclude '*' --include "*.out.gz" --exclude '*/*'
     # Get backend logs
     aws s3 cp ${ELB_RESULTS}/logs/backends.log ${logs}
-
     if ! aws iam get-role --role-name ncbi-elasticblast-janitor-role  >&/dev/null; then
-        $ROOT_DIR/elastic-blast delete --cfg $CFG --loglevel DEBUG --logfile $logfile $DRY_RUN
+        $ELB delete --cfg $CFG --loglevel DEBUG --logfile $logfile $DRY_RUN
     fi
 fi
 

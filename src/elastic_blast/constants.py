@@ -45,14 +45,15 @@ class ElbCommand(Enum):
 
 
 class ElbStatus(Enum):
-    """ Defines the status of an ElasticBLAST search """
-    CREATING = auto()
-    DELETING = auto()
-    SUBMITTING = auto()
-    SUCCESS = auto()
-    FAILURE = auto()
-    RUNNING = auto()
-    UNKNOWN = auto()
+    """ Defines the status of an ElasticBLAST search,
+        numerical values are return codes for elastic-blast status --exit-code """
+    SUCCESS    = 0    # Cluster computation finished successfully
+    FAILURE    = 1    # There was a failure in the process
+    CREATING   = 2    # Cloud resources are being allocated/created
+    SUBMITTING = 3    # Jobs are being submitted
+    RUNNING    = 4    # Jobs are running
+    DELETING   = 5    # Cluster is being deleted
+    UNKNOWN    = 6    # Cluster is unknown to the system
 
     def __str__(self):
         """ Convert value to a string """
@@ -199,10 +200,10 @@ class MolType(Enum):
 ELB_DFLT_GCP_REGION = 'us-east4'
 ELB_DFLT_AWS_REGION = 'us-east-1'
 
-ELB_DOCKER_VERSION = '1.0.0'
-ELB_QS_DOCKER_VERSION = '0.0.6'
-ELB_JANITOR_DOCKER_VERSION = '0.1.1'
-ELB_JOB_SUBMIT_DOCKER_VERSION = '1.1.2'
+ELB_DOCKER_VERSION = '1.0.3'
+ELB_QS_DOCKER_VERSION = '0.1.2'
+ELB_JANITOR_DOCKER_VERSION = '0.2.0'
+ELB_JOB_SUBMIT_DOCKER_VERSION = '1.2.1'
 
 ELB_DOCKER_IMAGE_GCP = f'gcr.io/ncbi-sandbox-blast/ncbi/elb:{ELB_DOCKER_VERSION}'
 ELB_DOCKER_IMAGE_AWS = f'public.ecr.aws/ncbi-elasticblast/elasticblast-elb:{ELB_DOCKER_VERSION}'
@@ -291,6 +292,8 @@ K8S_JOB_IMPORT_QUERY_BATCHES = 'import-query-batches'
 K8S_JOB_SUBMIT_JOBS = 'submit-jobs'
 K8S_JOB_BLAST = 'blast'
 K8S_JOB_RESULTS_EXPORT = 'results-export'
+K8S_JOB_INIT_PV = 'init-pv'
+K8S_JOB_CLOUD_SPLIT_SSD = 'cloud-split-ssd'
 
 # Number of jobs per directory after which the jobs are submitted individually to minimize timeouts
 K8S_MAX_JOBS_PER_DIR = 100

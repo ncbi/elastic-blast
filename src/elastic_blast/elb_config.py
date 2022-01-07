@@ -34,6 +34,7 @@ from hashlib import md5
 import configparser
 import re
 import time
+import datetime
 import socket
 import logging
 import shlex
@@ -357,6 +358,8 @@ class BlastConfig(ConfigParserToDataclassMapper):
         except ValueError as err:
             errors.append(f'Incorrect BLAST options: {str(err)} in "{self.options}"')
 
+        if self.db_mem_margin < 1.0:
+            errors.append(f'Incorrect value for blast.db_mem_margin: "{self.db_mem_margin}", must be larger than 1')
 
 @dataclass_json(letter_case=LetterCase.KEBAB)
 @dataclass
@@ -604,12 +607,32 @@ class ElasticBlastConfig:
                 else:
                     logging.warning('Database metadata file was not provided. We recommend creating and providing a BLAST database metadata file. Benefits include better elastic-blast performance and error checking. Please, see https://blast.ncbi.nlm.nih.gov/doc/elastic-blast/tutorials/create-blastdb-metadata.html for more information and instructions.')
 
+        # set mt_mode
+        if self.blast:
+            mt_mode = MTMode.ZERO
+            if '-mt_mode' in self.blast.options:
+                mode = re.findall(r'-mt_mode\s+(\d)', self.blast.options)
+                if not mode or int(mode[0]) > 1:
+                    raise UserReportError(returncode=INPUT_ERROR,
+                                          message=f'Incorrect -mt_mode parameter value "{mode[0]}" in blast.options: "{self.blast.options}". -mt_mode must be either 0 or 1, please see https://www.ncbi.nlm.nih.gov/books/NBK571452/ for details.')
+                mt_mode = MTMode(int(mode[0]))
+                if self.blast.program in ['tblastx', 'psiblast'] and mt_mode == MTMode.ZERO:
+                    raise UserReportError(returncode=INPUT_ERROR,
+                                          message=f'{self.blast.program} does not support "-mt_mode" option')
+            else:
+                mt_mode = get_mt_mode(self.blast.program, self.blast.options,
+                                      self.blast.db_metadata)
+                if mt_mode == MTMode.ONE:
+                    self.blast.options += f' {mt_mode}'
+
         # select machine type
         if not self.cluster.machine_type:
             if self.blast and self.blast.db_metadata:
                 self.cluster.machine_type = get_machine_type(self.cloud_provider.cloud,
                                                              self.blast.db_metadata,
                                                              self.cluster.num_cpus,
+                                                             mt_mode,
+                                                             self.blast.db_mem_margin,
                                                              self.cloud_provider.region)
             else:
                 if self.cloud_provider.cloud == CSP.AWS:
@@ -640,25 +663,8 @@ class ElasticBlastConfig:
                                                    self.cluster.num_cpus,
                                                    cloud_region=self.cloud_provider.region)
 
-        # set mt_mode
+        # set batch length
         if self.blast:
-            mt_mode = MTMode.ZERO
-            if '-mt_mode' in self.blast.options:
-                mode = re.findall(r'-mt_mode\s+(\d)', self.blast.options)
-                if not mode or int(mode[0]) > 1:
-                    raise UserReportError(returncode=INPUT_ERROR,
-                                          message=f'Incorrect -mt_mode parameter value "{mode[0]}" in blast.options: "{self.blast.options}". -mt_mode must be either 0 or 1, please see https://www.ncbi.nlm.nih.gov/books/NBK571452/ for details.')
-                mt_mode = MTMode(int(mode[0]))
-                if self.blast.program in ['tblastx', 'psiblast'] and mt_mode == MTMode.ZERO:
-                    raise UserReportError(returncode=INPUT_ERROR,
-                                          message=f'{self.blast.program} does not support "-mt_mode" option')
-            else:
-                mt_mode = get_mt_mode(self.blast.program, self.blast.options,
-                                      self.blast.db_metadata)
-                if mt_mode == MTMode.ONE:
-                    self.blast.options += f' {mt_mode}'
-
-            # set batch length
             if self.blast.batch_len == ELB_NOT_INITIALIZED_NUM:
                 self.blast.batch_len = get_batch_length(self.cloud_provider.cloud,
                                                         self.blast.program,
@@ -837,8 +843,7 @@ class ElasticBlastConfig:
                 instance_props = get_instance_props(self.cloud_provider.cloud,
                                                     self.cloud_provider.region,
                                                     self.cluster.machine_type)
-                if instance_props.ncpus < self.cluster.num_cpus:
-                    errors.append(f'Requested number of CPUs for a single search job "{self.cluster.num_cpus}" exceeds the number of CPUs ({instance_props.ncpus}) on the selected instance type "{self.cluster.machine_type}". Please, reduce the number of CPUs or select an instance type with more available CPUs.')
+                self._validate_num_cpus(instance_props, errors)
 
                 if instance_props.memory - SYSTEM_MEMORY_RESERVE < self.cluster.mem_limit.asGB():
                     errors.append(f'Memory limit "{self.cluster.mem_limit}" exceeds memory available on the selected machine type {self.cluster.machine_type}: {instance_props.memory - SYSTEM_MEMORY_RESERVE}GB. Please, select machine type with more memory or lower memory limit')
@@ -851,6 +856,24 @@ class ElasticBlastConfig:
         if errors:
             raise UserReportError(returncode=INPUT_ERROR,
                                   message='\n'.join(errors))
+
+    def _validate_num_cpus(self, instance_props: InstanceProperties, errors: List[str]):
+        """ Validate that the num_cpus configured will work well with ElasticBLAST """
+        if instance_props.ncpus < self.cluster.num_cpus:
+            errors.append(f'Requested number of CPUs for a single search job ({self.cluster.num_cpus}) exceeds the number of CPUs ({instance_props.ncpus}) on the selected instance type ({self.cluster.machine_type}). Please, reduce the number of CPUs or select an instance type with more available CPUs.')
+
+        if self.cloud_provider.cloud == CSP.GCP:
+            if instance_props.ncpus % self.cluster.num_cpus == 0:
+                #msg = f'Requested number of CPUs for a single search job ({self.cluster.num_cpus}) does not optimally use the CPUs available to instance type {self.cluster.machine_type}.'
+                if instance_props.ncpus == self.cluster.num_cpus:
+                    msg = f'Requested number of CPUs for a single search job ({self.cluster.num_cpus}) does not leave any CPUs for GKE cluster operation for instance type {self.cluster.machine_type}.'
+
+                    if instance_props.ncpus > ELB_DFLT_GCP_NUM_CPUS:
+                        msg += f' Please set cluster.num_cpus to {ELB_DFLT_GCP_NUM_CPUS}.'
+                    else:
+                        msg += f' Please set cluster.num_cpus to {instance_props.ncpus-1}.'
+                    errors.append(msg)
+
 
     @staticmethod
     def _clean_dict(indict: Dict[str, Any]):
@@ -966,7 +989,7 @@ class ElasticBlastConfig:
 
 def generate_cluster_name(results: CloudURI) -> str:
     """ Returns the default cluster name """
-    username = getpass.getuser().lower()
+    username = sanitize_gcp_label(getpass.getuser().lower())
     return f'elasticblast-{username}-{results.md5}'
 
 
@@ -988,7 +1011,7 @@ def create_labels(cloud_provider: CSP,
     cluster_name = sanitize(cluster_name)
     blast_program = sanitize(blast_conf.program) if blast_conf else '-'
     db = sanitize(blast_conf.db) if blast_conf else '-'
-    create_date = sanitize(time.strftime('%Y-%m-%d-%H-%M-%S', time.gmtime()))
+    create_date = sanitize(datetime.datetime.now(datetime.timezone.utc).strftime('%Y-%m-%d-%H-%M-%S'))
     hostname = sanitize(socket.gethostname())
 
     results = sanitize(results)

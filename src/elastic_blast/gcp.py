@@ -49,8 +49,9 @@ from .util import validate_gcp_disk_name, get_blastdb_info, get_usage_reporting
 
 from . import kubernetes
 from .constants import CLUSTER_ERROR, ELB_NUM_JOBS_SUBMITTED, GCP_APIS, ELB_METADATA_DIR, ELB_LOG_DIR, K8S_JOB_SUBMIT_JOBS
-from .constants import ELB_STATE_DISK_ID_FILE, CSP, DEPENDENCY_ERROR
+from .constants import ELB_STATE_DISK_ID_FILE, DEPENDENCY_ERROR
 from .constants import ELB_QUERY_BATCH_DIR, ELB_DFLT_MIN_NUM_NODES
+from .constants import K8S_JOB_CLOUD_SPLIT_SSD, K8S_JOB_INIT_PV
 from .constants import K8S_JOB_BLAST, K8S_JOB_GET_BLASTDB, K8S_JOB_IMPORT_QUERY_BATCHES
 from .constants import K8S_JOB_LOAD_BLASTDB_INTO_RAM, K8S_JOB_RESULTS_EXPORT, K8S_UNINITIALIZED_CONTEXT
 from .constants import ELB_DOCKER_IMAGE_GCP, ELB_QUERY_LENGTH, INPUT_ERROR
@@ -68,12 +69,7 @@ class ElasticBlastGcp(ElasticBlast):
         self.query_files: List[str] = []
         self.cluster_initialized = False
         self.apis_enabled = False
-        self.cached_status = None
-        self.cached_counts: DefaultDict[str, int] = defaultdict(int)
-        self.cached_result = ''
-        # TODO: EB-1356 Change this when cloud submission works
-        # with local SSD
-        self.cloud_job_submission = self.cloud_job_submission and not self.cfg.cluster.use_local_ssd
+        self.auto_shutdown = not 'ELB_DISABLE_AUTO_SHUTDOWN' in os.environ
 
     def cloud_query_split(self, query_files: List[str]) -> None:
         """ Submit the query sequences for splitting to the cloud.
@@ -84,12 +80,47 @@ class ElasticBlastGcp(ElasticBlast):
         if self.dry_run:
             return
         self.query_files = query_files
+        logging.debug("Initialize cluster with cloud split")
         self._initialize_cluster()
         self.cluster_initialized = True
 
     def wait_for_cloud_query_split(self) -> None:
-        """ No wait needed in GCP implementation """
-        pass
+        """ Wait for cloud split """
+        if not self.query_files:
+            # This is QuerySplitMode.CLIENT - no need to wait
+            return
+        k8s_ctx = self._get_gke_credentials()
+        kubectl = f'kubectl --context={k8s_ctx}'
+        job_to_wait = K8S_JOB_CLOUD_SPLIT_SSD if self.cfg.cluster.use_local_ssd else K8S_JOB_INIT_PV
+
+        while True:
+            cmd = f"{kubectl} get job {job_to_wait} -o jsonpath=" "'{.items[?(@.status.active)].metadata.name}'"
+            if self.dry_run:
+                logging.debug(cmd)
+                return
+            else:
+                logging.debug(f'Waiting for job {job_to_wait}')
+                proc = safe_exec(cmd)
+                res = proc.stdout.decode()
+            if not res:
+                # Job's not active, check it did not fail
+                cmd = f"{kubectl} get job {job_to_wait} -o jsonpath=" "'{.items[?(@.status.failed)].metadata.name}'"
+                proc = safe_exec(cmd)
+                res = proc.stdout.decode()
+                if res:
+                    if job_to_wait == K8S_JOB_INIT_PV:
+                        # Assume BLASTDB error, as it is more likely to occur than copying files to PV when importing queries
+                        msg = 'BLASTDB initialization failed, please run '
+                        msg += f'"elastic-blast status --gcp-project {self.cfg.gcp.project} '
+                        msg += f'--gcp-region {self.cfg.gcp.region} --gcp-zone '
+                        msg += f'{self.cfg.gcp.zone} --results {self.cfg.cluster.name}" '
+                        msg += 'for further details'
+                    else:
+                        msg = 'Cloud query splitting or upload of its results from SSD failed'
+                    raise UserReportError(returncode=CLUSTER_ERROR, message=msg)
+                else:
+                    return
+            time.sleep(30)
 
     def upload_query_length(self, query_length: int) -> None:
         """ Save query length in a metadata file in GS """
@@ -123,9 +154,10 @@ class ElasticBlastGcp(ElasticBlast):
                                               of executing a regular job """
         # Can't use one stage cloud split for GCP, should never happen
         assert(not one_stage_cloud_query_split)
-        self._check_job_number_limit(query_batches, query_length)
         if not self.cluster_initialized:
+            self._check_job_number_limit(query_batches, query_length)
             self.query_files = []  # No cloud split
+            logging.debug("Initialize cluster with NO cloud split")
             self._initialize_cluster()
             self.cluster_initialized = True
         if self.cloud_job_submission:
@@ -141,30 +173,6 @@ class ElasticBlastGcp(ElasticBlast):
                     safe_exec(cmd)
                 logging.info('Done enabling autoscaling')
 
-        # Sync mode disabled per EB-700
-        #if args.sync:
-        #    while True:
-        #        try:
-        #            pending, running, succeeded, failed = get_status(args.run_label, dry_run=dry_run)
-        #        except RuntimeError as e:
-        #            returncode = e.args[0]
-        #            logging.error(f'Error while getting job status: {e.args[1]}, returncode: {returncode}')
-        #            # TODO: maybe analyze situation in more details here. It happens when kubectl can't be found
-        #            # or cluster connection can't be established. If the latter, maybe try to get GKE credentials again
-        #        except ValueError as e:
-        #            returncode = 1
-        #            logging.error(f'Error while getting job status: {e}')
-        #            # This error happens when run-label is malformed, it will not repair, so exit here
-        #            break
-        #        else:
-        #            if pending + running:
-        #                logging.debug(f'Pending {pending}, Running {running}, Succeeded {succeeded}, Failed {failed}')
-        #            else:
-        #                logging.info(f'Done: {succeeded} jobs succeeded, {failed} jobs failed')
-        #                break
-        #        time.sleep(20)  # TODO: make this a parameter (granularity)
-        #    logging.info('Deleting cluster')
-        #else:
         self.cleanup_stack.clear()
         self.cleanup_stack.append(lambda: kubernetes.collect_k8s_logs(self.cfg))
 
@@ -189,12 +197,12 @@ class ElasticBlastGcp(ElasticBlast):
     def _check_status(self, extended=False) -> Tuple[ElbStatus, Dict[str, int], str]:
         # We cache only status from gone cluster - it can't change anymore
         if self.cached_status:
-            return self.cached_status, self.cached_counts, self.cached_result
+            return self.cached_status, self.cached_counts, self.cached_failure_message
         counts: DefaultDict[str, int] = defaultdict(int)
         self._enable_gcp_apis()
         status = self._status_from_results()
         if status != ElbStatus.UNKNOWN:
-            return status, self.cached_counts, self.cached_result
+            return status, self.cached_counts, self.cached_failure_message
 
         gke_status = check_cluster(self.cfg)
         if not gke_status:
@@ -254,39 +262,45 @@ class ElasticBlastGcp(ElasticBlast):
         elif counts['succeeded']:
             status = ElbStatus.SUCCESS
         else:
-            # TODO: check init-pv and submit-jobs status
+            # check init-pv and submit-jobs status
             status = ElbStatus.SUBMITTING
+            pending, succeeded, failed = self._job_status_by_app('setup')
+            if failed > 0:
+                status = ElbStatus.FAILURE
+            elif pending == 0:
+                pending, succeeded, failed = self._job_status_by_app('submit')
+                if failed > 0:
+                    status = ElbStatus.FAILURE
 
         return status, counts, ''
-
-    def _parse_results_status(self, text):
-        for line in text.split('\n'):
-            parts = line .split()
-            if len(parts) != 2:
-                continue
-            try:
-                count = int(parts[1])
-                self.cached_counts[parts[0].lower()] = count
-            except ValueError:
-                pass
     
-    def _status_from_results(self):
-        cfg = self.cfg
-        status = ElbStatus.UNKNOWN
-        with open_for_read(os.path.join(cfg.cluster.results, ELB_METADATA_DIR, 'FAILURE.txt')) as f:
-            res = f.read()
-            if len(res):
-                status = ElbStatus.FAILURE
-                self.cached_status = status
-                self.cached_result = res
-                return status
-        with open_for_read(os.path.join(cfg.cluster.results, ELB_METADATA_DIR, 'DONE.txt')) as f:
-            done = f.read()
-            if len(done):
-                status = ElbStatus.SUCCESS
-                self.cached_status = status
-                self._parse_results_status(done)
-        return status
+    def _job_status_by_app(self, app):
+        """ get status of jobs (pending/running, succeeded, failed) by app """
+        pending = 0
+        succeeded = 0
+        failed = 0
+        selector = f'app={app}'
+        k8s_ctx = self._get_gke_credentials()
+        kubectl = f'kubectl --context={k8s_ctx}'
+        cmd = f'{kubectl} get jobs -o custom-columns=STATUS:.status.conditions[0].type -l {selector}'.split()
+        if self.dry_run:
+            logging.debug(cmd)
+        else:
+            try:
+                proc = safe_exec(cmd)
+            except SafeExecError as err:
+                logging.debug(f'Error "{err.message}" in command "{cmd}"')
+                return 0, 0, 0
+            for line in proc.stdout.decode().split('\n'):
+                if not line or line.startswith('STATUS'):
+                    continue
+                if line.startswith('Complete'):
+                    succeeded += 1
+                elif line.startswith('Failed'):
+                    failed += 1
+                else:
+                    pending += 1
+        return pending, succeeded, failed
 
 
     def delete(self):
@@ -319,23 +333,16 @@ class ElasticBlastGcp(ElasticBlast):
 
         self._label_nodes()
 
-        # EB-1356
-        # Storage initialization includes cloud split (if requested) for regular PV
-        # but not for local SSD - there are many of them and we use batches from GS
-        # We need to include cloud split job and wait for it here or in cloud submission
-        # It would be easier if these jobs - init-pv or init-ssd-{n} and cloud split
-        # comprise a separate label - not unlike app:setup - and we wait on jobs with
-        # this specific label either in initialize storage or in cloud-job-submit.sh
-        # Something like kubectl get jobs -l phase=data-setup or kubectl get pods -l phase=data-setup
-        # I would not reuse app:setup because there can be other dependencies on it,
-        # though it should be looked at.
+        if self.cloud_job_submission or self.auto_shutdown:
+            kubernetes.enable_service_account(cfg)
+
         logging.info('Initializing storage')
         clean_up_stack.append(lambda: logging.debug('Before initializing storage'))
         kubernetes.initialize_storage(cfg, query_files,
             ElbExecutionMode.NOWAIT if self.cloud_job_submission else ElbExecutionMode.WAIT)
         clean_up_stack.append(lambda: logging.debug('After initializing storage'))
 
-        if 'ELB_DISABLE_AUTO_SHUTDOWN' in os.environ:
+        if not self.auto_shutdown:
             logging.debug('Disabling janitor')
         else:
             kubernetes.submit_janitor_cronjob(cfg)
@@ -790,7 +797,7 @@ def get_gke_credentials(cfg: ElasticBlastConfig) -> str:
         logging.info(cmd)
     else:
         p = safe_exec(cmd)
-        retval = p.stdout.decode()
+        retval = p.stdout.decode().strip()
     return retval
 
 
@@ -848,6 +855,7 @@ def start_cluster(cfg: ElasticBlastConfig):
 
     actual_params = ["gcloud", "container", "clusters", "create", cluster_name]
     actual_params.append('--no-enable-autoupgrade')
+    #actual_params.append('--no-enable-ip-alias')
     actual_params.append('--project')
     actual_params.append(f'{cfg.gcp.project}')
     actual_params.append('--zone')

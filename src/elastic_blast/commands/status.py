@@ -41,8 +41,11 @@ def create_arg_parser(subparser, common_opts_parser):
                         help="Wait for job completion")
     parser.add_argument('--verbose', default=False, action='store_true',
                         help='Detailed information about jobs')
+    parser.add_argument('--exit-code', default=False, action='store_true',
+                        help='Return status through exit code')
     parser.set_defaults(func=_status)
 
+FAILURE_MESSAGE = 'Your ElasticBLAST search failed, please help us improve ElasticBLAST by reporting this failure as described in https://blast.ncbi.nlm.nih.gov/doc/elastic-blast/support.html'
 
 #TODO: use cfg only when args.wait, args.sync, and args.run_label are replicated in cfg
 def _status(args, cfg: ElasticBlastConfig, clean_up_stack: List[Any]) -> int:
@@ -65,14 +68,30 @@ def _status(args, cfg: ElasticBlastConfig, clean_up_stack: List[Any]) -> int:
                 break
             time.sleep(20)  # TODO: make this a parameter (granularity)
     except RuntimeError as err:
-        returncode = err.args[0]
+        if args.exit_code:
+            returncode = ElbStatus.FAILURE.value
+        else:
+            returncode = err.args[0]
         print(err.args[1], file=sys.stderr)
     except ValueError as err:
-        returncode = 1
-        print(err)
-    else:
-        if verbose_result:
-            print(verbose_result)
+        if args.exit_code:
+            returncode = ElbStatus.FAILURE.value
         else:
-            print(result)
+            returncode = 1
+        print(err, file=sys.stderr)
+    else:
+        if args.exit_code:
+            returncode = status.value
+            # To promote bug reporting, print message, even if status code only was requested
+            if returncode == ElbStatus.FAILURE:
+                print(FAILURE_MESSAGE)
+        if not args.exit_code or args.verbose:
+            if status == ElbStatus.SUCCESS:
+                print(f'Your ElasticBLAST search succeeded, results can be found in {cfg.cluster.results}')
+            elif status == ElbStatus.FAILURE:
+                print(FAILURE_MESSAGE)
+            else:
+                print(result)
+            if args.verbose and verbose_result:
+                print(verbose_result)
     return returncode

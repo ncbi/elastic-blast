@@ -1,13 +1,13 @@
 #                           PUBLIC DOMAIN NOTICE
 #              National Center for Biotechnology Information
-#  
+#
 # This software is a "United States Government Work" under the
 # terms of the United States Copyright Act.  It was written as part of
 # the authors' official duties as United States Government employees and
 # thus cannot be copyrighted.  This software is freely available
 # to the public for use.  The National Library of Medicine and the U.S.
 # Government have not placed any restriction on its use or reproduction.
-#   
+#
 # Although all reasonable efforts have been taken to ensure the accuracy
 # and reliability of the software and data, the NLM and the U.S.
 # Government do not and cannot warrant the performance or results that
@@ -15,7 +15,7 @@
 # Government disclaim all warranties, express or implied, including
 # warranties of performance, merchantability or fitness for any particular
 # purpose.
-#   
+#
 # Please cite NCBI in any work or product based on this material.
 
 """
@@ -37,7 +37,7 @@ from typing import List, Optional
 from .util import safe_exec, gcp_get_blastdb_latest_path, ElbSupportedPrograms, SafeExecError
 from .util import get_blastdb_info, UserReportError
 from .subst import substitute_params
-from .constants import ELB_JANITOR_DOCKER_IMAGE_GCP, ELB_NUM_JOBS_SUBMITTED, ELB_PAUSE_AFTER_INIT_PV, ELB_DOCKER_IMAGE_GCP, ELB_QS_DOCKER_IMAGE_GCP, K8S_JOB_SUBMIT_JOBS
+from .constants import ELB_JANITOR_DOCKER_IMAGE_GCP, ELB_PAUSE_AFTER_INIT_PV, ELB_DOCKER_IMAGE_GCP, ELB_QS_DOCKER_IMAGE_GCP, K8S_JOB_SUBMIT_JOBS
 from .constants import K8S_JOB_BLAST, K8S_JOB_GET_BLASTDB
 from .constants import K8S_JOB_IMPORT_QUERY_BATCHES, K8S_JOB_LOAD_BLASTDB_INTO_RAM, K8S_JOB_RESULTS_EXPORT
 from .constants import ELB_K8S_JOB_SUBMISSION_MAX_WAIT
@@ -47,9 +47,10 @@ from .constants import ELB_K8S_JOB_SUBMISSION_TIMEOUT, ELB_METADATA_DIR
 from .constants import K8S_MAX_JOBS_PER_DIR, ELB_STATE_DISK_ID_FILE, ELB_QUERY_BATCH_DIR
 from .constants import ELB_CJS_DOCKER_IMAGE_GCP
 from .constants import ElbExecutionMode
-from .constants import ELB_DFLT_JANITOR_SCHEDULE_GCP, PERMISSIONS_ERROR
+from .constants import ELB_DFLT_JANITOR_SCHEDULE_GCP, PERMISSIONS_ERROR, DEPENDENCY_ERROR
 from .filehelper import upload_file_to_gcs
 from .elb_config import ElasticBlastConfig
+
 
 def get_maximum_number_of_allowed_k8s_jobs(dry_run: bool = False) -> int:
     """ Returns the maximum number of kubernetes jobs """
@@ -347,20 +348,49 @@ def initialize_storage(cfg: ElasticBlastConfig, query_files: List[str] = [], wai
     """ Initialize storage for ElasticBLAST cluster """
     use_local_ssd = cfg.cluster.use_local_ssd
     if use_local_ssd:
-        initialize_local_ssd(cfg)
+        initialize_local_ssd(cfg, query_files, wait)
     else:
         initialize_persistent_disk(cfg, query_files, wait)
         label_persistent_disk(cfg)
 
 
-# TODO: EB-1356 introduce 'wait' parameter for cloud job submission handling
-def initialize_local_ssd(cfg: ElasticBlastConfig) -> None:
+def initialize_local_ssd(cfg: ElasticBlastConfig, query_files: List[str] = [], wait=ElbExecutionMode.WAIT) -> None:
     """ Initialize local SSDs for ElasticBLAST cluster """
     db, db_path, _ = get_blastdb_info(cfg.blast.db)
     if not db:
         raise ValueError("Config parameter 'db' can't be empty")
     dry_run = cfg.cluster.dry_run
     init_blastdb_minutes_timeout = cfg.timeouts.init_pv
+
+    results_bucket = cfg.cluster.results
+    if query_files:
+        assert len(query_files) == 1 # That's what implemented now - single file for cloud split
+        # Case of QuerySplitMode.CLOUD_TWO_STAGE
+        # We have one file we need to pass to job init_pv/import-query-batches
+        # and signal the splitting is required
+        logging.debug('Starting GCP cloud split job')
+        job_template = 'job-cloud-split-local-ssd.yaml.template'
+        input_query = query_files[0]
+        subs = {
+            'ELB_RESULTS': results_bucket,
+            'K8S_JOB_IMPORT_QUERY_BATCHES' : K8S_JOB_IMPORT_QUERY_BATCHES,
+            'INPUT_QUERY' : input_query,
+            'BATCH_LEN' : str(cfg.blast.batch_len),
+            'ELB_IMAGE_QS' : ELB_QS_DOCKER_IMAGE_GCP,
+            'TIMEOUT': str(init_blastdb_minutes_timeout*60)
+        }
+        with TemporaryDirectory() as d:
+            set_extraction_path(d)
+            job_cloud_split_local_ssd_tmpl = resource_string('elastic_blast', f'templates/{job_template}').decode()
+            job_cloud_split_local_ssd = pathlib.Path(os.path.join(d, 'job-cloud-split-local-ssd.yaml'))
+            with job_cloud_split_local_ssd.open(mode='wt') as f:
+                f.write(substitute_params(job_cloud_split_local_ssd_tmpl, subs))
+            cmd = f"kubectl --context={cfg.appstate.k8s_ctx} apply -f {job_cloud_split_local_ssd}"
+            if dry_run:
+                logging.info(cmd)
+            else:
+                safe_exec(cmd)
+
     num_nodes = cfg.cluster.num_nodes
     program = cfg.blast.program
     job_init_template = 'job-init-local-ssd.yaml.template'
@@ -400,6 +430,9 @@ def initialize_local_ssd(cfg: ElasticBlastConfig) -> None:
             logging.info(cmd)
         else:
             safe_exec(cmd)
+
+        if wait != ElbExecutionMode.WAIT:
+            return
 
         # wait for multiple jobs
         timeout = init_blastdb_minutes_timeout * 60
@@ -648,7 +681,10 @@ def get_logs(k8s_ctx: str, label: str, containers: List[str], dry_run: bool = Fa
             logging.info(cmd)
         else:
             try:
-                # kubectl logs command can fail if the pod/container is gone, so we suppress error. We can't combine it into one try-except-finally, because safe_exec should report the command used in DEBUG level using old format with timestamps. New bare format is used only after successful invocation of kubectl logs.
+                # kubectl logs command can fail if the pod/container is gone, so we suppress error.
+                #  We can't combine it into one try-except-finally, because safe_exec should report
+                #  the command used in DEBUG level using old format with timestamps. New bare format
+                #  is used only after successful invocation of kubectl logs.
                 proc = safe_exec(cmd)
                 try:
                     # Temporarily modify format for logging because we import true timestamps
@@ -685,6 +721,26 @@ def collect_k8s_logs(cfg: ElasticBlastConfig):
     get_logs(k8s_ctx, 'app=blast', [K8S_JOB_BLAST, K8S_JOB_RESULTS_EXPORT], dry_run)
 
 
+def enable_service_account(cfg: ElasticBlastConfig):
+    """ Assign default service account cluster admin priveleges.
+        Necessary for proper functioning of janitor and cloud submit jobs """
+    dry_run = cfg.cluster.dry_run
+    logging.debug(f"Enabling service account")
+    with TemporaryDirectory() as d:
+        set_extraction_path(d)
+        rbac_yaml = resource_filename('elastic_blast', 'templates/elb-janitor-rbac.yaml')
+        cmd = f"kubectl --context={cfg.appstate.k8s_ctx} apply -f {rbac_yaml}"
+        if dry_run:
+            logging.info(cmd)
+        else:
+            try:
+                safe_exec(cmd)
+            except:
+                msg = 'ElasticBLAST is missing permissions for its auto-shutdown and cloud job submission feature. To provide these permissions, please run'
+                msg += f'gcloud projects add-iam-policy-binding {cfg.gcp.project} --member={cfg.gcp.user} --role=roles/container.admin'
+                raise UserReportError(returncode=PERMISSIONS_ERROR, message=msg)
+
+
 def submit_janitor_cronjob(cfg: ElasticBlastConfig):
     """ Creates a k8s cronjob to delete GCP cluster once the jobs are done """
     dry_run = cfg.cluster.dry_run
@@ -706,18 +762,6 @@ def submit_janitor_cronjob(cfg: ElasticBlastConfig):
     logging.debug(f"Submitting ElasticBLAST janitor cronjob: {ELB_JANITOR_DOCKER_IMAGE_GCP}")
     with TemporaryDirectory() as d:
         set_extraction_path(d)
-        rbac_yaml = resource_filename('elastic_blast', 'templates/elb-janitor-rbac.yaml')
-        cmd = f"kubectl --context={cfg.appstate.k8s_ctx} apply -f {rbac_yaml}"
-        if dry_run:
-            logging.info(cmd)
-        else:
-            try:
-                safe_exec(cmd)
-            except:
-                msg = 'ElasticBLAST is missing permissions for its auto-shutdown feature. To provide these permissions, please run'
-                msg += f'gcloud projects add-iam-policy-binding {cfg.gcp.project} --member={cfg.gcp.user} --role=roles/container.admin'
-                raise UserReportError(returncode=PERMISSIONS_ERROR, message=msg)
-
         cronjob_yaml = os.path.join(d, 'elb-cronjob.yaml')
         with open(cronjob_yaml, 'wt') as f:
             f.write(substitute_params(resource_string('elastic_blast', 'templates/elb-janitor-cronjob.yaml.template').decode(), subs))

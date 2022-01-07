@@ -40,26 +40,33 @@ if [ ! -z "${ELB_TC_BRANCH+x}" ] ; then
         sed -i~ -e "/^\[cluster\]/a labels = branch=$ELB_TC_BRANCH" $CFG
     fi
 fi
+if [ ! -z "${ELB_TC_COMMIT_SHA+x}" ] ; then
+    if grep -q ^labels $CFG; then
+        sed -i~ -e "s@\(^labels.*\)@\1,commit=$ELB_TC_COMMIT_SHA@" $CFG
+    else
+        sed -i~ -e "/^\[cluster\]/a labels = commit=$ELB_TC_COMMIT_SHA" $CFG
+    fi
+fi
 $ROOT_DIR/elastic-blast submit --cfg $CFG --loglevel DEBUG --logfile $logfile $DRY_RUN
 
 attempts=0
 [ ! -z "$DRY_RUN" ] || sleep 10    # Should be enough for the BLAST k8s jobs to get started
 
 while [ $attempts -lt $timeout_minutes ]; do
-    $ROOT_DIR/elastic-blast status --verbose --cfg $CFG $DRY_RUN | tee $TMP
-    #set +e
-    if grep '^Pending 0' $TMP && grep '^Running 0' $TMP; then
-        break
-    fi
+    exit_code=0
+    $ROOT_DIR/elastic-blast status --verbose --exit-code --cfg $CFG $DRY_RUN || exit_code=$?
+
+    # if succeeded or failed - break out of the wait cycle
+    [ $exit_code -eq 0 ] || [ $exit_code -eq 1 ] && break
+
     attempt=$((attempts+1))
     sleep 60
-    #set -e
 done
 
-if grep '^Failed 0' $TMP; then
-    exit_code=1
-else
+if [ $exit_code -eq 1 ]; then
     exit_code=0
+else
+    exit_code=1
 fi
 
 if grep -q '^aws' $CFG; then

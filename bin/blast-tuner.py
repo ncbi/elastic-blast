@@ -42,7 +42,7 @@ from elastic_blast.constants import CFG_BLAST, CFG_CLUSTER
 from elastic_blast.constants import CFG_BLAST_DB, CFG_BLAST_PROGRAM, CFG_BLAST_BATCH_LEN
 from elastic_blast.constants import CFG_BLAST_OPTIONS, CFG_CLUSTER_NUM_CPUS
 from elastic_blast.constants import CFG_CLUSTER_MACHINE_TYPE
-from elastic_blast.constants import CFG_BLAST_MEM_LIMIT
+from elastic_blast.constants import CFG_BLAST_MEM_LIMIT, ELB_BLASTDB_MEMORY_MARGIN
 from elastic_blast.constants import MolType, INPUT_ERROR, CSP, BLASTDB_ERROR
 from elastic_blast.db_metadata import get_db_metadata
 
@@ -124,6 +124,8 @@ def main():
             machine_type = get_machine_type(cloud_provider = cloud_provider,
                                             db = db_metadata,
                                             num_cpus = num_cpus,
+                                            mt_mode = mt_mode,
+                                            db_mem_margin = ELB_BLASTDB_MEMORY_MARGIN,
                                             region = args.region)
 
         conf[CFG_CLUSTER][CFG_CLUSTER_MACHINE_TYPE] = machine_type

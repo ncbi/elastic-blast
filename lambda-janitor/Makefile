@@ -159,6 +159,10 @@ update-lambda-deployment-dry-run: ${LAMBDA_FNX_ARCHIVE}
 update-lambda-deployment: ${LAMBDA_FNX_ARCHIVE}
 	aws lambda update-function-code --function-name ${LAMBDA_FNX_NAME} \
 		--zip-file fileb://${LAMBDA_FNX_ARCHIVE} --no-publish
+	aws lambda update-function-configuration --function-name ${LAMBDA_FNX_NAME} \
+		--runtime ${PYTHON_RUNTIME} \
+		--timeout ${LAMBDA_TIMEOUT} \
+		--memory-size ${LAMBDA_MEMORY}
 
 ################################################################################
 ## Alias/Version management
@@ -217,23 +221,25 @@ ELB_DRY_RUN?=1
 .PHONY: invoke
 invoke:
 	[ -z "${ELB_DRY_RUN}" ] && \
-		printf '{ "ELB_RESULTS": "%s" }\n' ${ELB_RESULTS} | jq -Mr . | tee ${TMP_OUTPUT} || \
-		printf '{ "ELB_RESULTS": "%s", "ELB_DRY_RUN": "1" }\n' ${ELB_RESULTS} | jq -Mr . | tee ${TMP_OUTPUT}
-	${RM} response1.json;
-	-if [ -z "${LAMBDA_FNX_PRODUCTION_VERSION}" ]; then \
-		aws lambda invoke --function-name ${LAMBDA_FNX_NAME} response1.json \
+		printf '{ "ELB_RESULTS": "%s" }\n' ${ELB_RESULTS} | jq -Mr . | tee | base64 > ${TMP_OUTPUT} || \
+		printf '{ "ELB_RESULTS": "%s", "ELB_DRY_RUN": "1" }\n' ${ELB_RESULTS} | jq -Mr . | tee | base64 > ${TMP_OUTPUT}
+	${RM} response.json invoke-output.json
+	echo "Request sent to lambda:"
+	cat -n ${TMP_OUTPUT}
+	aws lambda invoke --function-name ${LAMBDA_FNX_NAME} --invocation-type DryRun response.json
+	cat response.json
+	${RM} response.json invoke-output.json
+	[ -z "${LAMBDA_FNX_PRODUCTION_VERSION}" ] && \
+		aws lambda invoke --function-name ${LAMBDA_FNX_NAME} \
 			--invocation-type RequestResponse --log-type Tail \
-			--cli-binary-format raw-in-base64-out \
-			--payload file://${TMP_OUTPUT} --query 'LogResult' --output text |  base64 -d; \
-	else \
-		aws lambda invoke --function-name ${LAMBDA_FNX_NAME} response1.json \
+			--payload file://${TMP_OUTPUT} --output json response.json > invoke-output.json || \
+		aws lambda invoke --function-name ${LAMBDA_FNX_NAME} \
 			--invocation-type RequestResponse --log-type Tail \
-			--cli-binary-format raw-in-base64-out \
 			--qualifier ${LAMBDA_FNX_PRODUCTION_VERSION} \
-			--payload file://${TMP_OUTPUT} --query 'LogResult' --output text |  base64 -d; \
-	fi
-	-cat response1.json
-	echo;
+			--payload file://${TMP_OUTPUT} --output json response.json > invoke-output.json
+	jq -Mr . invoke-output.json
+	jq -Mr .LogResult invoke-output.json | base64 -d
+	jq -Mr . response.json
 
 .PHONY: undeploy
 undeploy:

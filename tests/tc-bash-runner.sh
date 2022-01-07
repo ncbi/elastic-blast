@@ -36,6 +36,9 @@ for t in $test_scripts; do
     # https://www.jetbrains.com/help/teamcity/service-messages.html#Adding+or+Changing+a+Build+Parameter
     echo "##teamcity[setParameter name='env.ELB_TC_BRANCH' value='$ELB_TC_BRANCH']"
 
+    export ELB_TC_COMMIT_SHA=$(git log -1  --pretty=format:%h | tr '[A-Z]./' '[a-z]-' | cut -c-63 | tr -d '\n')
+    echo "##teamcity[setParameter name='env.ELB_TC_COMMIT_SHA' value='$ELB_TC_COMMIT_SHA']"
+
     $t $script_arguments || echo "##teamcity[testFailed name='$name'] "
     #awk -f $SCRIPT_DIR/parse-runtimes.awk elb.log | sed "s,\",\',g"
     awk '/ RUNTIME / {printf "##teamcity[buildStatisticValue key=\"%s\" value=\"%f\"]\n", $(NF-2), $(NF-1)}' elb.log | sed "s,\",\',g"

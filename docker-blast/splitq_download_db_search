@@ -32,7 +32,7 @@ import re
 import time
 import argparse
 import subprocess
-import shlex
+import shlex, shutil
 import logging
 import filelock
 from hashlib import md5
@@ -41,6 +41,7 @@ from dataclasses import dataclass
 from pathlib import Path
 import requests
 from ec2_metadata import ec2_metadata
+import tempfile
 
 # Const
 VERSION = "$VERSION"
@@ -54,6 +55,8 @@ AWS_METADATA_URL = 'http://169.254.169.254/latest'
 TIMEOUT_AWS_METADATA_URL = 3
 
 BLASTDB_ERROR = 2
+
+MAX_PROCS_TO_DOWNLOAD_DB = 12
 
 log_levels = {
     'debug': logging.DEBUG,
@@ -210,6 +213,30 @@ def log_args(args):
         print(f'INSTANCE_ID: {ec2_metadata.instance_id}')
         print(f'INSTANCE_TYPE: {ec2_metadata.instance_type}')
         print(f'PUBLIC_HOSTNAME: {ec2_metadata.public_hostname}')
+    
+    # Print tool versions
+    if shutil.which('aws'):
+        p = safe_exec("aws --version")
+        if len(p.stdout.decode()):
+            print(f'AWS CLI version: {p.stdout.decode().strip()}')
+
+    if shutil.which('blastn'):
+        p = safe_exec("blastn -version")
+        if len(p.stdout.decode()):
+            print(f'BLAST+ version: {p.stdout.decode().strip()}')
+    if shutil.which('update_blastdb.pl'):
+        p = safe_exec("update_blastdb.pl --version")
+        if len(p.stdout.decode()):
+            print(f'update_blastdb.pl version: {p.stdout.decode().strip().split()[-1]}')
+
+def log_disk_usage():
+    """ Logs the diks utilization of the current working directory """
+    BYTES_PER_GB = 1024 * 1024 * 1024
+    cwd = os.getcwd()
+    (total, used, free) = shutil.disk_usage(cwd)
+    print(f'Disk capacity at {cwd}: {(float(total)/BYTES_PER_GB):.2f} GB')
+    print(f'Disk used at {cwd}: {(float(used)/BYTES_PER_GB):.2f} GB')
+    print(f'Disk free at {cwd}: {(float(free)/BYTES_PER_GB):.2f} GB')
 
 
 def _download_database(args, is_user, db_done):
@@ -217,18 +244,20 @@ def _download_database(args, is_user, db_done):
         test database integrity """
     if os.path.exists(db_done):
         return
+    log_disk_usage()
     print('Start database download')
     verbose = ' --verbose --verbose --verbose --verbose --verbose --verbose' if args.verbose else ''
     creds = ' --no-sign-request' if args.no_creds else ''
+    nprocs_to_download_db = min(MAX_PROCS_TO_DOWNLOAD_DB, int(os.cpu_count()/args.num_threads))
     if is_user:
-        p = safe_exec(f"time update_blastdb.pl taxdb --source {args.source}{verbose}")
+        p = safe_exec(f"time update_blastdb.pl taxdb --source {args.source}{verbose} --num_threads {nprocs_to_download_db}")
         print(p.stdout.decode(), end='')
         print(p.stderr.decode(), end='')
         p = safe_exec(f"time aws s3 cp --only-show-errors{creds} {os.path.join(args.db_path,'')} . --recursive --exclude * --include {args.db}.* --include taxdb.*")
         print(p.stdout.decode(), end='')
         print(p.stderr.decode(), end='')
     else:
-        p = safe_exec(f"time update_blastdb.pl {args.db} --source {args.source}{verbose}")
+        p = safe_exec(f"time update_blastdb.pl {args.db} --source {args.source}{verbose} --num_threads {nprocs_to_download_db}")
         print(p.stdout.decode(), end='')
         print(p.stderr.decode(), end='')
     print('End database download')
@@ -299,6 +328,7 @@ def download_taxidlist(args):
     with filelock.FileLock(taxidlist_lock):
         if os.path.exists(taxidlist_done):
             return
+        log_disk_usage()
         print('Start taxidlist copy')
         safe_exec(f"aws s3 cp {args.taxidlist} . --quiet{creds}")
         print('End taxidlist copy')
@@ -315,6 +345,7 @@ def _do_download_query(args):
             name of the file with unzipped query
     """
     creds = ' --no-sign-request' if args.no_creds else ''
+    log_disk_usage()
     print("Start query download")
     safe_exec(f'aws s3 cp {args.query} .{creds}')
     print("End query download")
@@ -371,6 +402,7 @@ def run_search(args, query):
         # Prevent too fast jobs to overload AWS Batch communication
         time.sleep(10)
         return '' 
+    log_disk_usage()
     name, ext = os.path.splitext(query)
     fn_out = f'{name}-{args.program}-{args.db}.out'
     params = shlex.split(args.params) if args.params else []
@@ -408,6 +440,23 @@ def upload_results(args, fn):
     print('Start copy results')
     safe_exec(f'aws s3 cp {fn} {args.bucket}/')
     print('End copy results')
+
+
+def upload_error_if_not_present(args, message):
+    """Upload the error file to results bucket"""
+    # To avoid synchronization problems, and given that in many cases the all
+    # jobs will have the same error, upload the error file only if one is not
+    # already present
+    BUCKET_ERROR_FILE = 'metadata/FAILURE.txt'
+    cmd = f'aws s3 ls {args.bucket}/{BUCKET_ERROR_FILE}'
+    try:
+        safe_exec(cmd)
+    except SafeExecError:
+        with tempfile.NamedTemporaryFile() as f:
+            f.write(message.encode())
+            f.flush()
+            cmd = f'aws s3 cp --only-show-errors {f.name} {args.bucket}/{BUCKET_ERROR_FILE}'
+            safe_exec(cmd)
 
 
 def cleanup(*files2delete):
@@ -449,6 +498,7 @@ def main(argv):
         cleanup(local_query_file, fn_result)
     except SafeExecError as e:
         print(e.message)
+        upload_error_if_not_present(args, e.message)
         print('End execution, exception raised')
         cleanup(local_query_file, fn_result)
         return e.returncode

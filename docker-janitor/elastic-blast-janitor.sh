@@ -21,12 +21,23 @@
 #
 # elastic-blast-janitor.sh: Script to monitor the status of an ElasticBLAST
 # search and delete is when done or once there's a failed BLAST job.
+# This script works only on GCP.
 #
 # Author: Christiam Camacho (camacho@ncbi.nlm.nih.gov)
 # Created: Wed Sep 15 09:42:44 EDT 2021
 
 set -euo pipefail
 shopt -s nullglob
+
+# Exit codes for elastic-blast status --exit-code from constants.py::ElbStatus
+SUCCESS=0    # Cluster computation finished successfully
+FAILURE=1    # There was a failure in the process
+CREATING=2   # Cloud resources are being allocated/created
+SUBMITTING=3 # Jobs are being submitted
+RUNNING=4    # Jobs are running
+DELETING=5   # Cluster is being deleted
+UNKNOWN=6    # Cluster is unknown to the system
+
 
 if [ -z "${ELB_RESULTS+x}" ] ; then
     echo "$0 FATAL ERROR: Missing ELB_RESULTS environment variable"
@@ -36,29 +47,25 @@ if [ -z "${ELB_CLUSTER_NAME+x}" ] ; then
     echo "$0 FATAL ERROR: Missing ELB_CLUSTER_NAME environment variable"
     exit 1
 fi
-if [[ ${ELB_RESULTS} =~ ^gs:// ]]; then
-    if [ -z "${ELB_GCP_PROJECT+x}" ] ; then
-        echo "$0 FATAL ERROR: Missing ELB_GCP_PROJECT environment variable"
-        exit 1
-    fi
-    if [ -z "${ELB_GCP_REGION+x}" ] ; then
-        echo "$0 FATAL ERROR: Missing ELB_GCP_REGION environment variable"
-        exit 1
-    fi
-    if [ -z "${ELB_GCP_ZONE+x}" ] ; then
-        echo "$0 FATAL ERROR: Missing ELB_GCP_ZONE environment variable"
-        exit 1
-    fi
+if [ -z "${ELB_GCP_PROJECT+x}" ] ; then
+    echo "$0 FATAL ERROR: Missing ELB_GCP_PROJECT environment variable"
+    exit 1
+fi
+if [ -z "${ELB_GCP_REGION+x}" ] ; then
+    echo "$0 FATAL ERROR: Missing ELB_GCP_REGION environment variable"
+    exit 1
+fi
+if [ -z "${ELB_GCP_ZONE+x}" ] ; then
+    echo "$0 FATAL ERROR: Missing ELB_GCP_ZONE environment variable"
+    exit 1
 fi
 
 DRY_RUN=''
-AWS_CLI='aws'
 GSUTIL='gsutil'
 KUBECTL='kubectl'
 if [ ! -z "${ELB_DRY_RUN+x}" ] ; then
     echo "ELB_DRY_RUN was in the environment"
     DRY_RUN='--dry-run'
-    AWS_CLI='echo aws'
     GSUTIL='echo gsutil'
     KUBECTL='echo kubectl'
 fi
@@ -69,79 +76,41 @@ export ELB_LOGFILE=stderr
 TMP=`mktemp`
 trap " /bin/rm -fr $TMP " INT QUIT EXIT HUP KILL ALRM
 
-init_failed=false
+exit_code=$SUCCESS
+result=`elastic-blast status --exit-code --verbose` || exit_code=$?
 
-GCP_SENTINEL_JOB='submit-jobs'
-
-if [[ ${ELB_RESULTS} =~ ^gs:// ]]; then
-    if gsutil -q stat ${ELB_RESULTS}/metadata/FAILURE.txt; then
-        init_failed=true
-    elif ! gsutil -q stat ${ELB_RESULTS}/metadata/num_jobs_submitted.txt; then
-        gcloud container clusters get-credentials ${ELB_CLUSTER_NAME} --project ${ELB_GCP_PROJECT} --zone ${ELB_GCP_ZONE}
-        s=`$KUBECTL get jobs ${GCP_SENTINEL_JOB} -o jsonpath='{.status.conditions[*].type}'`
-        if [ $? -ne 0 ]; then
-            echo "kubectl failed to get status of jobs: ${s}"
-            exit 1
-        fi
-        if [ "x$s" != "xComplete" ]; then
-            if [ "x$s" == "xFailed" ]; then
-                echo ${GCP_SENTINEL_JOB} failed | $GSUTIL -q cp - ${ELB_RESULTS}/metadata/FAILURE.txt
-                set +e
-                $KUBECTL get jobs ${GCP_SENTINEL_JOB} -o json | $GSUTIL -q cp - ${ELB_RESULTS}/metadata/FAILURE_details.txt
-                for c in get-blastdb import-query-batches; do
-                    $KUBECTL logs -l 'job-name=init-pv' -c $c --timestamps --since=24h --tail=-1 | $GSUTIL -q cp - ${ELB_RESULTS}/logs/k8s-init-pv-$c.log
-                done
-                $KUBECTL logs -l 'job-name=submit-jobs' -c submit-jobs --timestamps --since=24h --tail=-1 | $GSUTIL -q cp - ${ELB_RESULTS}/logs/k8s-submit-jobs.log
-                elastic-blast delete --results ${ELB_RESULTS} --gcp-project ${ELB_GCP_PROJECT} --gcp-region ${ELB_GCP_REGION} --gcp-zone ${ELB_GCP_ZONE}
-            fi
-            exit 0
-        fi
-    fi
-fi
-
-if $init_failed; then
-    num_failed=1
-    num_pending=0
-    num_succeeded=0
-    num_running=0
-else
-    elastic-blast status --verbose | tee $TMP
-
-    num_failed=`grep '^Failed ' $TMP | cut -f 2 -d ' '`;
-    num_pending=`grep '^Pending ' $TMP | cut -f 2 -d ' '`;
-    num_succeeded=`grep '^Succeeded ' $TMP | cut -f 2 -d ' '`;
-    num_running=`grep '^Running ' $TMP | cut -f 2 -d ' '`;
-fi
-num_jobs=$(($num_failed + $num_pending + $num_succeeded + $num_running))
-
-if [[ ${ELB_RESULTS} =~ ^s3:// ]]; then
-    # Jobs have not been submitted yet, do not delete cluster prematurely
-    [ $num_jobs -eq 0 ] && exit 0
-fi
-
-
-if [ $((num_pending + num_running)) -eq 0 ]; then
-    echo "No jobs left, deleting cluster"
-    if [[ ${ELB_RESULTS} =~ ^s3:// ]]; then
-        $AWS_CLI s3 cp --only-show-errors $TMP ${ELB_RESULTS}/metadata/DONE.txt
-    else
+case $exit_code in
+    $SUCCESS)
+        echo Success, deleting cluster
         if ! gsutil -q stat ${ELB_RESULTS}/metadata/FAILURE.txt; then
-            $GSUTIL -qm cp $TMP ${ELB_RESULTS}/metadata/DONE.txt
+            echo '' | $GSUTIL -q cp - ${ELB_RESULTS}/metadata/SUCCESS.txt
             set +e
-            $KUBECTL get jobs -o json | $GSUTIL -q cp - ${ELB_RESULTS}/metadata/DONE_details.json
+            $KUBECTL get jobs -o json | $GSUTIL -q cp - ${ELB_RESULTS}/metadata/SUCCESS_details.json
         fi
-    fi
-    elastic-blast delete ${DRY_RUN}
-fi
-
-if [ $num_failed -gt 0 ] ; then
-    echo "$num_failed job(s) failed, deleting cluster"
-    if [[ ${ELB_RESULTS} =~ ^s3:// ]]; then
-        $AWS_CLI s3 cp --only-show-errors $TMP ${ELB_RESULTS}/metadata/FAILURE.txt
-    else
-        $GSUTIL -qm cp $TMP ${ELB_RESULTS}/metadata/FAILURE.txt
-        set +e
-        $KUBECTL get jobs -o json | $GSUTIL -q cp - ${ELB_RESULTS}/metadata/FAILURE_details.json
-    fi
-    elastic-blast delete ${DRY_RUN}
-fi
+        elastic-blast delete ${DRY_RUN}
+        ;;
+    $FAILURE)
+        echo Failed, deleting cluster
+        if ! gsutil -q stat ${ELB_RESULTS}/metadata/FAILURE.txt; then
+            echo $result | $GSUTIL -q cp - ${ELB_RESULTS}/metadata/FAILURE.txt
+            set +e
+            $KUBECTL get jobs -o json | $GSUTIL -q cp - ${ELB_RESULTS}/metadata/FAILURE_details.json
+        fi
+        elastic-blast delete ${DRY_RUN}
+        ;;
+    $CREATING)
+        echo Cluster is being created
+        ;;
+    $SUBMITTING)
+        echo Cluster jobs are being submitted
+        ;;
+    $RUNNING)
+        echo Cluster jobs are running
+        ;;
+    $DELETING)
+        echo Cluster is being deleted
+        ;;
+    $UNKNOWN)
+        echo Cluster state is unknown
+        ;;
+esac

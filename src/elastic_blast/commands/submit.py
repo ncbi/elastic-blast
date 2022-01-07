@@ -44,6 +44,7 @@ from elastic_blast.gcp import enable_gcp_api
 from elastic_blast.gcp import check_cluster as gcp_check_cluster
 from elastic_blast.gcp_traits import get_machine_properties
 from elastic_blast.util import get_blastdb_size, UserReportError
+from elastic_blast.util import get_resubmission_error_msg
 from elastic_blast.constants import ELB_AWS_JOB_IDS, ELB_METADATA_DIR, ELB_STATE_DISK_ID_FILE, QuerySplitMode
 from elastic_blast.constants import ELB_QUERY_BATCH_DIR, BLASTDB_ERROR, INPUT_ERROR
 from elastic_blast.constants import PERMISSIONS_ERROR, CLUSTER_ERROR, CSP, QUERY_LIST_EXT
@@ -115,17 +116,7 @@ def submit(args, cfg, clean_up_stack):
         enable_gcp_api(cfg)
     
     if check_running_cluster(cfg):
-        msg = 'An ElasticBLAST search that will write results to '
-        msg += f'{cfg.cluster.results} has already been submitted.\n'
-        msg += 'Please resubmit your search with a different value '
-        msg += 'for "results" configuration parameter, or save '
-        msg += 'the ElasticBLAST results and then either delete '
-        msg += 'the previous ElasticBLAST search by running '
-        msg += 'elastic-blast delete, or run the command '
-        if cfg.cloud_provider.cloud == CSP.AWS:
-            msg += f'aws s3 rm --recursive {cfg.cluster.results}'
-        else:
-            msg += f'gsutil rm -r {cfg.cluster.results}'
+        msg = get_resubmission_error_msg(cfg.cluster.results, cfg.cloud_provider.cloud)
         raise UserReportError(CLUSTER_ERROR, msg);
 
     query_files = assemble_query_file_list(cfg)
@@ -219,7 +210,7 @@ def check_submit_data(query_files: List[str], cfg: ElasticBlastConfig) -> None:
     dry_run = cfg.cluster.dry_run
     try:
         for query_file in query_files:
-            check_for_read(query_file, dry_run)
+            check_for_read(query_file, dry_run, True)
     except FileNotFoundError:
         raise UserReportError(INPUT_ERROR, f'Query input {query_file} is not readable or does not exist')
     bucket = cfg.cluster.results

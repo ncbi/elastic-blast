@@ -61,7 +61,9 @@ INI_INCOMPLETE_MEM_LIMIT_OPTIMAL_MACHINE_TYPE_AWS = os.path.join(TEST_DATA_DIR, 
 INI_NO_NUM_CPUS_OPTIMAL_MACHINE_TYPE_AWS = os.path.join(TEST_DATA_DIR, 'no-num-cpus-optimal-aws-machine-type.ini')
 INI_INVALID_MACHINE_TYPE_AWS = os.path.join(TEST_DATA_DIR, 'invalid-machine-type-aws.ini')
 INI_INVALID_MACHINE_TYPE_GCP = os.path.join(TEST_DATA_DIR, 'invalid-machine-type-gcp.ini')
+INI_INVALID_CHARACTER = os.path.join(TEST_DATA_DIR, 'invalid-dollar-sign-char.ini')
 INI_INVALID_MEM_LIMIT = os.path.join(TEST_DATA_DIR, 'invalid-mem-req.ini')
+INI_INVALID_CPU_CONFIGURATION = os.path.join(TEST_DATA_DIR, 'invalid-cpu-req-gcp.ini')
 INI_BLAST_OPT_NO_CLOSING_QUOTE = os.path.join(TEST_DATA_DIR, 'invalid-blast-opt-no-closing-quote.ini')
 INI_VALID = os.path.join(TEST_DATA_DIR, 'good_conf.ini')
 ELB_EXENAME = 'elastic-blast'
@@ -123,6 +125,8 @@ def app_mocks(caplog, aws_credentials, gke_mock, mocker):
     mocker.patch('elastic_blast.elasticblast_factory.ElasticBlastAws', new=MagicMock(return_value=MagicMock()))
     mocker.patch(target='elastic_blast.tuner.aws_get_machine_properties', new=MagicMock(return_value=InstanceProperties(32, 120)))
     mocker.patch('elastic_blast.commands.submit.harvest_query_splitting_results', new=MagicMock(return_value=QuerySplittingResults(query_length=5, query_batches=['batch_0.fa'])))
+    mocker.patch('elastic_blast.commands.submit.get_blastdb_size', new=MagicMock(return_value=1.0))
+    mocker.patch('elastic_blast.gcp.get_blastdb_info', new=MagicMock(return_value=('gs://test-bucket/testdb', 'gs://test-bucket/testdb.tar.gz', 'testdb')))
 
     yield SetupObjects(caplog = caplog, gke_mock = gke_mock)
 
@@ -368,6 +372,54 @@ def test_invalid_mem_limit(app_mocks):
     msg = app_mocks.caplog.text
     assert 'ERROR' in msg
     assert ' has an invalid value:' in msg
+
+
+def test_invalid_character(app_mocks):
+    """Test that providing an invalid character in the configuration produces a correct error
+    message and exit code"""
+    cmd = f'elastic-blast submit --cfg {INI_INVALID_CHARACTER}'
+    with patch.object(sys, 'argv', shlex.split(cmd)):
+        with contextlib.redirect_stderr(io.StringIO()) as stderr:
+            returncode = main()
+
+    assert returncode == constants.INPUT_ERROR
+    assert 'Traceback' not in stderr.getvalue()
+
+    msg = app_mocks.caplog.text
+    assert 'ERROR' in msg
+    assert ' do not support variable substitution' in msg
+
+
+def test_invalid_cpu_config(app_mocks):
+    """Test that providing an invalid CPU configuration produces a correct error
+    message and exit code"""
+    cmd = f'elastic-blast submit --cfg {INI_INVALID_CPU_CONFIGURATION} --num-cpus 32'
+    with patch.object(sys, 'argv', shlex.split(cmd)):
+        with contextlib.redirect_stderr(io.StringIO()) as stderr:
+            returncode = main()
+
+    assert returncode == constants.INPUT_ERROR
+    assert 'Traceback' not in stderr.getvalue()
+
+    msg = app_mocks.caplog.text
+    assert 'ERROR' in msg
+    assert ' does not leave any CPU' in msg
+
+
+#def test_suboptimal_cpu_config(app_mocks):
+#    """Test that providing an invalid CPU configuration produces a correct error
+#    message and exit code"""
+#    cmd = f'elastic-blast submit --cfg {INI_INVALID_CPU_CONFIGURATION}'
+#    with patch.object(sys, 'argv', shlex.split(cmd)):
+#        with contextlib.redirect_stderr(io.StringIO()) as stderr:
+#            returncode = main()
+#
+#    assert returncode == constants.INPUT_ERROR
+#    assert 'Traceback' not in stderr.getvalue()
+#
+#    msg = app_mocks.caplog.text
+#    assert 'ERROR' in msg
+#    assert ' does not optimally use ' in msg
 
 
 def test_invalid_blast_option_no_closing_quote(app_mocks):
@@ -938,3 +990,37 @@ results = s3://test-results
     assert 'database molecular type' in msg
 
 
+def test_gcp_insufficient_ssd_quota(app_mocks, mocker):
+    """Test that an insufficient GCP SSD quota is properly reported"""
+
+    conf = f"""[cloud-provider]
+gcp-project = test-project
+gcp-region = test-region
+gcp-zone = test-zone
+
+[cluster]
+pd-size = 3000000G
+
+[blast]
+program = blastp
+db = gs://test-bucket/testdb
+queries = gs://test-bucket/test-query.fa
+results = gs://test-results
+"""
+
+    with NamedTemporaryFile() as f:
+        f.write(conf.encode())
+        f.flush()
+        f.seek(0)
+
+        cmd = f'elastic-blast submit --cfg {f.name}'
+        with patch.object(sys, 'argv', shlex.split(cmd)):
+            with contextlib.redirect_stderr(io.StringIO()) as stderr:
+                returncode = main()
+
+    assert returncode == constants.INPUT_ERROR
+    assert 'Traceback' not in stderr.getvalue()
+
+    msg = app_mocks.caplog.text
+    assert 'Traceback' not in msg
+    assert re.search(r'Requested disk size [\w.]* is larger than allowed', msg)

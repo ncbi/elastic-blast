@@ -47,6 +47,7 @@ from botocore.exceptions import ClientError, NoCredentialsError, ParamValidation
 from .util import convert_labels_to_aws_tags, convert_disk_size_to_gb
 from .util import convert_memory_to_mb, UserReportError
 from .util import ElbSupportedPrograms, get_usage_reporting, sanitize_aws_batch_job_name
+from .util import get_resubmission_error_msg
 from .constants import BLASTDB_ERROR, CLUSTER_ERROR, ELB_QUERY_LENGTH, PERMISSIONS_ERROR
 from .constants import ELB_QUERY_BATCH_DIR, ELB_METADATA_DIR, ELB_LOG_DIR
 from .constants import ELB_DOCKER_IMAGE_AWS, INPUT_ERROR, ELB_QS_DOCKER_IMAGE_AWS
@@ -56,13 +57,13 @@ from .constants import ELB_DFLT_NUM_BATCHES_FOR_TESTING, ELB_UNKNOWN_NUMBER_OF_Q
 from .constants import ElbStatus, ELB_CJS_DOCKER_IMAGE_AWS
 from .constants import ELB_AWS_JANITOR_CFN_TEMPLATE, ELB_DFLT_JANITOR_SCHEDULE_AWS
 from .constants import ELB_AWS_JANITOR_LAMBDA_DEPLOYMENT_BUCKET, ELB_AWS_JANITOR_LAMBDA_DEPLOYMENT_KEY
-from .constants import CFG_CLOUD_PROVIDER, CFG_CP_AWS_AUTO_SHUTDOWN_ROLE
+from .constants import CFG_CLOUD_PROVIDER, CFG_CP_AWS_AUTO_SHUTDOWN_ROLE, CSP
 from .constants import AWS_JANITOR_ROLE_NAME
 from .filehelper import parse_bucket_name_key
 from .aws_traits import get_machine_properties, create_aws_config, get_availability_zones_for
 from .object_storage_utils import write_to_s3
 from .base import DBSource
-from .elb_config import ElasticBlastConfig
+from .elb_config import ElasticBlastConfig, sanitize_aws_tag
 from .elasticblast import ElasticBlast
 
 
@@ -139,7 +140,7 @@ class ElasticBlastAws(ElasticBlast):
         self.iam = boto3.resource('iam', config=self.boto_cfg)
         self.ec2 = boto3.resource('ec2', config=self.boto_cfg)
 
-        self.owner = getpass.getuser()
+        self.owner = sanitize_aws_tag(getpass.getuser().lower())
         self.results_bucket = cfg.cluster.results
         self.vpc_id = cfg.aws.vpc
         self.subnets = None
@@ -167,19 +168,15 @@ class ElasticBlastAws(ElasticBlast):
                 if create:
                     # If we'd want to retry jobs with different parameters on the same cluster we
                     # need to wait here for status == 'CREATE_COMPLETE'
-                    raise UserReportError(INPUT_ERROR, f'An ElasticBLAST search that will write '
-                                          f'results to {self.results_bucket} has already been submitted '
-                                          f'(AWS CloudFormation stack {cf_stack.name}).\nPlease resubmit '
-                                          'your search with different value for "results" configuration '
-                                          'parameter or delete the previous ElasticBLAST search by running '
-                                          'elastic-blast delete.')
+                    msg = get_resubmission_error_msg(self.results_bucket, CSP.AWS)
+                    raise UserReportError(INPUT_ERROR, msg)
                 self.cf_stack = cf_stack
                 logging.debug(f'Initialized AWS CloudFormation stack {self.cf_stack}: status {status}')
             else:
                 logging.debug(f'dry-run: would have initialized {self.stack_name}')
         except ClientError as err:
             if not create:
-                logging.error(f'CloudFormation stack {self.stack_name} could not be initialized: {err}')
+                logging.debug(f'CloudFormation stack {self.stack_name} could not be initialized: {err}')
             initialized = False
         if not initialized and create:
             use_ssd = False
@@ -529,34 +526,45 @@ class ElasticBlastAws(ElasticBlast):
            convert AWS exceptions to UserReportError """
         logging.debug(f'Request to delete {self.stack_name}')
         if not self.dry_run:
+            # Check for CloudFormation stack
             if not self.cf_stack:
-                logging.info(f"AWS CloudFormation stack {self.stack_name} doesn't exist, nothing to delete")
-                return
-            logging.debug(f'Deleting AWS CloudFormation stack {self.stack_name}')
+                # No stack, check for results
+                status, _, _ = self.check_status()
+                if status == ElbStatus.UNKNOWN:
+                    logging.info(f"AWS CloudFormation stack {self.stack_name} doesn't exist and there is no computation results, nothing to delete")
+                    return
+            # Query batches should be removed before deleting CF stack, because in janitor
+            # there is no execution after stack deletion
             self._remove_ancillary_data(ELB_QUERY_BATCH_DIR)
-            self.cf_stack.delete()
+            if self.cf_stack:
+                logging.debug(f'Deleting AWS CloudFormation stack {self.stack_name}')
+                self.cf_stack.delete()
+            # We're at this point only if elastic-blast was called manually, janitor execution
+            # ends at stack deletion and leaves metadata intact - intended behavior.
+            logging.debug(f'Deleting metadata of cluster {self.stack_name}')
             for sd in [ELB_METADATA_DIR, ELB_LOG_DIR]:
                 self._remove_ancillary_data(sd)
-            waiter = self.cf.meta.client.get_waiter('stack_delete_complete')
-            try:
-                waiter.wait(StackName=self.stack_name)
-            except WaiterError:
-                # report cloudformation stack deletion timeout
-                if self.cf_stack.stack_status == 'DELETE_IN_PROGRESS':
-                    raise UserReportError(returncode=TIMEOUT_ERROR,
-                                          message='CloudFormation stack deletion has timed out')
+            if self.cf_stack:
+                waiter = self.cf.meta.client.get_waiter('stack_delete_complete')
+                try:
+                    waiter.wait(StackName=self.stack_name)
+                except WaiterError:
+                    # report cloudformation stack deletion timeout
+                    if self.cf_stack.stack_status == 'DELETE_IN_PROGRESS':
+                        raise UserReportError(returncode=TIMEOUT_ERROR,
+                                            message='CloudFormation stack deletion has timed out')
 
-                # report cloudformation stack deletion error
-                elif self.cf_stack.stack_status != 'DELETE_COMPLETE':
-                    message = 'CloudFormation stack deletion failed'
-                    stack_messages = self._get_cloudformation_errors()
-                    if stack_messages:
-                        message += f' with errors {". ".join(stack_messages)}'
-                    else:
-                        message += ' for unknown reason'
-                    raise UserReportError(returncode=DEPENDENCY_ERROR,
-                                          message=message)
-            logging.debug(f'Deleted AWS CloudFormation stack {self.stack_name}')
+                    # report cloudformation stack deletion error
+                    elif self.cf_stack.stack_status != 'DELETE_COMPLETE':
+                        message = 'CloudFormation stack deletion failed'
+                        stack_messages = self._get_cloudformation_errors()
+                        if stack_messages:
+                            message += f' with errors {". ".join(stack_messages)}'
+                        else:
+                            message += ' for unknown reason'
+                        raise UserReportError(returncode=DEPENDENCY_ERROR,
+                                            message=message)
+                logging.debug(f'Deleted AWS CloudFormation stack {self.stack_name}')
         else:
             logging.debug(f'dry-run: would have deleted {self.stack_name}')
 
@@ -901,7 +909,9 @@ class ElasticBlastAws(ElasticBlast):
                 verbose_result - detailed info about jobs
         """
         try:
-            retval = ElbStatus.UNKNOWN
+            retval = self._status_from_results()
+            if retval != ElbStatus.UNKNOWN:
+                return retval, self.cached_counts, self.cached_failure_message
 
             counts, details = self._check_status(extended)
             njobs = sum(counts.values())
@@ -1031,12 +1041,12 @@ class ElasticBlastAws(ElasticBlast):
         """ Removes ancillary data from the end user's result bucket
         bucket_prefix: path that follows the users' bucket name (looks like a file system directory)
         """
-        bname, _ = parse_bucket_name_key(self.results_bucket)
+        bname, pname = parse_bucket_name_key(self.results_bucket)
         if not self.dry_run:
             s3_bucket = self.s3.Bucket(bname)
-            s3_bucket.objects.filter(Prefix=bucket_prefix).delete()
+            s3_bucket.objects.filter(Prefix=f'{pname}/{bucket_prefix}').delete()
         else:
-            logging.debug(f'dry-run: would have removed {bname}/{bucket_prefix}')
+            logging.debug(f'dry-run: would have removed {bname}/{pname}/{bucket_prefix}')
 
     def _get_cloudformation_errors(self) -> List[str]:
         """Iterate over cloudformation stack events and extract error messages

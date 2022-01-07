@@ -1,0 +1,27 @@
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: cloud-split-ssd
+  labels:
+    app: setup
+spec:
+  template:
+    metadata:
+      labels:
+        app: setup
+    spec:
+      volumes:
+      - name: scratch
+        emptyDir: {}
+      containers:
+      - name: ${K8S_JOB_IMPORT_QUERY_BATCHES}
+        image: ${ELB_IMAGE_QS}
+        workingDir: /blast/blastdb
+        volumeMounts:
+        - name: scratch
+          mountPath: /scratch
+        command: ["run.sh", "-i", "${INPUT_QUERY}", "-o", "${ELB_RESULTS}", "-b", "${BATCH_LEN}", "-p", "1", "-q", "/scratch"]
+      restartPolicy: Never
+  backoffLimit: 3
+  activeDeadlineSeconds: ${TIMEOUT}

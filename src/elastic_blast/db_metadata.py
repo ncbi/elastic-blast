@@ -68,8 +68,11 @@ def get_db_metadata(db: str, dbtype: MolType, source: DBSource, dry_run: bool = 
     DB_BUCKET_GCP = os.path.join(ELB_GCS_PREFIX, 'blast-db')
     DB_BUCKET_NCBI = 'ftp://ftp.ncbi.nlm.nih.gov/blast/db'
 
-    # for user databases
-    metadata_file = f"{db}-{dbtype}-metadata.json"
+    # metadata file suffixes
+    metadata_suffix_v11 = f'-{dbtype}-metadata.json'
+    metadata_suffix_v12 = f'.{str(dbtype)[0]}js'
+
+    db_path = db
 
     # if an NCBI-provided database
     if not db.startswith(ELB_S3_PREFIX) and not db.startswith(ELB_GCS_PREFIX):
@@ -77,14 +80,21 @@ def get_db_metadata(db: str, dbtype: MolType, source: DBSource, dry_run: bool = 
             bucket = DB_BUCKET_AWS if source == DBSource.AWS else DB_BUCKET_GCP
             try:
                 with open_for_read(f'{bucket}/latest-dir') as f:
-                    metadata_file = os.path.join(f'{bucket}/{f.readline().rstrip()}', metadata_file)
+                    db_path = os.path.join(f'{bucket}/{f.readline().rstrip()}', db)
             except:
                 raise UserReportError(returncode=BLASTDB_ERROR, message=f'File "{bucket}/latest-dir" could not be read')
         else:
-            metadata_file = os.path.join(f'{DB_BUCKET_NCBI}', metadata_file)
+            db_path = os.path.join(f'{DB_BUCKET_NCBI}', db)
+    # try metadata file version 1.2 first; if not found try version 1.1
+    try:
+        metadata_file = f'{db_path}{metadata_suffix_v12}'
         logging.debug(f'BLASTDB metadata file: {metadata_file}')
-    # raise FileNotFoundError is metadata file is missing
-    check_for_read(metadata_file, dry_run)
+        check_for_read(metadata_file, dry_run)
+    except FileNotFoundError:
+        metadata_file = f'{db_path}{metadata_suffix_v11}'
+        logging.debug(f'BLASTDB metadata file: {metadata_file}')
+        check_for_read(metadata_file, dry_run)
+
     try:
         with open_for_read(metadata_file) as f:
             lines = f.readlines()

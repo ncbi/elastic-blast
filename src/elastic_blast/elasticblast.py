@@ -28,12 +28,14 @@ Created: Tue 03 Aug 2021 06:54:30 PM EDT
 import logging
 import os
 from abc import ABCMeta, abstractmethod
-from typing import Any, List, Tuple, Dict
+from collections import defaultdict
+from typing import Any, List, Tuple, Dict, DefaultDict
 
-from .constants import ELB_QUERY_BATCH_DIR
+from .constants import ELB_QUERY_BATCH_DIR, ELB_METADATA_DIR
 from .filehelper import copy_to_bucket, remove_bucket_key, cleanup_temp_bucket_dirs
+from .filehelper import open_for_read, check_for_read
 from .elb_config import ElasticBlastConfig
-from .constants import ElbStatus
+from .constants import ElbStatus, ELB_STATUS_SUCCESS, ELB_STATUS_FAILURE
 
 class ElasticBlast(metaclass=ABCMeta):
     """ Base class for core ElasticBLAST functionality. """
@@ -41,6 +43,9 @@ class ElasticBlast(metaclass=ABCMeta):
         self.cfg = cfg
         self.cleanup_stack = cleanup_stack if cleanup_stack else []
         self.dry_run = self.cfg.cluster.dry_run
+        self.cached_status = None
+        self.cached_counts: DefaultDict[str, int] = defaultdict(int)
+        self.cached_failure_message = ''
         # If we request no search for debugging purposes we can't engage
         # cloud job submission
         self.cloud_job_submission = 'ELB_DISABLE_JOB_SUBMISSION_ON_THE_CLOUD' not in os.environ and \
@@ -99,3 +104,40 @@ class ElasticBlast(metaclass=ABCMeta):
             self.cleanup_stack.append(cleanup_temp_bucket_dirs)
         copy_to_bucket(self.dry_run)
         self.cleanup_stack.append(lambda: logging.debug('After copying split jobs to bucket'))
+
+    def _status_from_results(self):
+        """Get search status from the metadata in results bucket.
+
+        Returns:
+            ElbStatus.FAILURE, if the file ELB_RESULTS/ELB_METADATA_DIR/ELB_STATUS_FAILURE exists
+            ElbStatus.SUCCESS, if the file ELB_RESULTS/ELB_METADATA_DIR/ELB_STATUS_SUCCESS exists
+            ElbStatus.UNKNOWN otherwise
+
+            The return status is set to self.cached_status and content of
+            ELB_RESULTS/ELB_METADATA_DIR/ELB_STATUS_FAILURE is set to self.cached_failure_message
+        """
+        cfg = self.cfg
+        status = ElbStatus.UNKNOWN
+        try:
+            failure_file = os.path.join(cfg.cluster.results, ELB_METADATA_DIR, ELB_STATUS_FAILURE)
+            check_for_read(failure_file, self.dry_run)
+        except FileNotFoundError:
+            pass
+        else:
+            status = ElbStatus.FAILURE
+            self.cached_status = status
+            with open_for_read(failure_file) as f:
+                res = f.read()
+                if res:
+                    self.cached_failure_message = res
+            return status
+
+        try:
+            done_file = os.path.join(cfg.cluster.results, ELB_METADATA_DIR, ELB_STATUS_SUCCESS)
+            check_for_read(done_file, self.dry_run)
+        except FileNotFoundError:
+            pass
+        else:
+            status = ElbStatus.SUCCESS
+            self.cached_status = status
+        return status

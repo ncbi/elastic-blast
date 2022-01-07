@@ -17,10 +17,7 @@ export BLAST_USAGE_REPORT=false
 
 [ -f $CFG ] || { echo "ElasticBLAST configuration file $CFG doesn't exist"; exit 1; }
 
-export ELB_RESULTS="gs://elasticblast-${USER}/test-resubmission-`date +%s`"
-if grep -qs ^aws $CFG ; then
-    export ELB_RESULTS="s3://elasticblast-${USER}/test-resubmission-`date +%s`"
-fi
+[ ! -z "${ELB_RESULTS}" ] || { echo "ELB_RESULTS environment variable must be defined"; exit 1; }
 
 DRY_RUN=''
 #DRY_RUN=--dry-run     # uncomment for debugging
@@ -50,12 +47,11 @@ if [ ! -z "${ELB_TC_BRANCH+x}" ] ; then
         sed -i~ -e "/^\[cluster\]/a labels = branch=$ELB_TC_BRANCH" $CFG
     fi
 fi
-
-if [ ! -z "${ELB_TC_BRANCH+x}" ] ; then
+if [ ! -z "${ELB_TC_COMMIT_SHA+x}" ] ; then
     if grep -q ^labels $CFG; then
-        sed -i~ -e "s@\(^labels.*\)@\1,branch=$ELB_TC_BRANCH@" $CFG
+        sed -i~ -e "s@\(^labels.*\)@\1,commit=$ELB_TC_COMMIT_SHA@" $CFG
     else
-        sed -i~ -e "/^\[cluster\]/a labels = branch=$ELB_TC_BRANCH" $CFG
+        sed -i~ -e "/^\[cluster\]/a labels = commit=$ELB_TC_COMMIT_SHA" $CFG
     fi
 fi
 
@@ -81,15 +77,8 @@ while [ $attempts -lt $timeout_minutes ]; do
     #set -e
 done
 
-# This should fail, grab the error message to check later
-#$ROOT_DIR/elastic-blast submit --cfg $CFG --loglevel DEBUG --logfile $logfile $DRY_RUN || true
-
-# Clean up results
-echo Clean up buckets
-if ! grep -q '^aws-' $CFG; then
-    gsutil -qm rm -r ${ELB_RESULTS}
-else
-    aws s3 rm ${ELB_RESULTS}/ --recursive
+# Clean up
+if grep -q '^aws-' $CFG; then
     if ! aws iam get-role --role-name ncbi-elasticblast-janitor-role  >&/dev/null; then
         $ROOT_DIR/elastic-blast delete --cfg $CFG --loglevel DEBUG --logfile $logfile $DRY_RUN
     fi

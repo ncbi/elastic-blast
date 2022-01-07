@@ -39,17 +39,29 @@ Please visit https://blast.ncbi.nlm.nih.gov/doc/elastic-blast/
 How to get ElasticBLAST
 -----------------------
 
-Please see instructions here:
-https://blast.ncbi.nlm.nih.gov/doc/elastic-blast/quickstart-aws.html#get-elasticblast
+There are several ways to obtain ElasticBLAST, please select the one that is
+most suitable to you:
 
-How to build ElasticBLAST
--------------------------
+* [Installation from PyPI.org][1]
+* [Installation from BioConda][2]
+* [Installation for the AWS Cloud Shell][3]
+* [Installation for the GCP Cloud Shell][4]
+
+Developer information
+---------------------
+
+### How to build ElasticBLAST
 
     make elastic-blast
 
-Requirements for building ElasticBLAST
---------------------------------------
+### Requirements for building ElasticBLAST
 
-In addition to the requirements listed in the page below, [AWS Command Line Interface](https://aws.amazon.com/cli/) is required.
+In addition to the requirements listed in the [documentation][5], the [AWS Command Line Interface][6] is required.
 
-https://blast.ncbi.nlm.nih.gov/doc/elastic-blast/requirements.html
+
+[1]: https://blast.ncbi.nlm.nih.gov/doc/elastic-blast/tutorials/pypi-install.html#tutorial-pypi
+[2]: https://blast.ncbi.nlm.nih.gov/doc/elastic-blast/tutorials/conda-install.html#tutorial-conda
+[3]: https://blast.ncbi.nlm.nih.gov/doc/elastic-blast/quickstart-aws.html#get-elasticblast
+[4]: https://blast.ncbi.nlm.nih.gov/doc/elastic-blast/quickstart-gcp.html#get-elasticblast
+[5]: https://blast.ncbi.nlm.nih.gov/doc/elastic-blast/requirements.html
+[6]: https://aws.amazon.com/cli/

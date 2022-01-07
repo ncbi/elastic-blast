@@ -733,7 +733,7 @@ def test_validate_too_many_cpus(gke_mock):
 
     with pytest.raises(UserReportError) as err:
         cfg.validate(ElbCommand.SUBMIT)
-    assert  re.search(r'number of CPUs [\w "]* exceeds', str(err.value))
+    assert  re.search(r'number of CPUs [\w ()]* exceeds', str(err.value))
 
 
 @patch(target='elastic_blast.elb_config.gcp_get_machine_properties', new=MagicMock(return_value=InstanceProperties(32, 128)))
@@ -1237,13 +1237,13 @@ def test_mt_mode_and_batch_len_blastp(gke_mock):
         cfg = ElasticBlastConfig(**GCP_KWARGS)
         cfg.validate()
         assert '-mt_mode 1' in cfg.blast.options
-        assert cfg.blast.batch_len == 150000
+        assert cfg.blast.batch_len == 300000
 
         # AWS
         cfg = ElasticBlastConfig(**AWS_KWARGS)
         cfg.validate()
         assert '-mt_mode 1' in cfg.blast.options
-        assert cfg.blast.batch_len == 160000
+        assert cfg.blast.batch_len == 320000
 
     # with db metadata, database size between 500M and 20B residues
     db_metadata.number_of_letters = int(20e9) - 1

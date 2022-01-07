@@ -101,18 +101,22 @@ class ElbConfigLibTester(unittest.TestCase):
 
         self.cfg[CFG_CLUSTER][CFG_CLUSTER_NAME] = 'invalid-CLUSTER_NAME'
         with self.assertRaises(UserReportError):
-            ElasticBlastConfig(self.cfg, task = ElbCommand.SUBMIT)
+            ElasticBlastConfig(self.cfg, task = ElbCommand.SUBMIT).validate()
 
         self.cfg[CFG_CLUSTER][CFG_CLUSTER_NAME] = 'invalid-cluster-name-'
         with self.assertRaises(UserReportError):
-            ElasticBlastConfig(self.cfg, task = ElbCommand.SUBMIT)
+            ElasticBlastConfig(self.cfg, task = ElbCommand.SUBMIT).validate()
 
         self.cfg[CFG_CLUSTER][CFG_CLUSTER_NAME] = 'invalid-cluster-name-because-it-is-long-it-should-be-less-than-40-characters'
         with self.assertRaises(UserReportError):
-            ElasticBlastConfig(self.cfg, task = ElbCommand.SUBMIT)
+            ElasticBlastConfig(self.cfg, task = ElbCommand.SUBMIT).validate()
+
+        self.cfg[CFG_CLUSTER][CFG_CLUSTER_NAME] = 'elasticblast-gvn_pasquini-41f2c8234'
+        with self.assertRaises(UserReportError):
+            ElasticBlastConfig(self.cfg, task = ElbCommand.SUBMIT).validate()
 
         self.cfg[CFG_CLUSTER][CFG_CLUSTER_NAME] = 'valid-name'
-        ElasticBlastConfig(self.cfg, task = ElbCommand.SUBMIT)
+        ElasticBlastConfig(self.cfg, task = ElbCommand.SUBMIT).validate()
 
     def test_invalid_configuration_invalid_params(self):
         self.cfg.read(f"{TEST_DATA_DIR}/invalid-parameters.ini")

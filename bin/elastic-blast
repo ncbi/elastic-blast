@@ -36,7 +36,7 @@ from elastic_blast.commands.submit import submit as elb_submit
 from elastic_blast.commands.status import create_arg_parser as create_status_arg_parser
 from elastic_blast.commands.delete import delete as elb_delete
 from elastic_blast.commands.run_summary import create_arg_parser as create_run_summary_arg_parser
-from elastic_blast.util import check_positive_int, config_logging, UserReportError, SafeExecError
+from elastic_blast.util import validate_installation, check_positive_int, config_logging, UserReportError, SafeExecError
 from elastic_blast.util import ElbSupportedPrograms, clean_up
 from elastic_blast import constants
 from elastic_blast.gcp import check_prerequisites
@@ -61,6 +61,8 @@ def main():
     try:
         signal.signal(signal.SIGINT, signal.default_int_handler)
         clean_up_stack = []
+        # Check that the package contains all necessary resources
+        validate_installation()
         # Check parameters for Unicode letters and reject if codes higher than 255 occur
         reject_cli_args_with_unicode(sys.argv[1:])
         parser = create_arg_parser()

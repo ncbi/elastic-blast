@@ -1,13 +1,13 @@
 #                           PUBLIC DOMAIN NOTICE
 #              National Center for Biotechnology Information
-#  
+#
 # This software is a "United States Government Work" under the
 # terms of the United States Copyright Act.  It was written as part of
 # the authors' official duties as United States Government employees and
 # thus cannot be copyrighted.  This software is freely available
 # to the public for use.  The National Library of Medicine and the U.S.
 # Government have not placed any restriction on its use or reproduction.
-#   
+#
 # Although all reasonable efforts have been taken to ensure the accuracy
 # and reliability of the software and data, the NLM and the U.S.
 # Government do not and cannot warrant the performance or results that
@@ -15,7 +15,7 @@
 # Government disclaim all warranties, express or implied, including
 # warranties of performance, merchantability or fitness for any particular
 # purpose.
-#   
+#
 # Please cite NCBI in any work or product based on this material.
 
 """
@@ -27,23 +27,46 @@ Created: Tue 07 Apr 2020 03:43:24 PM EDT
 
 import os
 import re
-import socket
 import logging
 import argparse
 import subprocess
-import getpass
-import time
 import datetime
 import json
 from functools import reduce
-from collections import namedtuple
-from .gcp_traits import get_machine_properties
+from pkg_resources import resource_exists
 from typing import List, Union, Callable
 from .constants import MolType, GCS_DFLT_BUCKET
 from .constants import DEPENDENCY_ERROR, AWS_MAX_TAG_LENGTH, GCP_MAX_LABEL_LENGTH
-from .constants import CSP, AWS_MAX_JOBNAME_LENGTH
+from .constants import AWS_MAX_JOBNAME_LENGTH, CSP
 from .constants import ELB_DFLT_LOGLEVEL, ELB_DFLT_LOGFILE
 from .base import DBSource
+
+RESOURCES = [
+    'job-cloud-split-local-ssd.yaml.template',
+    'job-init-local-ssd.yaml.template',
+    'storage-gcp-ssd.yaml',
+    'pvc.yaml.template',
+    'job-init-pv.yaml.template',
+    'elb-janitor-rbac.yaml',
+    'elb-janitor-cronjob.yaml.template',
+    'job-submit-jobs.yaml.template',
+    'blast-batch-job.yaml.template',
+    'blast-batch-job-local-ssd.yaml.template'
+]
+# Not used by elastic-blast tool:
+# storage-gcp.yaml
+# cloudformation-admin-iam.yaml
+# Used directly (without pkg_resources) in aws.py
+# elastic-blast-cf.yaml
+# Used from bucket resource
+# elastic-blast-janitor-cf.yaml
+def validate_installation():
+    for r in RESOURCES:
+        if not resource_exists('elastic_blast', os.path.join('templates', r)):
+            raise UserReportError(DEPENDENCY_ERROR,
+                f'Resource {r} is missing from the package. Please re-install ElasticBLAST')
+
+
 
 class ElbSupportedPrograms:
     """Auxiliary class to validate supported BLAST programs
@@ -332,11 +355,11 @@ def config_logging(args: argparse.Namespace) -> None:
         logger.addHandler(handler)
 
         # to a file
-        handler = logging.FileHandler(args.logfile, mode='a')
-        handler.setLevel(_str2ll(args.loglevel))
+        fhandler = logging.FileHandler(args.logfile, mode='a')
+        fhandler.setLevel(_str2ll(args.loglevel))
         formatter = K8sTimestampFormatter(fmt=logformat_for_file, datefmt=datefmt)
-        handler.setFormatter(formatter)
-        logger.addHandler(handler)
+        fhandler.setFormatter(formatter)
+        logger.addHandler(fhandler)
 
     logging.logThreads = False
     logging.logProcesses = False
@@ -533,3 +556,19 @@ def gcp_get_regions() -> List[str]:
     return retval
 
 
+def get_resubmission_error_msg(results: str, cloud: CSP) -> str:
+    """ Gets a formatted error message for the case when an ElasticBLAST
+    has already been submitted
+    """
+    retval = 'An ElasticBLAST search that will write results to '
+    retval += f'{results} has already been submitted.\n'
+    retval += 'Please resubmit your search with a different value '
+    retval += 'for "results" configuration parameter, or save '
+    retval += 'the ElasticBLAST results and then either delete '
+    retval += 'the previous ElasticBLAST search by running '
+    retval += 'elastic-blast delete, or run the command '
+    if cloud == CSP.AWS:
+        retval += f'aws s3 rm --recursive --only-show-errors {results}'
+    else:
+        retval += f'gsutil -qm rm -r {results}'
+    return retval

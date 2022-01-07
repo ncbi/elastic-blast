@@ -31,12 +31,13 @@ from elastic_blast.tuner import MolType, DbData, SeqData, get_mt_mode
 from elastic_blast.tuner import MTMode, get_num_cpus, get_batch_length
 from elastic_blast.tuner import aws_get_mem_limit, gcp_get_mem_limit
 from elastic_blast.tuner import aws_get_machine_type, gcp_get_machine_type
-from elastic_blast.tuner import get_mem_limit
+from elastic_blast.tuner import get_mem_limit, get_machine_type
 from elastic_blast.tuner import MAX_NUM_THREADS_AWS, MAX_NUM_THREADS_GCP
 from elastic_blast.filehelper import open_for_read
 from elastic_blast.base import DBSource
 from elastic_blast.constants import ELB_BLASTDB_MEMORY_MARGIN, SYSTEM_MEMORY_RESERVE
 from elastic_blast.constants import CSP, INPUT_ERROR, MEMORY_FOR_BLAST_HITS
+from elastic_blast.constants import ELB_DFLT_AWS_NUM_CPUS, ELB_DFLT_GCP_NUM_CPUS
 from elastic_blast.util import UserReportError, get_query_batch_size
 from elastic_blast.base import MemoryStr, InstanceProperties
 from elastic_blast.db_metadata import DbMetadata
@@ -141,7 +142,7 @@ def test_get_batch_length():
 
     PROGRAM = 'blastp'
     assert get_batch_length(CSP.AWS, program = PROGRAM, mt_mode = MTMode.ONE,
-                            num_cpus = NUM_CPUS) == get_query_batch_size(PROGRAM) * NUM_CPUS
+                            num_cpus = NUM_CPUS) == get_query_batch_size(PROGRAM) * NUM_CPUS * 2
 
     PROGRAM = 'rpsblast'
     NUM_CPUS = 16
@@ -255,31 +256,82 @@ class MockedEc2Client:
 def test_aws_get_machine_type():
     """Test selecting machine type for AWS"""
     MIN_CPUS = 8
-    db = DbData(length=500, moltype=MolType.PROTEIN, bytes_to_cache_gb=70)
-    result = aws_get_machine_type(db=db, num_cpus=MIN_CPUS, region='us-east-1')
+    result = aws_get_machine_type(memory=MemoryStr('70G'), num_cpus=MIN_CPUS, region='test-region')
     # m5.8xlarge should be selected here because it has the least memory out of
     # instance types that satisfy the memory requirement
     assert result == 'm5.8xlarge'
+
+    with pytest.raises(UserReportError):
+        aws_get_machine_type(memory=MemoryStr('1026G'), num_cpus=MIN_CPUS, region='test-region')
 
 
 def test_gcp_get_machine_type():
     """Test selecting machine type for GCP"""
     NUM_CPUS = 14
-    db = DbData(length=500, moltype=MolType.PROTEIN, bytes_to_cache_gb=118)
-    result = gcp_get_machine_type(db, num_cpus=NUM_CPUS)
+    result = gcp_get_machine_type(memory=MemoryStr('120G'), num_cpus=NUM_CPUS)
     assert result == 'n1-standard-32'
 
     NUM_CPUS = 14
-    db.bytes_to_cache_gb = 40
-    result = gcp_get_machine_type(db, num_cpus=NUM_CPUS)
+    result = gcp_get_machine_type(memory=MemoryStr('42G'), num_cpus=NUM_CPUS)
     assert result == 'e2-standard-16'
 
     NUM_CPUS = 256
-    db.bytes_to_cache_gb = 40
     with pytest.raises(UserReportError):
-        gcp_get_machine_type(db, num_cpus=NUM_CPUS)
+        gcp_get_machine_type(memory=MemoryStr('42G'), num_cpus=NUM_CPUS)
 
     NUM_CPUS = 32
-    db.bytes_to_cache_gb = 1024
     with pytest.raises(UserReportError):
-        gcp_get_machine_type(db, num_cpus=NUM_CPUS)
+        gcp_get_machine_type(memory=MemoryStr('1026G'), num_cpus=NUM_CPUS)
+
+
+@patch(target='boto3.client', new=MagicMock(return_value=MockedEc2Client))
+def test_get_machine_type():
+    """Test selecting machine type"""
+    db_metadata = DbMetadata(version = '1.1',
+                             dbname = 'testdb',
+                             dbtype = 'PROTEIN',
+                             description = 'Test database',
+                             number_of_letters = 123,
+                             number_of_sequences = 123,
+                             files = [],
+                             last_updated = 'A date',
+                             bytes_total = 789,
+                             bytes_to_cache = 789,
+                             number_of_volumes = 1)
+
+    db_metadata.bytes_to_cache = 26 * (1024 ** 3)
+
+    # AWS
+    result = get_machine_type(cloud_provider = CSP.AWS,
+                              db = db_metadata,
+                              num_cpus = ELB_DFLT_AWS_NUM_CPUS,
+                              mt_mode = MTMode.ZERO,
+                              db_mem_margin = ELB_BLASTDB_MEMORY_MARGIN,
+                              region = 'test-region')
+    assert result == 'm5.4xlarge'
+
+    result = get_machine_type(cloud_provider = CSP.AWS,
+                              db = db_metadata,
+                              num_cpus = ELB_DFLT_AWS_NUM_CPUS,
+                              mt_mode = MTMode.ONE,
+                              db_mem_margin = ELB_BLASTDB_MEMORY_MARGIN,
+                              region = 'test-region')
+    assert result == 'm5.8xlarge'
+
+    # GCP
+    result = get_machine_type(cloud_provider = CSP.GCP,
+                              db = db_metadata,
+                              num_cpus = ELB_DFLT_GCP_NUM_CPUS,
+                              mt_mode = MTMode.ZERO,
+                              db_mem_margin = ELB_BLASTDB_MEMORY_MARGIN,
+                              region = 'test-region')
+    assert result == 'e2-standard-16'
+
+    result = get_machine_type(cloud_provider = CSP.GCP,
+                              db = db_metadata,
+                              num_cpus = ELB_DFLT_AWS_NUM_CPUS,
+                              mt_mode = MTMode.ONE,
+                              db_mem_margin = ELB_BLASTDB_MEMORY_MARGIN,
+                              region = 'test-region')
+    assert result == 'e2-standard-32'
+
