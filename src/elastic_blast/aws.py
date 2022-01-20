@@ -49,7 +49,7 @@ from .util import convert_memory_to_mb, UserReportError
 from .util import ElbSupportedPrograms, get_usage_reporting, sanitize_aws_batch_job_name
 from .util import get_resubmission_error_msg
 from .constants import BLASTDB_ERROR, CLUSTER_ERROR, ELB_QUERY_LENGTH, PERMISSIONS_ERROR
-from .constants import ELB_QUERY_BATCH_DIR, ELB_METADATA_DIR, ELB_LOG_DIR
+from .constants import ELB_QUERY_BATCH_DIR, ELB_METADATA_DIR
 from .constants import ELB_DOCKER_IMAGE_AWS, INPUT_ERROR, ELB_QS_DOCKER_IMAGE_AWS
 from .constants import DEPENDENCY_ERROR, TIMEOUT_ERROR
 from .constants import ELB_AWS_JOB_IDS, ELB_S3_PREFIX, ELB_GCS_PREFIX
@@ -140,7 +140,7 @@ class ElasticBlastAws(ElasticBlast):
         self.iam = boto3.resource('iam', config=self.boto_cfg)
         self.ec2 = boto3.resource('ec2', config=self.boto_cfg)
 
-        self.owner = sanitize_aws_tag(getpass.getuser().lower())
+        self.owner = sanitize_aws_batch_job_name(getpass.getuser().lower())
         self.results_bucket = cfg.cluster.results
         self.vpc_id = cfg.aws.vpc
         self.subnets = None
@@ -185,7 +185,7 @@ class ElasticBlastAws(ElasticBlast):
             disk_type = self.cfg.cluster.disk_type
             instance_type = self.cfg.cluster.machine_type
             # FIXME: This is a shortcut, should be implemented in get_machine_properties
-            if re.match(r'[cmr]5a?dn?\.\d{0,2}xlarge', instance_type):
+            if re.match(r'[cmr]5a?dn?\.\d{0,2}x?large', instance_type) or instance_type.startswith('x1'):
                 use_ssd = True
                 # Shrink the default EBS root disk since EC2 instances will use locally attached SSDs
                 logging.warning("Using gp2 30GB EBS root disk because locally attached SSDs will be used")
@@ -533,18 +533,13 @@ class ElasticBlastAws(ElasticBlast):
                 if status == ElbStatus.UNKNOWN:
                     logging.info(f"AWS CloudFormation stack {self.stack_name} doesn't exist and there is no computation results, nothing to delete")
                     return
-            # Query batches should be removed before deleting CF stack, because in janitor
-            # there is no execution after stack deletion
+            # Query batches should be removed before deleting CF stack
             self._remove_ancillary_data(ELB_QUERY_BATCH_DIR)
             if self.cf_stack:
                 logging.debug(f'Deleting AWS CloudFormation stack {self.stack_name}')
+                # Per the documentation, when this call returns, stack deletion starts (i.e.: it runs asynchronously).
                 self.cf_stack.delete()
-            # We're at this point only if elastic-blast was called manually, janitor execution
-            # ends at stack deletion and leaves metadata intact - intended behavior.
-            logging.debug(f'Deleting metadata of cluster {self.stack_name}')
-            for sd in [ELB_METADATA_DIR, ELB_LOG_DIR]:
-                self._remove_ancillary_data(sd)
-            if self.cf_stack:
+            
                 waiter = self.cf.meta.client.get_waiter('stack_delete_complete')
                 try:
                     waiter.wait(StackName=self.stack_name)

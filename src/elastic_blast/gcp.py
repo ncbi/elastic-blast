@@ -48,7 +48,7 @@ from .util import ElbSupportedPrograms, safe_exec, UserReportError, SafeExecErro
 from .util import validate_gcp_disk_name, get_blastdb_info, get_usage_reporting
 
 from . import kubernetes
-from .constants import CLUSTER_ERROR, ELB_NUM_JOBS_SUBMITTED, GCP_APIS, ELB_METADATA_DIR, ELB_LOG_DIR, K8S_JOB_SUBMIT_JOBS
+from .constants import CLUSTER_ERROR, ELB_NUM_JOBS_SUBMITTED, GCP_APIS, ELB_METADATA_DIR, K8S_JOB_SUBMIT_JOBS
 from .constants import ELB_STATE_DISK_ID_FILE, DEPENDENCY_ERROR
 from .constants import ELB_QUERY_BATCH_DIR, ELB_DFLT_MIN_NUM_NODES
 from .constants import K8S_JOB_CLOUD_SPLIT_SSD, K8S_JOB_INIT_PV
@@ -647,8 +647,6 @@ def delete_cluster_with_cleanup(cfg: ElasticBlastConfig) -> None:
                 # Check for status of gone cluster, delete data if
                 # necessary
                 remove_split_query(cfg)
-                _remove_ancillary_data(cfg, ELB_LOG_DIR)
-                _remove_ancillary_data(cfg, ELB_METADATA_DIR)
                 return
                 
         logging.debug(f'Cluster status "{status}"')
@@ -747,8 +745,6 @@ def delete_cluster_with_cleanup(cfg: ElasticBlastConfig) -> None:
 
     remove_split_query(cfg)
     delete_cluster(cfg)
-    _remove_ancillary_data(cfg, ELB_LOG_DIR)
-    _remove_ancillary_data(cfg, ELB_METADATA_DIR)
 
 
 def get_gke_clusters(cfg: ElasticBlastConfig) -> List[str]:

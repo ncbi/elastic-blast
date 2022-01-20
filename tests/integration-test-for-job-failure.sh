@@ -7,7 +7,7 @@
 # Created: Fri 02 Jul 2020 04:01:00 PM EDT
 
 SCRIPT_DIR=$( cd "$( dirname "${BASH_SOURCE[0]}" )" && pwd )
-set -euo pipefail
+set -xeuo pipefail
 
 # All other settings are specified in the config file
 CFG=${1:-"${SCRIPT_DIR}/../share/etc/elb-aws-blastn-out-of-memory"}
@@ -58,6 +58,7 @@ while [ $attempts -lt $timeout_minutes ]; do
 
     # if succeeded or failed - break out of the wait cycle
     [ $exit_code -eq 0 ] || [ $exit_code -eq 1 ] && break
+    [ $exit_code -ge 6 ] && break # If unknown error occurs also break out of the wait cycle
 
     attempt=$((attempts+1))
     sleep 60

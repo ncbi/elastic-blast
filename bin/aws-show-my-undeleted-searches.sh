@@ -56,7 +56,7 @@ while getopts "u:vh" OPT; do
 done
 
 # User name for label computed as in elastic_blast.elb_config.create_labels
-user=$(echo $username | tr '[A-Z-]' '[a-z_]' | cut -b-62)
+user=$(echo $username | tr '[A-Z-]' '[a-z_]' | tr '.' '-' | cut -b-62)
 
 TMP=`mktemp -t $(basename -s .sh $0)-XXXXXXX`
 STATUS=`mktemp -t $(basename -s .sh $0)-XXXXXXX`

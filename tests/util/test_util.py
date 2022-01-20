@@ -161,6 +161,12 @@ class ElbLibTester(unittest.TestCase):
     def test_sanitize_aws_batch_job_name(self):
         self.assertEqual('GCF_000001405-38_top_level', sanitize_aws_batch_job_name('GCF_000001405.38_top_level '))
 
+    def test_sanitize_aws_user_name(self):
+        self.assertEqual('user-name', sanitize_aws_batch_job_name('user.name'))
+
+    def test_sanitize_gcp_user_name(self):
+        self.assertEqual('user-name', sanitize_gcp_labels('user.name'))
+
 @patch(target='elastic_blast.elb_config.get_db_metadata', new=MagicMock(return_value=DB_METADATA))
 def create_config_for_db(dbname):
     """Create minimal config for a database name"""

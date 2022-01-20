@@ -333,6 +333,8 @@ def aws_get_machine_type(memory: MemoryStr, num_cpus: PositiveInteger, region: s
         raise UserReportError(returncode = UNKNOWN_ERROR,
                               message = f'An AWS machine type with memory {memory.asGB()}GB and {num_cpus} CPUs could not be found')
 
+    # sort first by number of CPUs, then by memory
+    suitable_props = sorted(suitable_props, key=lambda x: x['VCpuInfo']['DefaultVCpus'])
     return sorted(suitable_props, key=lambda x: x['MemoryInfo']['SizeInMiB'])[0]['InstanceType']
 
 

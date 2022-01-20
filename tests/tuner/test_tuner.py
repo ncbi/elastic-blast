@@ -257,9 +257,9 @@ def test_aws_get_machine_type():
     """Test selecting machine type for AWS"""
     MIN_CPUS = 8
     result = aws_get_machine_type(memory=MemoryStr('70G'), num_cpus=MIN_CPUS, region='test-region')
-    # m5.8xlarge should be selected here because it has the least memory out of
-    # instance types that satisfy the memory requirement
-    assert result == 'm5.8xlarge'
+    # r5.4xlarge should be selected here because it has the least memory and
+    # fewest vCPUs out of instance types that satisfy the memory requirement
+    assert result == 'r5.4xlarge'
 
     with pytest.raises(UserReportError):
         aws_get_machine_type(memory=MemoryStr('1026G'), num_cpus=MIN_CPUS, region='test-region')
@@ -316,7 +316,7 @@ def test_get_machine_type():
                               mt_mode = MTMode.ONE,
                               db_mem_margin = ELB_BLASTDB_MEMORY_MARGIN,
                               region = 'test-region')
-    assert result == 'm5.8xlarge'
+    assert result == 'r5.4xlarge'
 
     # GCP
     result = get_machine_type(cloud_provider = CSP.GCP,

@@ -109,6 +109,7 @@ while [ $attempts -lt $timeout_minutes ]; do
 
     # if succeeded or failed - break out of the wait cycle
     [ $exit_code -eq 0 ] || [ $exit_code -eq 1 ] && break
+    [ $exit_code -ge 6 ] && break # If unknown error occurs also break out of the wait cycle
 
     attempts=$((attempts+1))
     sleep 60
@@ -118,26 +119,26 @@ export PATH=$PATH:$ROOT_DIR
 if [ $exit_code -eq 0 ]; then
     $ROOT_DIR/share/tools/run-report.py --cfg $CFG --results ${ELB_RESULTS} -f csv | tee $run_report
 fi
+# Invoke run-summary, just in case it works, but make its failure non-fatal
+$ELB run-summary --cfg $CFG --loglevel DEBUG --logfile $logfile -o $runsummary_output $DRY_RUN || true
 
 if ! grep -q '^aws-' $CFG; then
     make logs ELB_CLUSTER_NAME=`make -s results2clustername` 2>&1 | tee $logs
-    $ELB run-summary --cfg $CFG --loglevel DEBUG --logfile $logfile -o $runsummary_output $DRY_RUN
     # Get query batches
     gsutil -qm cp ${QUERY_BATCHES}/*.fa . || true
 
     # Get results
-    gsutil -qm cp ${ELB_RESULTS}/metadata/* .
+    gsutil -qm cp ${ELB_RESULTS}/metadata/* . || true
     # Logs saved in the process of execution can be no longer available for 'make logs'
-    gsutil -qm cp ${ELB_RESULTS}/logs/* .
-    gsutil -qm cp ${ELB_RESULTS}/*.out.gz .
+    gsutil -qm cp ${ELB_RESULTS}/logs/* . || true
+    gsutil -qm cp ${ELB_RESULTS}/*.out.gz . || true
 else
-    $ELB run-summary --cfg $CFG --loglevel DEBUG --logfile $logfile -o $runsummary_output $DRY_RUN
     # Get query batches
-    aws s3 cp ${QUERY_BATCHES}/ . --recursive --exclude '*' --include "*.fa" --exclude '*/*'
+    aws s3 cp ${QUERY_BATCHES}/ . --recursive --exclude '*' --include "*.fa" --exclude '*/*' || true
     # Get results
-    aws s3 cp ${ELB_RESULTS}/ . --recursive --exclude '*' --include "*.out.gz" --exclude '*/*'
+    aws s3 cp ${ELB_RESULTS}/ . --recursive --exclude '*' --include "*.out.gz" --exclude '*/*' || true
     # Get backend logs
-    aws s3 cp ${ELB_RESULTS}/logs/backends.log ${logs}
+    aws s3 cp ${ELB_RESULTS}/logs/backends.log ${logs} || true
     if ! aws iam get-role --role-name ncbi-elasticblast-janitor-role  >&/dev/null; then
         $ELB delete --cfg $CFG --loglevel DEBUG --logfile $logfile $DRY_RUN
     fi

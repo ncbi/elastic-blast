@@ -569,16 +569,37 @@ Resources:
 
             #!/bin/bash -xe
 
-            # See better way of handling AWS NVME disks
-            # https://serverfault.com/a/952864
-            if [ "${UseSSD}" = true -a -b /dev/nvme1n1 ]; then
-              # mount the ephemeral storage
-              mkfs.ext4 /dev/nvme1n1
-              mkdir -m0777 /blast
-              mount -t ext4 /dev/nvme1n1 /blast/
+            yum install -y unzip nvme-cli mdadm
+
+            device=/dev/md0
+            mount_point=/blast
+            num_vols=`nvme list | awk '/EC2 NVMe Instance Storage/ {print}' | wc -l`
+            if [ true == "${UseSSD}" ] ; then
+              # NVMe SSD
+              if [ ! -z "$num_vols" ] && [ $num_vols -gt 0 ]; then
+                mdadm --create $device --level=0 --force --raid-devices=$num_vols `nvme list | grep -i 'nvme instance storage' | cut -f 1 -d ' ' | tr '\n' ' '`
+                mkfs.ext4 -F $device
+                mkdir -m0777 $mount_point
+                mount -t ext4 $device $mount_point
+              # non-NVMe SSD
+              elif [ -b /dev/xvdb ]; then
+                if [ -b /dev/xvdc ] ; then
+                  mdadm --create $device --level=0 --raid-devices=2 /dev/xvdb /dev/xvdc
+                else
+                  mdadm --create $device --level=0 --force --raid-devices=1 /dev/xvdb
+                fi
+                mkfs.ext4 -F $device
+                mkdir -m0777 $mount_point
+                mount -t ext4 $device $mount_point
+              # fallback for backwards compatibility
+              elif [ -b /dev/nvme1n1 ]; then
+                mkfs.ext4 /dev/nvme1n1
+                mkdir -m0777 $mount_point
+                mount -t ext4 /dev/nvme1n1 /$mount_point
+              fi
+              [ -e $mount_point ] && chmod a+w $mount_point
             fi
 
-            yum install -y unzip
             curl -s "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
             unzip awscliv2.zip
             ./aws/install
@@ -605,9 +626,15 @@ Resources:
               - ProvisionedIopsRequested
               - !Ref ProvisionedIops
               - !Ref AWS::NoValue
+        - DeviceName: /dev/xvdb
+          VirtualName: ephemeral0
+        - DeviceName: /dev/xvdc
+          VirtualName: ephemeral1
       TagSpecifications:
         - ResourceType: launch-template
           Tags:
+            - Key: Name
+              Value: !Join [-, [elasticblast, !Ref Owner, !Ref RandomToken]]
             - Key: Project
               Value: BLAST
             - Key: Owner

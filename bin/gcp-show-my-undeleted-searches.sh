@@ -77,7 +77,7 @@ STATUS=`mktemp -t $(basename -s .sh $0)-XXXXXXX`
 trap " /bin/rm -fr $TMP $STATUS" INT QUIT EXIT HUP KILL ALRM
 
 # User name for label computed as in elastic_blast.elb_config.create_labels
-user=$(echo $username | tr '[A-Z-]' '[a-z_]' | cut -b-62)
+user=$(echo $username | tr '[A-Z-]' '[a-z_]' | tr '.' '-' | cut -b-62)
 gcloud container clusters list --filter=resourceLabels.owner=$user --format='value(resourceLabels.results,resourceLabels.created)' | sort > $TMP
 [ -s $TMP ] && {
     echo "These are your ElasticBLAST searches on GCP that have not been deleted";
