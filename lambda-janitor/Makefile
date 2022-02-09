@@ -159,6 +159,7 @@ update-lambda-deployment-dry-run: ${LAMBDA_FNX_ARCHIVE}
 update-lambda-deployment: ${LAMBDA_FNX_ARCHIVE}
 	aws lambda update-function-code --function-name ${LAMBDA_FNX_NAME} \
 		--zip-file fileb://${LAMBDA_FNX_ARCHIVE} --no-publish
+	aws lambda wait function-updated --function-name ${LAMBDA_FNX_NAME}
 	aws lambda update-function-configuration --function-name ${LAMBDA_FNX_NAME} \
 		--runtime ${PYTHON_RUNTIME} \
 		--timeout ${LAMBDA_TIMEOUT} \
