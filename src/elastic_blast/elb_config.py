@@ -87,7 +87,7 @@ from .util import validate_gcp_string, check_aws_region_for_invalid_characters
 from .util import validate_gke_cluster_name, ElbSupportedPrograms
 from .util import get_query_batch_size
 from .util import UserReportError, safe_exec
-from .util import gcp_get_regions
+from .util import gcp_get_regions, sanitize_for_k8s
 from .gcp_traits import get_machine_properties as gcp_get_machine_properties
 from .aws_traits import get_machine_properties as aws_get_machine_properties
 from .aws_traits import get_regions as aws_get_regions
@@ -989,7 +989,7 @@ class ElasticBlastConfig:
 
 def generate_cluster_name(results: CloudURI) -> str:
     """ Returns the default cluster name """
-    username = sanitize_gcp_label(getpass.getuser().lower())
+    username = sanitize_for_k8s(sanitize_gcp_label(getpass.getuser().lower()))
     return f'elasticblast-{username}-{results.md5}'
 
 

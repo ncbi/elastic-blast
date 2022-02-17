@@ -31,12 +31,11 @@ import re
 
 from elastic_blast import util
 from elastic_blast.constants import ELB_DFLT_GCP_MACHINE_TYPE
-from elastic_blast.constants import GCP_MAX_LABEL_LENGTH, AWS_MAX_TAG_LENGTH
 from elastic_blast.constants import ElbCommand, MolType
 from elastic_blast.util import get_query_batch_size
 from elastic_blast.util import convert_memory_to_mb, get_blastdb_size, sanitize_aws_batch_job_name
 from elastic_blast.util import safe_exec, SafeExecError, convert_disk_size_to_gb
-from elastic_blast.util import sanitize_gcp_labels, sanitize_for_k8s, sanitize_aws_tag
+from elastic_blast.util import sanitize_for_k8s
 from elastic_blast.util import validate_gcp_string, convert_labels_to_aws_tags
 from elastic_blast.util import validate_gcp_disk_name, gcp_get_regions
 from elastic_blast.gcp_traits import get_machine_properties
@@ -139,24 +138,11 @@ class ElbLibTester(unittest.TestCase):
         with self.assertRaises(ValueError):
             get_blastdb_size(cfg.blast.db, cfg.cluster.db_source)
 
-    def test_sanitize_gcp_labels(self):
-        self.assertEqual('harry-potter', sanitize_gcp_labels('Harry.Potter'))
-        self.assertEqual('macbook-pro-home', sanitize_gcp_labels('MacBook-Pro.Home'))
-        label = sanitize_gcp_labels('gs://tomcat-test/tc-elb-int-swissprot-psiblast-multi-node-sync-351')
-        self.assertLessEqual(len(label), GCP_MAX_LABEL_LENGTH)
-        self.assertEqual('gs---tomcat-test-tc-elb-int-swissprot-psiblast-multi-node-sync-', label)
-
     def test_sanitize_for_k8s(self):
         self.assertEqual('ref-viruses-rep-genomes', sanitize_for_k8s('ref_viruses_rep_genomes'))
         self.assertEqual('betacoronavirus', sanitize_for_k8s('Betacoronavirus'))
         self.assertEqual('16s-ribosomal-rna', sanitize_for_k8s('16S_ribosomal_RNA'))
         self.assertEqual('gcf-000001405.38-top-level', sanitize_for_k8s('GCF_000001405.38_top_level'))
-
-    def test_sanitize_aws_tag(self):
-        self.assertEqual('s3://abra-Cada-bra+-@.-', sanitize_aws_tag('s3://abra;Cada#bra+-@.='))
-        label = sanitize_aws_tag('s3://tomcat-test/tc-elb-int-swissprot-psiblast-multi-node-sync-351')
-        self.assertLessEqual(len(label), AWS_MAX_TAG_LENGTH)
-        self.assertEqual('s3://tomcat-test/tc-elb-int-swissprot-psiblast-multi-node-sync-351', label)
 
     def test_sanitize_aws_batch_job_name(self):
         self.assertEqual('GCF_000001405-38_top_level', sanitize_aws_batch_job_name('GCF_000001405.38_top_level '))
@@ -164,8 +150,6 @@ class ElbLibTester(unittest.TestCase):
     def test_sanitize_aws_user_name(self):
         self.assertEqual('user-name', sanitize_aws_batch_job_name('user.name'))
 
-    def test_sanitize_gcp_user_name(self):
-        self.assertEqual('user-name', sanitize_gcp_labels('user.name'))
 
 @patch(target='elastic_blast.elb_config.get_db_metadata', new=MagicMock(return_value=DB_METADATA))
 def create_config_for_db(dbname):

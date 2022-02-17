@@ -397,18 +397,6 @@ def sanitize_for_k8s(input_string: str) -> str:
     return re.sub(r'_', '-', input_string.lower(), flags=re.ASCII)
 
 
-def sanitize_gcp_labels(input_label: str) -> str:
-    """ Changes the input_label so that it is composed of valid GCP label characters"""
-    return re.sub(r'\W', '-', input_label.lower(), flags=re.ASCII)[:GCP_MAX_LABEL_LENGTH]
-
-
-def sanitize_aws_tag(input_label: str) -> str:
-    """ Changes the input_label so that it is composed of valid AWS tag characters"""
-    # NB: this AWS sanitizer is a bit more restrictive - it replaces '=' to
-    # simplify dataflow for GCP
-    return re.sub(r'[^\w_\.:/+@]', '-', input_label.strip(), flags=re.ASCII)[:AWS_MAX_TAG_LENGTH]
-
-
 def sanitize_aws_batch_job_name(input_name: str) -> str:
     """ Changes the input_name so that it is composed of valid AWS Batch job name characters"""
     return re.sub(r'[\W\-]', '-', input_name.strip(), flags=re.ASCII)[:AWS_MAX_JOBNAME_LENGTH]

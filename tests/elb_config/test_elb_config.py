@@ -29,8 +29,8 @@ import re
 import configparser
 from dataclasses import dataclass, fields
 from unittest.mock import MagicMock, patch
-import math
-from elastic_blast.constants import CSP
+import math, getpass
+from elastic_blast.constants import CSP, GCP_MAX_LABEL_LENGTH, AWS_MAX_TAG_LENGTH
 from elastic_blast.constants import CFG_CLOUD_PROVIDER
 from elastic_blast.constants import CFG_CP_GCP_PROJECT, CFG_CP_GCP_REGION, CFG_CP_GCP_ZONE
 from elastic_blast.constants import CFG_CP_GCP_NETWORK, CFG_CP_GCP_SUBNETWORK
@@ -67,6 +67,7 @@ from elastic_blast.base import InstanceProperties, MemoryStr, PositiveInteger
 from elastic_blast.elb_config import CloudURI, GCPString, AWSRegion
 from elastic_blast.elb_config import GCPConfig, AWSConfig, BlastConfig, ClusterConfig
 from elastic_blast.elb_config import ElasticBlastConfig, get_instance_props
+from elastic_blast.elb_config import sanitize_gcp_label, sanitize_aws_tag
 from elastic_blast.constants import ElbCommand
 from elastic_blast.util import UserReportError, get_query_batch_size, ElbSupportedPrograms
 from elastic_blast.gcp_traits import get_machine_properties as gcp_get_machine_properties
@@ -636,6 +637,15 @@ def test_clusterconfig_from_configparser_errors():
         assert [message for message in errors if key in message and 'invalid value' in message and confpars[CFG_CLUSTER][key] in message]
     for key in confpars[CFG_BLAST].keys():
         assert [message for message in errors if key in message and 'invalid value' in message and confpars[CFG_BLAST][key] in message]
+
+
+@patch(target='getpass.getuser', new=MagicMock(return_value='a-user-name_with_underscore'))
+def test_clusterconfig_username_with_underscore():
+    """Test that a username with an underscore is properly amended before
+       becoming part of a cluster name"""
+    assert '_' in getpass.getuser()
+    cfg = ClusterConfig(CloudURI('gs://some-bucket'))
+    assert '_' not in cfg.name
 
 
 TEST_MACHINE_TYPE = 'test-machine-type'
@@ -1707,3 +1717,20 @@ def test_mt_mode_and_batch_len_user_selected(gke_mock):
        assert cfg.blast.user_provided_batch_len
 
 
+def test_sanitize_gcp_label():
+    assert 'harry-potter' == sanitize_gcp_label('Harry.Potter')
+    assert 'macbook-pro-home' == sanitize_gcp_label('MacBook-Pro.Home')
+    label = sanitize_gcp_label('gs://tomcat-test/tc-elb-int-swissprot-psiblast-multi-node-sync-351')
+    assert len(label) <= GCP_MAX_LABEL_LENGTH
+    assert 'gs---tomcat-test-tc-elb-int-swissprot-psiblast-multi-node-sync-' == label
+
+
+def test_sanitize_gcp_user_name():
+    assert 'user-name' == sanitize_gcp_label('user.name')
+
+
+def test_sanitize_aws_tag():
+    assert 's3://abra-Cada-bra+-@.-' == sanitize_aws_tag('s3://abra;Cada#bra+-@.=')
+    label = sanitize_aws_tag('s3://tomcat-test/tc-elb-int-swissprot-psiblast-multi-node-sync-351')
+    assert len(label) <= AWS_MAX_TAG_LENGTH
+    assert 's3://tomcat-test/tc-elb-int-swissprot-psiblast-multi-node-sync-351' == label
