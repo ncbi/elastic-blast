@@ -1,0 +1,23 @@
+steps:
+- name: '${_IMG}'
+  args: ['update_blastdb.pl', '--version']
+- name: '${_IMG}'
+  args: ['blastn', '-version-full']
+- name: '${_IMG}'
+  args: ['blastdb_path', '-version-full']
+- name: '${_IMG}'
+  args: ['which', 'vmtouch']
+- name: '${_IMG}'
+  args: ['aws', '--version']
+- name: '${_IMG}'
+  args: ['aws', 's3', '--no-sign-request', 'ls', 's3://ncbi-blast-databases/latest-dir']
+- name: '${_IMG}'
+  args: ['gcloud', '--version']
+- name: '${_IMG}'
+  args: ['printenv', 'BLASTDB', 'PATH']
+- name: '${_IMG}'
+  args: ['fasta-split', '--help']
+- name: '${_IMG}'
+  args: ['splitq_download_db_search', '--version']
+- name: '${_IMG}'
+  args: ['splitq_download_db_search', '--help']

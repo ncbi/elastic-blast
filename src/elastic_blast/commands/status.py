@@ -58,7 +58,7 @@ def _status(args, cfg: ElasticBlastConfig, clean_up_stack: List[Any]) -> int:
         while True:
             status, counts, verbose_result = elastic_blast.check_status(args.verbose)
             result = str(status)
-            if counts:
+            if status == ElbStatus.RUNNING and counts and sum(counts.values()) > 0:
                 result = '\n'.join([f'{x} {counts[x.lower()]}' for x in
                     ('Pending', 'Running', 'Succeeded', 'Failed')
                 ])

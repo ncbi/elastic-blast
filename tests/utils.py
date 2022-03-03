@@ -593,7 +593,7 @@ class MockedS3Resource:
         return obj
 
 
-class MockedStream(str):
+class MockedStream(io.IOBase):
     """A string stream class needed for mocked downloads from S3, used by
     filehelper.open_for_read"""
     def __init__(self, data):

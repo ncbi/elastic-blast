@@ -28,7 +28,7 @@ SHELL=/bin/bash
 .PHONY: all pre-check check clean build publish gcp-build gcp-check gcp-clean
 
 IMG?=ncbi/elasticblast-job-submit
-VERSION?=1.2.1
+VERSION?=2.0.0
 GCP_PROJECT?=$(shell gcloud config get-value project 2>/dev/null)
 GCP_TEST_BUCKET?=gs://elasticblast-test/cloud-job-submission
 AWS_REGION?=us-east-1
@@ -76,24 +76,20 @@ aws-build-from-local-sources:
 	-gcloud builds submit --config awscloudbuild.yaml --substitutions _SERVER=${AWS_SERVER},TAG_NAME=${VERSION},_IMG=${AWS_IMG},_DOCKERFILE=Dockerfile-build-from-local-sources.aws,_AWS_ECR_PASSWD="`aws ecr-public get-login-password --region ${AWS_REGION}`"
 	rm -fr src bin requirements setup.cfg_cloud setup.py
 
-
-.PHONY: gcp-test
-gcp-test:
-	gcloud builds submit --timeout=120 --config cloudrun.yaml --substitutions _IMG="gcr.io/${GCP_PROJECT}/${IMG}:${VERSION}",_ELB_GCP_PROJECT="${ELB_GCP_PROJECT}",_ELB_GCP_ZONE="${ELB_GCP_ZONE}",_ELB_RESULTS="${ELB_RESULTS}",_ELB_CLUSTER_NAME="${ELB_CLUSTER_NAME}"
-
-.PHONY: aws-test
-aws-test:
+.PHONY: aws-check
+aws-check:
 	gcloud builds submit --config awscloudrun.yaml --substitutions _IMG="${AWS_IMG}:${VERSION}",_ELB_RESULTS="${ELB_RESULTS}",_ELB_CLUSTER_NAME="${ELB_CLUSTER_NAME}"
 
 gcp-clean:
 	-gcloud container images delete gcr.io/${GCP_PROJECT}/${IMG}:${VERSION}
 
+.PHONY: gcp-check
 gcp-check:
 	-gcloud container images list --repository=gcr.io/${GCP_PROJECT}/${IMG}
 	-gcloud container images list-tags gcr.io/${GCP_PROJECT}/${IMG}
 	-gcloud container images describe gcr.io/${GCP_PROJECT}/${IMG}:latest
 	-gcloud container images describe gcr.io/${GCP_PROJECT}/${IMG}:${VERSION}
-	#gcloud builds submit --config test-cloudbuild.yaml --substitutions _TAG=$(VERSION),_IMG=${IMG}
+	gcloud builds submit --timeout=120 --config cloudrun.yaml --substitutions _IMG="gcr.io/${GCP_PROJECT}/${IMG}:${VERSION}",_ELB_GCP_PROJECT="${ELB_GCP_PROJECT}",_ELB_GCP_ZONE="${ELB_GCP_ZONE}",_ELB_RESULTS="${ELB_RESULTS}",_ELB_CLUSTER_NAME="${ELB_CLUSTER_NAME}"
 
 gcp-list-tagless-images:
 	gcloud container images list-tags gcr.io/${GCP_PROJECT}/${IMG} \

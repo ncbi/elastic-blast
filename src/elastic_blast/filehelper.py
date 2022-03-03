@@ -458,7 +458,6 @@ def open_for_read(fname):
         body.readable = lambda: True
         body.writable = lambda: False
         body.seekable = lambda: False
-        body.closed = False
         body.flush = lambda: None
         if tarred or gzipped:
             fileobj = unpack_stream(body, gzipped, tarred)

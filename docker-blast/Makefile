@@ -85,6 +85,13 @@ aws-build-from-local-sources: setup.cfg_cloud
 	gcloud builds submit --config=awscloudbuild.yaml --substitutions=TAG_NAME="${VERSION}",_IMG="${AWS_IMG}",_SERVER="${AWS_SERVER}",_AWS_ECR_PASSWD="`aws ecr-public get-login-password --region ${AWS_REGION}`",_DOCKERFILE='Dockerfile-build-from-local-sources' .
 	$(MAKE) clean-local-sources
 
+.PHONY: gcp-check
+gcp-check:
+	gcloud builds submit --config test-docker-image-gcp.yaml --substitutions _TAG=$(VERSION),_IMG=${IMG}
+
+.PHONY: aws-check
+aws-check:
+	gcloud builds submit --config test-docker-image-aws.yaml --substitutions _IMG="${AWS_IMG}:${VERSION}"
 
 .PHONY: clean 
 clean:

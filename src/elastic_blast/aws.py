@@ -44,6 +44,10 @@ from typing import Any, Dict, List, Tuple
 import boto3  # type: ignore
 from botocore.exceptions import ClientError, NoCredentialsError, ParamValidationError, WaiterError # type: ignore
 
+from dataclasses_json import dataclass_json
+from dataclasses import dataclass, field
+from copy import deepcopy
+
 from .util import convert_labels_to_aws_tags, convert_disk_size_to_gb
 from .util import convert_memory_to_mb, UserReportError
 from .util import ElbSupportedPrograms, get_usage_reporting, sanitize_aws_batch_job_name
@@ -110,6 +114,37 @@ def check_cluster(cfg: ElasticBlastConfig) -> bool:
         return False
 
 
+@dataclass_json
+@dataclass
+class JobIds:
+    """Serializable store of AWS Batch job ids for query splitting, cloud job
+    submission and BLAST searches"""
+    query_splitting: str = ''
+    job_submission: str = ''
+    search: List[str] = field(default_factory=list)
+
+    def __bool__(self):
+        """Boolean value of the object: True if at least one job id is set"""
+        return bool(self.query_splitting) or bool(self.job_submission) or bool(self.search)
+
+    def merge(self, obj):
+        """Merge another JobIds object into self"""
+        if not self.query_splitting and obj.query_splitting:
+            self.query_splitting = obj.query_splitting
+        if not self.job_submission and obj.job_submission:
+            self.job_submission = obj.job_submission
+        self.search = list(set(self.search + obj.search))
+
+    def to_list(self) -> List[str]:
+        """Return all jobs ids as a list"""
+        id_list = [job for job in self.search]
+        if self.query_splitting:
+            id_list.append(self.query_splitting)
+        if self.job_submission:
+            id_list.append(self.job_submission)
+        return id_list
+
+
 class ElasticBlastAws(ElasticBlast):
     """ Implementation of core ElasticBLAST functionality in AWS.
     Uses a CloudFormation template and AWS Batch for its main operation.
@@ -146,8 +181,7 @@ class ElasticBlastAws(ElasticBlast):
         self.subnets = None
         self._provide_subnets()
         self.cf_stack = None
-        self.job_ids : List[str] = []
-        self.qs_job_id = None
+        self.job_ids = JobIds()
 
         initialized = True
 
@@ -639,7 +673,7 @@ class ElasticBlastAws(ElasticBlast):
                                         jobName=jname,
                                         parameters=parameters,
                                         containerOverrides=overrides)
-            self.qs_job_id = job['jobId']
+            self.job_ids.query_splitting = job['jobId']
             logging.info(f"Submitted AWS Batch job {job['jobId']} to split query {query_files[0]}")
             self.upload_job_ids()
         else:
@@ -653,15 +687,15 @@ class ElasticBlastAws(ElasticBlast):
         """
         if self.dry_run:
             return
-        if not self.qs_job_id:
+        if not self.job_ids.query_splitting:
             msg = 'Query splitting job was not submitted!'
             logging.fatal(msg)
             raise RuntimeError(msg)
 
         while True:
-            job_batch = self.batch.describe_jobs(jobs=[self.qs_job_id])['jobs']
+            job_batch = self.batch.describe_jobs(jobs=[self.job_ids.query_splitting])['jobs']
             job_status = job_batch[0]['status']
-            logging.debug(f'Query splitting job status {job_status} for {self.qs_job_id}')
+            logging.debug(f'Query splitting job status {job_status} for {self.job_ids.query_splitting}')
             if job_status == 'SUCCEEDED':
                 break
             if job_status == 'FAILED':
@@ -674,7 +708,7 @@ class ElasticBlastAws(ElasticBlast):
                     for k in ['exitCode', 'reason']:
                         if k in container:
                             failure_details += f'Container{k[0].upper()+k[1:]}: {container[k]} '
-                msg = f'Query splitting on the cloud failed (jobId={self.qs_job_id})'
+                msg = f'Query splitting on the cloud failed (jobId={self.job_ids.query_splitting})'
                 if failure_details: msg += failure_details
                 logging.fatal(msg)
                 raise UserReportError(CLUSTER_ERROR, msg)
@@ -736,11 +770,11 @@ class ElasticBlastAws(ElasticBlast):
                 "parameters": parameters,
                 "containerOverrides": overrides
             }
-            if self.qs_job_id:
-                submit_job_args["dependsOn"] = [{'jobId': self.qs_job_id}]
+            if self.job_ids.query_splitting:
+                submit_job_args["dependsOn"] = [{'jobId': self.job_ids.query_splitting}]
             job = self.batch.submit_job(**submit_job_args)
             logging.info(f'Submitted AWS Batch job {job["jobId"]} to submit search jobs')
-            self.job_ids.append(job['jobId'])
+            self.job_ids.job_submission = job['jobId']
             self.upload_job_ids()
 
 
@@ -751,8 +785,6 @@ class ElasticBlastAws(ElasticBlast):
                 query_batches               - list of bucket names of queries to submit
                 one_stage_cloud_query_split - do the query split in the cloud as a part
                                               of executing a regular job """
-        self.job_ids = []
-
         prog = self.cfg.blast.program
 
         if self.cfg.cluster.db_source != DBSource.AWS:
@@ -829,10 +861,10 @@ class ElasticBlastAws(ElasticBlast):
                     "parameters": parameters,
                     "containerOverrides": overrides
                 }
-                if self.qs_job_id:
-                    submit_job_args["dependsOn"] = [{'jobId': self.qs_job_id}]
+                if self.job_ids.query_splitting:
+                    submit_job_args["dependsOn"] = [{'jobId': self.job_ids.query_splitting}]
                 job = self.batch.submit_job(**submit_job_args)
-                self.job_ids.append(job['jobId'])
+                self.job_ids.search.append(job['jobId'])
                 logging.debug(f"Job definition parameters for job {job['jobId']} {parameters}")
                 logging.info(f"Submitted AWS Batch job {job['jobId']} with query {q}")
             else:
@@ -873,15 +905,23 @@ class ElasticBlastAws(ElasticBlast):
     def upload_job_ids(self) -> None:
         """Save AWS Batch job ids in a metadata file in S3, if the metadata
         file is present, append job ids"""
+        current_job_ids = deepcopy(self.job_ids)
         self._load_job_ids_from_aws()
+        current_job_ids.merge(self.job_ids)
+        self.job_ids = current_job_ids
+
         bucket_name, key = parse_bucket_name_key(f'{self.results_bucket}/{ELB_METADATA_DIR}/{ELB_AWS_JOB_IDS}')
         bucket = self.s3.Bucket(bucket_name)
-        job_ids = self.job_ids
-        if self.qs_job_id:
-            job_ids.append(self.qs_job_id)
-        job_ids = list(set(job_ids))
-        bucket.put_object(Body=json.dumps(job_ids).encode(), Key=key)
-        logging.debug(f'Uploaded {len(job_ids)} job IDs to {self.results_bucket}/{ELB_METADATA_DIR}/{ELB_AWS_JOB_IDS}')
+        bucket.put_object(Body=self.job_ids.to_json().encode(), Key=key) # type: ignore
+        logging.debug(f'Uploaded job IDs to {self.results_bucket}/{ELB_METADATA_DIR}/{ELB_AWS_JOB_IDS}')
+
+        # This code is needed for janitor backward compatibility in version
+        # 0.2.4, and can be removed when the ElasticBLAST janitor is upgraded to version 0.2.4.
+        ELB_AWS_OLD_JOB_IDS = 'job-ids.json'
+        bucket_name, key = parse_bucket_name_key(f'{self.results_bucket}/{ELB_METADATA_DIR}/{ELB_AWS_OLD_JOB_IDS}')
+        bucket = self.s3.Bucket(bucket_name)
+        bucket.put_object(Body=json.dumps(self.job_ids.to_list()).encode(), Key=key)
+        logging.debug(f'Uploaded job IDs to {self.results_bucket}/{ELB_METADATA_DIR}/{ELB_AWS_OLD_JOB_IDS}')
 
 
     def upload_query_length(self, query_length: int) -> None:
@@ -920,6 +960,8 @@ class ElasticBlastAws(ElasticBlast):
             elif njobs == 0:
                 # This is likely the case when dry-run is set to True
                 retval = ElbStatus.UNKNOWN
+            elif (self.job_ids.query_splitting or self.job_ids.job_submission) and not self.job_ids.search:
+                retval = ElbStatus.SUBMITTING
             elif running > 0 or pending > 0:
                 retval = ElbStatus.RUNNING
             elif (pending + running + failed) == 0 and succeeded == njobs:
@@ -941,8 +983,8 @@ class ElasticBlastAws(ElasticBlast):
             try:
                 bucket.download_file(key, tmp.name)
                 with open(tmp.name) as f_ids:
-                    self.job_ids += json.load(f_ids)
-                    self.job_ids = list(set(self.job_ids))
+                    new_job_ids = JobIds.from_json(f_ids.read())
+                    self.job_ids.merge(new_job_ids)
             except ClientError as err:
                 err_code = err.response['Error']['Code']
                 fnx_name = inspect.stack()[0].function
@@ -965,11 +1007,12 @@ class ElasticBlastAws(ElasticBlast):
 
         if not self.job_ids:
             self._load_job_ids_from_aws()
+        job_ids = self.job_ids.to_list()
 
         # check status of jobs in batches of JOB_BATCH_NUM
         JOB_BATCH_NUM = 100
-        for i in range(0, len(self.job_ids), JOB_BATCH_NUM):
-            job_batch = self.batch.describe_jobs(jobs=self.job_ids[i:i + JOB_BATCH_NUM])['jobs']
+        for i in range(0, len(job_ids), JOB_BATCH_NUM):
+            job_batch = self.batch.describe_jobs(jobs=job_ids[i:i + JOB_BATCH_NUM])['jobs']
             # get number for AWS Batch job states
             for st in AWS_BATCH_JOB_STATES:
                 counts[st] += sum([j['status'] == st for j in job_batch])

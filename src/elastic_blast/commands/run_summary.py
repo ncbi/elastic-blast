@@ -42,7 +42,7 @@ import boto3  # type: ignore
 from botocore.exceptions import ClientError  #type: ignore
 from elastic_blast.base import PositiveInteger
 from elastic_blast.aws_traits import create_aws_config
-from elastic_blast.aws import handle_aws_error
+from elastic_blast.aws import handle_aws_error, JobIds
 from elastic_blast.util import safe_exec
 from elastic_blast.filehelper import parse_bucket_name_key
 from elastic_blast.constants import ELB_AWS_JOB_IDS, ELB_QUERY_LENGTH, ELB_METADATA_DIR
@@ -494,7 +494,7 @@ def _read_job_logs_aws(cfg, write_logs):
     bucket, key = parse_bucket_name_key(fname)
     resp = s3.get_object(Bucket=bucket, Key=key)
     body = resp['Body']
-    job_list = json.loads(body.read().decode())
+    job_list = JobIds.from_json(body.read().decode()).to_list()
 
     write_logs.write('AWS job log dump\n')
 
