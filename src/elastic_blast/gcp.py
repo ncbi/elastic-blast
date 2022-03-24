@@ -59,6 +59,7 @@ from .constants import ElbExecutionMode, ElbStatus
 from .constants import GKE_CLUSTER_STATUS_PROVISIONING, GKE_CLUSTER_STATUS_RECONCILING
 from .constants import GKE_CLUSTER_STATUS_RUNNING, GKE_CLUSTER_STATUS_RUNNING_WITH_ERROR
 from .constants import GKE_CLUSTER_STATUS_STOPPING, GKE_CLUSTER_STATUS_ERROR
+from .constants import STATUS_MESSAGE_ERROR
 from .elb_config import ElasticBlastConfig
 from .elasticblast import ElasticBlast
 
@@ -176,7 +177,7 @@ class ElasticBlastGcp(ElasticBlast):
         self.cleanup_stack.clear()
         self.cleanup_stack.append(lambda: kubernetes.collect_k8s_logs(self.cfg))
 
-    def check_status(self, extended=False) -> Tuple[ElbStatus, Dict[str, int], str]:
+    def check_status(self, extended=False) -> Tuple[ElbStatus, Dict[str, int], Dict[str, str]]:
         """ Check execution status of ElasticBLAST search
         Parameters:
             extended - do we need verbose information about jobs
@@ -184,7 +185,7 @@ class ElasticBlastGcp(ElasticBlast):
             tuple of
                 status - cluster status, ElbStatus
                 counts - job counts for all job states
-                verbose_result - detailed info about jobs
+                verbose_result - a dictionary with enrties: label, detailed info about jobs
         """
         try:
             return self._check_status(extended)
@@ -192,25 +193,25 @@ class ElasticBlastGcp(ElasticBlast):
             # cluster is not valid, return empty result
             msg = err.message.strip()
             logging.info(msg)
-            return ElbStatus.UNKNOWN, defaultdict(int), msg
+            return ElbStatus.UNKNOWN, defaultdict(int), {STATUS_MESSAGE_ERROR: msg} if msg else {}
 
-    def _check_status(self, extended=False) -> Tuple[ElbStatus, Dict[str, int], str]:
+    def _check_status(self, extended=False) -> Tuple[ElbStatus, Dict[str, int], Dict[str, str]]:
         # We cache only status from gone cluster - it can't change anymore
         if self.cached_status:
-            return self.cached_status, self.cached_counts, self.cached_failure_message
+            return self.cached_status, self.cached_counts, {STATUS_MESSAGE_ERROR: self.cached_failure_message} if self.cached_failure_message else {}
         counts: DefaultDict[str, int] = defaultdict(int)
         self._enable_gcp_apis()
         status = self._status_from_results()
         if status != ElbStatus.UNKNOWN:
-            return status, self.cached_counts, self.cached_failure_message
+            return status, self.cached_counts, {STATUS_MESSAGE_ERROR: self.cached_failure_message} if self.cached_failure_message else {}
 
         gke_status = check_cluster(self.cfg)
         if not gke_status:
-            return ElbStatus.UNKNOWN, {}, f'Cluster "{self.cfg.cluster.name}" was not found'
+            return ElbStatus.UNKNOWN, {}, {STATUS_MESSAGE_ERROR: f'Cluster "{self.cfg.cluster.name}" was not found'}
 
         logging.debug(f'GKE status: {gke_status}')
         if gke_status in [GKE_CLUSTER_STATUS_RECONCILING, GKE_CLUSTER_STATUS_PROVISIONING]:
-            return ElbStatus.SUBMITTING, {}, ''
+            return ElbStatus.SUBMITTING, {}, {}
 
         if gke_status == GKE_CLUSTER_STATUS_STOPPING:
             # TODO: This behavior is consistent with current tests, consider returning a value
@@ -272,7 +273,7 @@ class ElasticBlastGcp(ElasticBlast):
                 if failed > 0:
                     status = ElbStatus.FAILURE
 
-        return status, counts, ''
+        return status, counts, {}
     
     def _job_status_by_app(self, app):
         """ get status of jobs (pending/running, succeeded, failed) by app """

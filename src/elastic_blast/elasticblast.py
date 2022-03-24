@@ -76,7 +76,7 @@ class ElasticBlast(metaclass=ABCMeta):
                                               of executing a regular job """
 
     @abstractmethod
-    def check_status(self, extended=False) -> Tuple[ElbStatus, Dict[str, int], str]:
+    def check_status(self, extended=False) -> Tuple[ElbStatus, Dict[str, int], Dict[str, str]]:
         """ Check execution status of ElasticBLAST search
         Parameters:
             extended - do we need verbose information about jobs
@@ -84,7 +84,7 @@ class ElasticBlast(metaclass=ABCMeta):
             tuple of
                 status - cluster status, ElbStatus
                 counts - job counts for all job states
-                verbose_result - detailed info about jobs
+                verbose_result - a dictionary where each entry is label, detailed info about jobs
         """
 
     # Compatibility method, used now only in janitor.py

@@ -200,7 +200,7 @@ class MolType(Enum):
 ELB_DFLT_GCP_REGION = 'us-east4'
 ELB_DFLT_AWS_REGION = 'us-east-1'
 
-ELB_DOCKER_VERSION = '1.0.3'
+ELB_DOCKER_VERSION = '1.1.0'
 ELB_QS_DOCKER_VERSION = '0.1.2'
 ELB_JANITOR_DOCKER_VERSION = '0.2.0'
 ELB_JOB_SUBMIT_DOCKER_VERSION = '2.0.0'
@@ -327,3 +327,9 @@ QUERY_LIST_EXT = '.query-list'
 ELB_DFLT_NUM_BATCHES_FOR_TESTING = 100
 ELB_DFLT_LOGLEVEL = 'DEBUG'
 ELB_DFLT_LOGFILE = 'elastic-blast.log'
+
+# Labels for messages generated when checking search status
+# alwsays printed to the screen
+STATUS_MESSAGE_ERROR = 'error'
+# printed only when requested
+STATUS_MESSAGE_VERBOSE = 'verbose'

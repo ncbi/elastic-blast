@@ -1,13 +1,13 @@
 -r base.txt
 
-pytest
-pytest-cov
-pytest-mock
-teamcity-messages
-mypy
-pylint==2.7.4
-tox
-yamllint
-moto >= 2.2.19
-docker
-cfn-lint
+pytest == 7.1.1
+pytest-cov == 3.0.0
+pytest-mock == 3.7.0
+teamcity-messages == 1.31
+mypy == 0.941
+pylint == 2.7.4
+tox == 3.24.5
+yamllint == 1.26.3
+moto == 3.1.1
+docker == 5.0.3
+cfn-lint == 0.58.4

@@ -1,11 +1,11 @@
-wheel
-setuptools
-importlib-resources
-importlib-metadata
-pex
-boto3==1.21.10
-botocore==1.24.10
-awslimitchecker
-tenacity
-dataclasses_json
-types-pkg-resources
+wheel == 0.37.1
+setuptools == 56.0.0
+importlib-resources == 5.4.0
+importlib-metadata == 4.11.3
+pex == 2.1.73
+boto3 == 1.21.24
+botocore == 1.24.24
+awslimitchecker == 12.0.0
+tenacity == 8.0.1
+dataclasses-json == 0.5.7
+types-pkg-resources == 0.1.3

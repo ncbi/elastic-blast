@@ -63,6 +63,7 @@ from .constants import ELB_AWS_JANITOR_CFN_TEMPLATE, ELB_DFLT_JANITOR_SCHEDULE_A
 from .constants import ELB_AWS_JANITOR_LAMBDA_DEPLOYMENT_BUCKET, ELB_AWS_JANITOR_LAMBDA_DEPLOYMENT_KEY
 from .constants import CFG_CLOUD_PROVIDER, CFG_CP_AWS_AUTO_SHUTDOWN_ROLE, CSP
 from .constants import AWS_JANITOR_ROLE_NAME
+from .constants import STATUS_MESSAGE_ERROR, STATUS_MESSAGE_VERBOSE
 from .filehelper import parse_bucket_name_key
 from .aws_traits import get_machine_properties, create_aws_config, get_availability_zones_for
 from .object_storage_utils import write_to_s3
@@ -933,7 +934,7 @@ class ElasticBlastAws(ElasticBlast):
             logging.debug('dry-run: would have uploaded query length')
 
 
-    def check_status(self, extended=False) -> Tuple[ElbStatus, Dict[str, int], str]:
+    def check_status(self, extended=False) -> Tuple[ElbStatus, Dict[str, int], Dict[str, str]]:
         """ Check execution status of ElasticBLAST search
         Parameters:
             extended - do we need verbose information about jobs
@@ -941,12 +942,12 @@ class ElasticBlastAws(ElasticBlast):
             tuple of
                 status - cluster status, ElbStatus
                 counts - job counts for all job states
-                verbose_result - detailed info about jobs
+                verbose_result - a dictionary with entries: label, detailed info about jobs
         """
         try:
             retval = self._status_from_results()
             if retval != ElbStatus.UNKNOWN:
-                return retval, self.cached_counts, self.cached_failure_message
+                return retval, self.cached_counts, {STATUS_MESSAGE_ERROR: self.cached_failure_message}
 
             counts, details = self._check_status(extended)
             njobs = sum(counts.values())
@@ -995,12 +996,12 @@ class ElasticBlastAws(ElasticBlast):
                     raise
 
     @handle_aws_error
-    def _check_status(self, extended) -> Tuple[Dict[str, int], str]:
+    def _check_status(self, extended) -> Tuple[Dict[str, int], Dict[str, str]]:
         """ Internal check_status, converts AWS exceptions to UserReportError  """
         counts : Dict[str, int] = defaultdict(int)
         if self.dry_run:
             logging.info('dry-run: would have checked status')
-            return counts, ''
+            return counts, {}
 
         if extended:
             return self._check_status_extended()
@@ -1024,9 +1025,9 @@ class ElasticBlastAws(ElasticBlast):
             'succeeded': counts['SUCCEEDED'],
             'failed': counts['FAILED'],
         }
-        return status, ''
+        return status, {}
 
-    def _check_status_extended(self) -> Tuple[Dict[str, int], str]:
+    def _check_status_extended(self) -> Tuple[Dict[str, int], Dict[str, str]]:
         """ Internal check_status_extended, not protected against exceptions in AWS """
         logging.debug(f'Retrieving jobs for queue {self.job_queue_name}')
         jobs = {}
@@ -1073,7 +1074,7 @@ class ElasticBlastAws(ElasticBlast):
             detailed_rep.append(f'{status.capitalize()} {jobs_in_status}')
             if jobs_in_status:
                 detailed_rep.append('\n'.join(detailed_info[status]))
-        return counts, '\n'.join(detailed_rep)
+        return counts, {STATUS_MESSAGE_VERBOSE: '\n'.join(detailed_rep)}
 
     def _remove_ancillary_data(self, bucket_prefix: str) -> None:
         """ Removes ancillary data from the end user's result bucket

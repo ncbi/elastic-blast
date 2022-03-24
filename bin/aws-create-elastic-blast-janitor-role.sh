@@ -5,7 +5,6 @@
 # Author: Christiam Camacho (camacho@ncbi.nlm.nih.gov)
 # Created: Mon Nov 29 17:29:31 EST 2021
 
-export PATH=/bin:/usr/local/bin:/usr/bin
 set -xeuo pipefail
 shopt -s nullglob
 

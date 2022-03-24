@@ -29,7 +29,7 @@ import time
 import logging
 from typing import Any, List
 
-from elastic_blast.constants import ElbCommand, ElbStatus
+from elastic_blast.constants import ElbCommand, ElbStatus, STATUS_MESSAGE_ERROR
 from elastic_blast.elasticblast_factory import ElasticBlastFactory
 from elastic_blast.elb_config import ElasticBlastConfig
 
@@ -53,7 +53,7 @@ def _status(args, cfg: ElasticBlastConfig, clean_up_stack: List[Any]) -> int:
     cfg.validate(ElbCommand.STATUS)
     returncode = 0
     try:
-        verbose_result = ''
+        verbose_result = {}
         elastic_blast = ElasticBlastFactory(cfg, False, clean_up_stack)
         while True:
             status, counts, verbose_result = elastic_blast.check_status(args.verbose)
@@ -90,8 +90,10 @@ def _status(args, cfg: ElasticBlastConfig, clean_up_stack: List[Any]) -> int:
                 print(f'Your ElasticBLAST search succeeded, results can be found in {cfg.cluster.results}')
             elif status == ElbStatus.FAILURE:
                 print(FAILURE_MESSAGE)
+                if not args.verbose and STATUS_MESSAGE_ERROR in verbose_result:
+                    print(verbose_result[STATUS_MESSAGE_ERROR])
             else:
                 print(result)
             if args.verbose and verbose_result:
-                print(verbose_result)
+                print('\n'.join(verbose_result.values()))
     return returncode
