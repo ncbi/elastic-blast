@@ -62,12 +62,14 @@ from elastic_blast.constants import ELB_DFLT_AWS_NUM_CPUS, ELB_DFLT_GCP_NUM_CPUS
 from elastic_blast.constants import INPUT_ERROR, ELB_DFLT_AWS_REGION, BLASTDB_ERROR
 from elastic_blast.constants import SYSTEM_MEMORY_RESERVE, MolType
 from elastic_blast.constants import ELB_NOT_INITIALIZED_MEM, ELB_NOT_INITIALIZED_NUM
+from elastic_blast.constants import ELB_DFLT_JANITOR_SCHEDULE_GCP, ELB_DFLT_JANITOR_SCHEDULE_AWS
 from elastic_blast.base import ConfigParserToDataclassMapper, ParamInfo, DBSource
 from elastic_blast.base import InstanceProperties, MemoryStr, PositiveInteger
 from elastic_blast.elb_config import CloudURI, GCPString, AWSRegion
 from elastic_blast.elb_config import GCPConfig, AWSConfig, BlastConfig, ClusterConfig
 from elastic_blast.elb_config import ElasticBlastConfig, get_instance_props
 from elastic_blast.elb_config import sanitize_gcp_label, sanitize_aws_tag
+from elastic_blast.elb_config import validate_janitor_schedule
 from elastic_blast.constants import ElbCommand
 from elastic_blast.util import UserReportError, get_query_batch_size, ElbSupportedPrograms
 from elastic_blast.gcp_traits import get_machine_properties as gcp_get_machine_properties
@@ -219,17 +221,6 @@ def test_gcpconfig_from_configparser(gke_mock):
     assert not errors
 
 
-def test_gcpconfig_from_configparser_missing():
-    """Test missing required parameters are reported when initializing
-    GCPConfig from a ConfigParser object"""
-    REQUIRED_PARAMS = [CFG_CP_GCP_PROJECT, CFG_CP_GCP_REGION, CFG_CP_GCP_ZONE]
-    with pytest.raises(ValueError) as err:
-        cfg = GCPConfig.create_from_cfg(configparser.ConfigParser())
-
-    for param in REQUIRED_PARAMS:
-        assert 'Missing ' + param in str(err.value)
-
-
 def test_gcpconfig_from_configparser_errors():
     """Test that incorrect parameter values in ConfigParser are properly
     reported"""
@@ -245,6 +236,16 @@ def test_gcpconfig_from_configparser_errors():
     errors = str(err.value).split('\n')
     for key in confpars[CFG_CLOUD_PROVIDER]:
         assert [message for message in errors if key in message and 'invalid value' in message and confpars[CFG_CLOUD_PROVIDER][key] in message]
+
+
+@patch(target='elastic_blast.elb_config.get_gcp_project', new=MagicMock(return_value=None))
+def test_gcpconfig_from_configparser_missing_project(gke_mock   ):
+    """Test test missing GCP project is properly reported"""
+    confpars = configparser.ConfigParser()
+
+    with pytest.raises(ValueError) as err:
+        cfg = GCPConfig.create_from_cfg(confpars)
+    assert 'GCP project is unset' in str(err.value)
 
 
 def test_awsconfig(gke_mock):
@@ -300,17 +301,6 @@ def test_awsconfig_from_configparser(gke_mock):
     errors = []
     cfg.validate(errors, ElbCommand.SUBMIT)
     assert not errors
-
-
-def test_awsconfig_from_configparser_missing(gke_mock):
-    """Test missing required parameters are reported when initializing
-    GCPConfig from a ConfigParser object"""
-    REQUIRED_PARAMS = [CFG_CP_AWS_REGION]
-    with pytest.raises(ValueError) as err:
-        cfg = AWSConfig.create_from_cfg(configparser.ConfigParser())
-
-    for param in REQUIRED_PARAMS:
-        assert 'Missing ' + param in str(err.value)
 
 
 def test_blastconfig(gke_mock):
@@ -1734,3 +1724,28 @@ def test_sanitize_aws_tag():
     label = sanitize_aws_tag('s3://tomcat-test/tc-elb-int-swissprot-psiblast-multi-node-sync-351')
     assert len(label) <= AWS_MAX_TAG_LENGTH
     assert 's3://tomcat-test/tc-elb-int-swissprot-psiblast-multi-node-sync-351' == label
+
+
+def test_validate_janitor_schedule():
+    """Test validating janitor schedule"""
+    validate_janitor_schedule(ELB_DFLT_JANITOR_SCHEDULE_GCP, CSP.GCP)
+    validate_janitor_schedule(ELB_DFLT_JANITOR_SCHEDULE_AWS, CSP.AWS)
+    validate_janitor_schedule('*/5 * * * *', CSP.GCP)
+    validate_janitor_schedule('cron(*/5 * * * ? *)', CSP.AWS)
+    validate_janitor_schedule('*/2,*/3 */2,*/3 */2,*/3 * *', CSP.GCP)
+    validate_janitor_schedule('cron(*/2,*/3 */2,*/3 * * ? *)', CSP.AWS)
+    validate_janitor_schedule('1,2,3 2-5 4/2 * tue', CSP.GCP)
+    validate_janitor_schedule('cron(1,2,3 2-5 4/2 * TUE 2022/2)', CSP.AWS)
+    validate_janitor_schedule('@weekly', CSP.GCP)
+
+    with pytest.raises(ValueError):
+            validate_janitor_schedule('some random string', CSP.GCP)
+
+    with pytest.raises(ValueError):
+            validate_janitor_schedule('some random string', CSP.AWS)
+
+    with pytest.raises(ValueError):
+            validate_janitor_schedule('* 2', CSP.GCP)
+
+    with pytest.raises(ValueError):
+            validate_janitor_schedule('*/1 * * * * *', CSP.AWS)

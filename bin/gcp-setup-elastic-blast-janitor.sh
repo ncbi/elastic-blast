@@ -24,7 +24,7 @@ usage() {
     echo -e "\t-h: Show this message"
 }
 
-while getopts "u:ph" OPT; do
+while getopts "u:p:h" OPT; do
     case $OPT in 
         u) user=${OPTARG}
             ;;

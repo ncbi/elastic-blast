@@ -46,7 +46,7 @@ from .constants import ELB_DFLT_AWS_DISK_TYPE, ELB_DFLT_AWS_PD_SIZE, ELB_DFLT_AW
 from .constants import ELB_DFLT_AWS_SPOT_BID_PERCENTAGE
 from .constants import APP_STATE_RESULTS_MD5, SYSTEM_MEMORY_RESERVE
 from .constants import ELB_S3_PREFIX, ELB_GCS_PREFIX
-from .constants import ELB_DFLT_AWS_REGION, ELB_DFLT_GCP_REGION
+from .constants import ELB_DFLT_AWS_REGION, ELB_DFLT_GCP_REGION, ELB_DFLT_GCP_ZONE
 from .util import UserReportError
 from .filehelper import parse_bucket_name_key
 from typing import List
@@ -70,6 +70,9 @@ def _load_config_from_environment(cfg: configparser.ConfigParser) -> None:
     """Selected environment variables can be used to configure ElasticBLAST"""
     if 'ELB_GCP_PROJECT' in os.environ:
         cfg[CFG_CLOUD_PROVIDER][CFG_CP_GCP_PROJECT] = os.environ['ELB_GCP_PROJECT']
+    # If GCP project is provided by the environment/configuration, leverage it
+    if 'CLOUDSDK_CORE_PROJECT' in os.environ:
+        cfg[CFG_CLOUD_PROVIDER][CFG_CP_GCP_PROJECT] = os.environ['CLOUDSDK_CORE_PROJECT']
     if 'ELB_GCP_REGION' in os.environ:
         cfg[CFG_CLOUD_PROVIDER][CFG_CP_GCP_REGION] = os.environ['ELB_GCP_REGION']
     if 'ELB_GCP_ZONE' in os.environ:
@@ -140,16 +143,6 @@ def configure(args: argparse.Namespace) -> configparser.ConfigParser:
         retval[CFG_CLOUD_PROVIDER][CFG_CP_GCP_REGION] = args.gcp_region
     if hasattr(args, 'gcp_zone') and args.gcp_zone:
         retval[CFG_CLOUD_PROVIDER][CFG_CP_GCP_ZONE] = args.gcp_zone
-
-    # If results bucket was provided, set the default region in the
-    # corresponding cloud service provider if it wasn't specified by the user
-    if CFG_BLAST_RESULTS in retval[CFG_BLAST]:
-        if retval[CFG_BLAST][CFG_BLAST_RESULTS].startswith(ELB_S3_PREFIX):
-            if CFG_CP_AWS_REGION not in retval[CFG_CLOUD_PROVIDER]:
-                retval[CFG_CLOUD_PROVIDER][CFG_CP_AWS_REGION] = ELB_DFLT_AWS_REGION
-        elif retval[CFG_BLAST][CFG_BLAST_RESULTS].startswith(ELB_GCS_PREFIX):
-            if CFG_CP_GCP_REGION not in retval[CFG_CLOUD_PROVIDER]:
-                retval[CFG_CLOUD_PROVIDER][CFG_CP_GCP_REGION] = ELB_DFLT_GCP_REGION
     
     # Exception to prevent unnecessary API calls and ensure testability
     # of some functionality without credentials
@@ -168,7 +161,7 @@ def _validate_csp(cfg: configparser.ConfigParser) -> None:
     Throws a UserReportError in case of invalid configuration.
     """
     if CFG_CLOUD_PROVIDER not in cfg:
-        report_config_error(['Cloud provider configuration is missing'])
+        return
 
     # are gcp or aws entries present in cloud-provider config
     gcp = sum([i.startswith('gcp') for i in cfg[CFG_CLOUD_PROVIDER]]) > 0
@@ -179,8 +172,6 @@ def _validate_csp(cfg: configparser.ConfigParser) -> None:
     # both and none are forbidden
     if gcp and aws:
         msg.append('Cloud provider config contains entries for more than one cloud provider. Only one cloud provider can be used')
-    if not gcp and not aws:
-        msg.append('Cloud provider configuration is missing')
 
     if CFG_CP_NAME in cfg[CFG_CLOUD_PROVIDER]:
         logging.debug(f'Cloud Service Provider {cfg[CFG_CLOUD_PROVIDER][CFG_CP_NAME]}')

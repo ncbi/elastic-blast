@@ -198,7 +198,9 @@ class MolType(Enum):
 
 
 ELB_DFLT_GCP_REGION = 'us-east4'
+ELB_DFLT_GCP_ZONE = 'us-east4-b'
 ELB_DFLT_AWS_REGION = 'us-east-1'
+ELB_UNKNOWN_GCP_PROJECT = 'elb-unknown-gcp-project'
 
 ELB_DOCKER_VERSION = '1.1.0'
 ELB_QS_DOCKER_VERSION = '0.1.2'
@@ -235,6 +237,7 @@ CFG_CP_GCP_REGION = 'gcp-region'
 CFG_CP_GCP_ZONE = 'gcp-zone'
 CFG_CP_GCP_NETWORK = 'gcp-network'
 CFG_CP_GCP_SUBNETWORK = 'gcp-subnetwork'
+CFG_CP_GCP_GKE_VERSION = 'gke-version'
 CFG_CP_AWS_REGION = 'aws-region'
 CFG_CP_AWS_KEY_PAIR = 'aws-key-pair'
 CFG_CP_AWS_VPC = 'aws-vpc'
@@ -316,6 +319,8 @@ ELB_STATUS_FAILURE = "FAILURE.txt"
 ELB_DFLT_JANITOR_SCHEDULE_GCP = "*/5 * * * *"
 # https://docs.aws.amazon.com/eventbridge/latest/userguide/eb-create-rule-schedule.html
 ELB_DFLT_JANITOR_SCHEDULE_AWS = "cron(*/5 * * * ? *)"
+
+ELB_JANITOR_SCHEDULE = 'ELB_JANITOR_SCHEDULE'
 
 ELB_AWS_JANITOR_LAMBDA_DEPLOYMENT_BUCKET = 'elb-camacho'
 ELB_AWS_JANITOR_LAMBDA_DEPLOYMENT_KEY = 'functions/'

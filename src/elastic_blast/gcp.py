@@ -313,9 +313,11 @@ class ElasticBlastGcp(ElasticBlast):
         cfg, query_files, clean_up_stack = self.cfg, self.query_files, self.cleanup_stack
         pd_size = MemoryStr(cfg.cluster.pd_size).asGB()
         disk_limit, disk_usage = self.get_disk_quota()
-        if pd_size > disk_limit - disk_usage:
-            raise UserReportError(INPUT_ERROR, f'Requested disk size {pd_size}G is larger than allowed ({disk_limit - disk_usage}G) for region {cfg.gcp.region}\n'
-                'Please adjust parameter [cluster] pd-size or run your request in another region')
+        disk_quota = disk_limit - disk_usage
+        if pd_size > disk_quota:
+            raise UserReportError(INPUT_ERROR, f'Requested disk size {pd_size}G is larger than allowed ({disk_quota}G) for region {cfg.gcp.region}\n'
+                'Please adjust parameter [cluster] pd-size to less than {disk_quota}G, run your request in another region, or\n'
+                'request a disk quota increase (see https://cloud.google.com/compute/quotas)')
         logging.info('Starting cluster')
         clean_up_stack.append(lambda: logging.debug('Before creating cluster'))
         clean_up_stack.append(lambda: delete_cluster_with_cleanup(cfg))
@@ -502,29 +504,6 @@ def enable_gcp_api(cfg: ElasticBlastConfig):
                 cmd = f'gcloud services enable {api}.googleapis.com '
                 cmd += f'--project {cfg.gcp.project}'
                 p = safe_exec(cmd)
-
-
-def get_gcp_project() -> Optional[str]:
-    """Return current GCP project or None if the property is unset.
-
-    Raises:
-        util.SafeExecError on problems with command line gcloud
-        RuntimeError if gcloud run is successful, but the result is empty"""
-    cmd: str = 'gcloud config get-value project'
-    p = safe_exec(cmd)
-    result: Optional[str]
-
-    # the result should not be empty, for unset properties gcloud returns the
-    # string: '(unset)' to stderr
-    if not p.stdout and not p.stderr:
-        raise RuntimeError('Current GCP project could not be established')
-
-    result = p.stdout.decode().split('\n')[0]
-
-    # return None if project is unset
-    if result == '(unset)':
-        result = None
-    return result
 
 
 def set_gcp_project(project: str) -> None:
@@ -897,6 +876,12 @@ def start_cluster(cfg: ElasticBlastConfig):
         actual_params.append(f'--network={cfg.gcp.network}')
     if cfg.gcp.subnet is not None:
         actual_params.append(f'--subnetwork={cfg.gcp.subnet}')
+
+    if cfg.gcp.gke_version:
+        actual_params.append('--cluster-version')
+        actual_params.append(f'{cfg.gcp.gke_version}')
+        actual_params.append('--node-version')
+        actual_params.append(f'{cfg.gcp.gke_version}')
 
     start = timer()
     if dry_run:

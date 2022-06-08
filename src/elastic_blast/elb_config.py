@@ -57,6 +57,7 @@ from .constants import ELB_BLASTDB_MEMORY_MARGIN
 from .constants import CFG_CLOUD_PROVIDER
 from .constants import CFG_CP_GCP_PROJECT, CFG_CP_GCP_REGION, CFG_CP_GCP_ZONE
 from .constants import CFG_CP_GCP_NETWORK, CFG_CP_GCP_SUBNETWORK
+from .constants import CFG_CP_GCP_GKE_VERSION
 from .constants import CFG_CP_AWS_REGION, CFG_CP_AWS_VPC, CFG_CP_AWS_SUBNET
 from .constants import CFG_CP_AWS_JOB_ROLE, CFG_CP_AWS_BATCH_SERVICE_ROLE
 from .constants import CFG_CP_AWS_INSTANCE_ROLE, CFG_CP_AWS_SPOT_FLEET_ROLE
@@ -82,7 +83,9 @@ from .constants import SYSTEM_MEMORY_RESERVE, ELB_AWS_ARM_INSTANCE_TYPE_REGEX
 from .constants import ELB_DFLT_AWS_NUM_CPUS, ELB_DFLT_GCP_NUM_CPUS
 from .constants import ELB_S3_PREFIX, ELB_GCS_PREFIX, ELB_UNKNOWN_MAX_NUMBER_OF_CONCURRENT_JOBS
 from .constants import AWS_ROLE_PREFIX, CFG_CP_AWS_AUTO_SHUTDOWN_ROLE
-from .constants import BLASTDB_ERROR, ELB_UNKNOWN
+from .constants import BLASTDB_ERROR, ELB_UNKNOWN, ELB_JANITOR_SCHEDULE
+from .constants import ELB_DFLT_GCP_REGION, ELB_DFLT_GCP_ZONE
+from .constants import ELB_DFLT_AWS_REGION, ELB_UNKNOWN_GCP_PROJECT
 from .util import validate_gcp_string, check_aws_region_for_invalid_characters
 from .util import validate_gke_cluster_name, ElbSupportedPrograms
 from .util import get_query_batch_size
@@ -210,12 +213,15 @@ class CloudProviderBaseConfig:
 @dataclass
 class GCPConfig(CloudProviderBaseConfig, ConfigParserToDataclassMapper):
     """GCP config for ElasticBLAST"""
-    project: GCPString
-    region: GCPString
-    zone: GCPString
+    region: GCPString = GCPString(ELB_DFLT_GCP_REGION)
+    project: GCPString = GCPString(ELB_UNKNOWN_GCP_PROJECT)
+    zone: GCPString = GCPString(ELB_DFLT_GCP_ZONE)
     network: Optional[str] = None
     subnet: Optional[str] = None
     user: Optional[str] = None
+    # FIXME: This is a temporary fix for EB-1530. gke_version should be set to
+    # None once the proper fix is implemented.
+    gke_version: Optional[str] = '1.21'
 
     # mapping to class attributes to ConfigParser parameters so that objects
     # can be initialized from ConfigParser objects
@@ -225,7 +231,8 @@ class GCPConfig(CloudProviderBaseConfig, ConfigParserToDataclassMapper):
                'cloud': None,
                'user': None,
                'network': ParamInfo(CFG_CLOUD_PROVIDER, CFG_CP_GCP_NETWORK),
-               'subnet': ParamInfo(CFG_CLOUD_PROVIDER, CFG_CP_GCP_SUBNETWORK)}
+               'subnet': ParamInfo(CFG_CLOUD_PROVIDER, CFG_CP_GCP_SUBNETWORK),
+               'gke_version': ParamInfo(CFG_CLOUD_PROVIDER, CFG_CP_GCP_GKE_VERSION)}
  
     def __post_init__(self):
         self.cloud = CSP.GCP
@@ -234,6 +241,13 @@ class GCPConfig(CloudProviderBaseConfig, ConfigParserToDataclassMapper):
         p = safe_exec('gcloud config get-value account')
         if p.stdout:
             self.user = p.stdout.decode('utf-8').rstrip()
+
+        if self.project == ELB_UNKNOWN_GCP_PROJECT:
+            proj = get_gcp_project()
+            if not proj:
+                raise ValueError(f'GCP project is unset, please invoke gcloud config set project REPLACE_WITH_YOUR_PROJECT_NAME_HERE')
+            else:
+                self.project = GCPString(proj)
 
     def validate(self, errors: List[str], task: ElbCommand):
         """Validate config"""
@@ -244,7 +258,7 @@ class GCPConfig(CloudProviderBaseConfig, ConfigParserToDataclassMapper):
 @dataclass
 class AWSConfig(CloudProviderBaseConfig, ConfigParserToDataclassMapper):
     """AWS config for ElasticBLAST"""
-    region: AWSRegion
+    region: AWSRegion = AWSRegion(ELB_DFLT_AWS_REGION)
     vpc: Optional[str] = None
     subnet: Optional[str] = None
     security_group: Optional[str] = None
@@ -589,7 +603,8 @@ class ElasticBlastConfig:
         # post-init activities
 
         try:
-            self.cloud_provider.region.validate(dry_run)
+            if self.cloud_provider.region:
+                self.cloud_provider.region.validate(dry_run)
         except ValueError as err:
             raise UserReportError(returncode=INPUT_ERROR, message=str(err))
 
@@ -713,7 +728,17 @@ class ElasticBlastConfig:
 
         self._validate_config_parser(cfg)
         _validate_csp(cfg)
+        self.cluster = ClusterConfig.create_from_cfg(cfg)
+
+        # determine cloud provider, first by user config, then results bucket
         if sum([i.startswith('aws') for i in cfg[CFG_CLOUD_PROVIDER]]) > 0:
+            cloud = CSP.AWS
+        elif sum([i.startswith('gcp') for i in cfg[CFG_CLOUD_PROVIDER]]) > 0:
+            cloud = CSP.GCP
+        else:
+            cloud = self.cluster.results.get_cloud_provider()
+
+        if cloud == CSP.AWS:
             self.cloud_provider = AWSConfig.create_from_cfg(cfg)
             # for mypy
             self.aws = cast(AWSConfig, self.cloud_provider)
@@ -721,8 +746,6 @@ class ElasticBlastConfig:
             self.cloud_provider = GCPConfig.create_from_cfg(cfg)
             # for mypy
             self.gcp = cast(GCPConfig, self.cloud_provider)
-
-        self.cluster = ClusterConfig.create_from_cfg(cfg)
 
         if task == ElbCommand.SUBMIT:
             self.blast = BlastConfig.create_from_cfg(cfg)
@@ -852,6 +875,13 @@ class ElasticBlastConfig:
                     bytes_to_cache_gb = round(self.blast.db_metadata.bytes_to_cache / (1024 ** 3), 1)
                     if instance_props.memory - SYSTEM_MEMORY_RESERVE < bytes_to_cache_gb:
                         errors.append(f'BLAST database {self.blast.db} memory requirements exceed memory available on selected machine type "{self.cluster.machine_type}". Please select machine type with at least {bytes_to_cache_gb + SYSTEM_MEMORY_RESERVE}GB available memory.')
+
+            # validate janitor schedule if provided
+            if ELB_JANITOR_SCHEDULE in os.environ:
+                try:
+                    validate_janitor_schedule(os.environ[ELB_JANITOR_SCHEDULE], self.cloud_provider.cloud)
+                except ValueError as err:
+                    errors.append(str(err))
 
         if errors:
             raise UserReportError(returncode=INPUT_ERROR,
@@ -1108,6 +1138,31 @@ def get_instance_props(cloud_provider: CSP, region: str, machine_type: str) -> I
     return instance_props
 
 
+def validate_janitor_schedule(val: str, cloud_provider: CSP) -> None:
+    """Validate cron schedule for janitor job. Raises ValueError if validation fails."""
+    special = r'@(yearly|annually|monthly|weekly|daily|midnight|hourly)'
+    minute = r'\*|(\*|([1-5]?[0-9]))((,(\*|([1-5]?[0-9])))*([/-][1-5]?[0-9])?)*'
+    hour = r'\*|(\*|([1-2]?[0-9]))((,(\*|([1-2]?[0-9])))*([/-][1-2]?[0-9])?)*'
+    day_of_month_gcp = r'\*|(\*|([1-3]?[0-9]))((,(\*|([1-3]?[0-9])))*([/-][1-3]?[0-9])?)*'
+    day_of_month_aws = r'\*|\?|(\*|([1-3]?[0-9]L?W?))((,(\*|([1-3]?[0-9]L?W?)))*([/-][1-3]?[0-9])?)*'
+    month = r'\*|(\*|(1?[0-9]))((,(\*|(1?[0-9])))*([/-]1?[0-9])?)*'
+    day_of_week_gcp = r'\*|((\*|[0-7]|mon|tue|wed|thu|fri|sat|sun)((,(\*|[0-7]|mon|tue|wed|thu|fri|sat|sun))*([/-]([1-6]|mon|tue|wed|thu|fri|sat|sun))?)*)'
+    day_of_week_aws = r'\*|\?|(((\*|[1-7]|MON|TUE|WED|THU|FRI|SAT|SUN)L?)(([,#](([1-7]|MON|TUE|WED|THU|FRI|SAT|SUN)L?))*([/-]([1-6]|MON|TUE|WED|THU|FRI|SAT|SUN))?)*)'
+    year = r'\*|(\*|(2[01][0-9]{2}))((,(\*|(2[01][0-9]{2})))*(-2[01][0-9]{2})?(/\d{1,3})?)*'
+
+
+    if cloud_provider == CSP.GCP:
+        pattern = special + '|' + '((' + minute + r')\s(' + hour + r')\s(' + day_of_month_gcp + r')\s(' + month + r')\s(' + day_of_week_gcp + '))'
+        url = 'https://kubernetes.io/docs/concepts/workloads/controllers/cron-jobs/#cron-schedule-syntax'
+    else:
+        pattern = r'cron\((' + minute + r')\s(' + hour + r')\s(' + day_of_month_aws + r')\s(' + month + r')\s(' + day_of_week_aws + r')\s(' + year + r')\)'
+        url = 'https://docs.aws.amazon.com/eventbridge/latest/userguide/eb-create-rule-schedule.html'
+
+    r = re.fullmatch(pattern, val)
+    if r is None:
+        raise ValueError(f'Invalid value of environment variable {ELB_JANITOR_SCHEDULE} "{val}". The string must match the regular expression "{pattern}". For more information, please see {url}')
+
+
 class JSONEnumEncoder(json.JSONEncoder):
     """JSON encoder that handles basic types and Enum"""
     def default(self, o):
@@ -1116,3 +1171,28 @@ class JSONEnumEncoder(json.JSONEncoder):
             return o.name
         else:
             return json.JSONEncoder(self, o)
+
+
+def get_gcp_project() -> Optional[str]:
+    """Return current GCP project or None if the property is unset.
+
+    Raises:
+        util.SafeExecError on problems with command line gcloud
+        RuntimeError if gcloud run is successful, but the result is empty"""
+    cmd: str = 'gcloud config get-value project'
+    p = safe_exec(cmd)
+    result: Optional[str]
+
+    # the result should not be empty, for unset properties gcloud returns the
+    # string: '(unset)' to stderr
+    if not p.stdout and not p.stderr:
+        raise RuntimeError('Current GCP project could not be established')
+
+    result = p.stdout.decode().split('\n')[0]
+
+    # return None if project is unset
+    if result == '(unset)':
+        result = None
+    return result
+
+

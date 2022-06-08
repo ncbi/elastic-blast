@@ -62,7 +62,7 @@ from .constants import ElbStatus, ELB_CJS_DOCKER_IMAGE_AWS
 from .constants import ELB_AWS_JANITOR_CFN_TEMPLATE, ELB_DFLT_JANITOR_SCHEDULE_AWS
 from .constants import ELB_AWS_JANITOR_LAMBDA_DEPLOYMENT_BUCKET, ELB_AWS_JANITOR_LAMBDA_DEPLOYMENT_KEY
 from .constants import CFG_CLOUD_PROVIDER, CFG_CP_AWS_AUTO_SHUTDOWN_ROLE, CSP
-from .constants import AWS_JANITOR_ROLE_NAME
+from .constants import AWS_JANITOR_ROLE_NAME, ELB_JANITOR_SCHEDULE
 from .constants import STATUS_MESSAGE_ERROR, STATUS_MESSAGE_VERBOSE
 from .filehelper import parse_bucket_name_key
 from .aws_traits import get_machine_properties, create_aws_config, get_availability_zones_for
@@ -240,8 +240,8 @@ class ElasticBlastAws(ElasticBlast):
                     logging.debug(f'Found janitor role for {AWS_JANITOR_ROLE_NAME}: {role.arn}')
                 except:
                     logging.debug(f'Did not find janitor role for {AWS_JANITOR_ROLE_NAME}')
-            if 'ELB_JANITOR_SCHEDULE' in os.environ:
-                janitor_schedule = os.environ['ELB_JANITOR_SCHEDULE']
+            if ELB_JANITOR_SCHEDULE in os.environ:
+                janitor_schedule = os.environ[ELB_JANITOR_SCHEDULE]
                 logging.debug(f'Overriding janitor schedule to "{janitor_schedule}"')
             if 'ELB_DISABLE_AUTO_SHUTDOWN' in os.environ:
                 janitor_schedule = ''
@@ -915,14 +915,6 @@ class ElasticBlastAws(ElasticBlast):
         bucket = self.s3.Bucket(bucket_name)
         bucket.put_object(Body=self.job_ids.to_json().encode(), Key=key) # type: ignore
         logging.debug(f'Uploaded job IDs to {self.results_bucket}/{ELB_METADATA_DIR}/{ELB_AWS_JOB_IDS}')
-
-        # This code is needed for janitor backward compatibility in version
-        # 0.2.4, and can be removed when the ElasticBLAST janitor is upgraded to version 0.2.4.
-        ELB_AWS_OLD_JOB_IDS = 'job-ids.json'
-        bucket_name, key = parse_bucket_name_key(f'{self.results_bucket}/{ELB_METADATA_DIR}/{ELB_AWS_OLD_JOB_IDS}')
-        bucket = self.s3.Bucket(bucket_name)
-        bucket.put_object(Body=json.dumps(self.job_ids.to_list()).encode(), Key=key)
-        logging.debug(f'Uploaded job IDs to {self.results_bucket}/{ELB_METADATA_DIR}/{ELB_AWS_OLD_JOB_IDS}')
 
 
     def upload_query_length(self, query_length: int) -> None:

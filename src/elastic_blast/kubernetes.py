@@ -46,7 +46,7 @@ from .constants import ELB_K8S_JOB_SUBMISSION_MAX_RETRIES
 from .constants import ELB_K8S_JOB_SUBMISSION_TIMEOUT, ELB_METADATA_DIR
 from .constants import K8S_MAX_JOBS_PER_DIR, ELB_STATE_DISK_ID_FILE, ELB_QUERY_BATCH_DIR
 from .constants import ELB_CJS_DOCKER_IMAGE_GCP
-from .constants import ElbExecutionMode
+from .constants import ElbExecutionMode, ELB_JANITOR_SCHEDULE
 from .constants import ELB_DFLT_JANITOR_SCHEDULE_GCP, PERMISSIONS_ERROR, DEPENDENCY_ERROR
 from .filehelper import upload_file_to_gcs
 from .elb_config import ElasticBlastConfig
@@ -736,7 +736,7 @@ def enable_service_account(cfg: ElasticBlastConfig):
             try:
                 safe_exec(cmd)
             except:
-                msg = 'ElasticBLAST is missing permissions for its auto-shutdown and cloud job submission feature. To provide these permissions, please run'
+                msg = 'ElasticBLAST is missing permissions for its auto-shutdown and cloud job submission feature. To provide these permissions, please run '
                 msg += f'gcloud projects add-iam-policy-binding {cfg.gcp.project} --member={cfg.gcp.user} --role=roles/container.admin'
                 raise UserReportError(returncode=PERMISSIONS_ERROR, message=msg)
 
@@ -746,8 +746,8 @@ def submit_janitor_cronjob(cfg: ElasticBlastConfig):
     dry_run = cfg.cluster.dry_run
 
     janitor_schedule = ELB_DFLT_JANITOR_SCHEDULE_GCP
-    if 'ELB_JANITOR_SCHEDULE' in os.environ:
-        janitor_schedule = os.environ['ELB_JANITOR_SCHEDULE']
+    if ELB_JANITOR_SCHEDULE in os.environ:
+        janitor_schedule = os.environ[ELB_JANITOR_SCHEDULE]
         logging.debug(f'Overriding janitor schedule to "{janitor_schedule}"')
 
     subs = {

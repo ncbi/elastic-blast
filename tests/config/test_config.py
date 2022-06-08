@@ -312,14 +312,6 @@ class ElbConfigLibTester(unittest.TestCase):
             ElasticBlastConfig(self.cfg, task = ElbCommand.SUBMIT)
         assert 'more than one cloud provider' in str(err.exception)
 
-    def test_no_cloud_provider(self):
-        self.cfg.read(f"{TEST_DATA_DIR}/correct-cfg-file.ini")
-        ElasticBlastConfig(self.cfg, task = ElbCommand.SUBMIT)
-        self.cfg[CFG_CLOUD_PROVIDER] = {}
-        with self.assertRaises(UserReportError) as err:
-            ElasticBlastConfig(self.cfg, task = ElbCommand.SUBMIT)
-        assert 'Cloud provider configuration is missing' in str(err.exception)
-
 
 def test_validate_gcp_config(gke_mock):
     """Test validation of GCP id strings in config"""
@@ -339,10 +331,8 @@ def test_validate_gcp_config(gke_mock):
     with pytest.raises(UserReportError) as err:
         ElasticBlastConfig(cfg, task = ElbCommand.SUBMIT)
     messages = str(err.value).split('\n')
-    assert len(messages) >= 3
-    assert [s for s in messages if s.startswith('Missing gcp-project')]
-    assert [s for s in messages if s.startswith('Missing gcp-region')]
-    assert [s for s in messages if s.startswith('Missing gcp-zone')]
+    assert len(messages) >= 1
+    assert [s for s in messages if s.startswith('Both gcp-network and gcp-subnetwork need to be specified if one of them is specified')]
 
     # test incorrect parameter values
     cfg[CFG_CLOUD_PROVIDER] = {CFG_CP_GCP_PROJECT: 'UPPERCASE-project',
@@ -377,14 +367,6 @@ def test_validate_aws_config(gke_mock):
     # test correct value
     cfg[CFG_CLOUD_PROVIDER] = valid_aws_provider
     ElasticBlastConfig(cfg, task = ElbCommand.SUBMIT)
-
-    # test missing value
-    cfg[CFG_CLOUD_PROVIDER] = {CFG_CP_AWS_SUBNET: 'test-subnet'}
-    with pytest.raises(UserReportError) as err:
-        ElasticBlastConfig(cfg, task = ElbCommand.SUBMIT)
-    messages = str(err.value).split('\n')
-    assert messages
-    assert [s for s in messages if s.startswith('Missing aws-region')]
 
     # test incorrect value
     cfg[CFG_CLOUD_PROVIDER] = {CFG_CP_AWS_REGION: 'incorrect_region'}

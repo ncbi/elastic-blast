@@ -171,10 +171,7 @@ def test_no_cfg(app_mocks):
         msg = app_mocks.caplog.text
         assert returncode == constants.INPUT_ERROR
         assert 'ERROR' in msg
-        assert 'Elastic-BLAST configuration error' in msg
-        assert '--cfg' in msg
-        assert 'environment variables' in msg
-        assert 'command line options' in msg
+        assert 'Missing results' in msg
 
 
 def test_cfg_file_not_found(app_mocks):
@@ -1024,3 +1021,128 @@ results = gs://test-results
     msg = app_mocks.caplog.text
     assert 'Traceback' not in msg
     assert re.search(r'Requested disk size [\w.]* is larger than allowed', msg)
+
+
+@mock.patch.dict(os.environ, {'ELB_JANITOR_SCHEDULE': '1'})
+def test_invalid_janitor_schedule_gcp(app_mocks):
+    """Test that invalid janitor schedule is properly reported"""
+
+    conf = f"""[cloud-provider]
+gcp-project = test-project
+gcp-region = test-region
+gcp-zone = test-zone
+
+[blast]
+program = blastp
+db = gs://test-bucket/testdb
+queries = gs://test-bucket/test-query.fa
+results = gs://test-results
+"""
+
+    with NamedTemporaryFile() as f:
+        f.write(conf.encode())
+        f.flush()
+        f.seek(0)
+
+        cmd = f'elastic-blast submit --cfg {f.name}'
+        with patch.object(sys, 'argv', shlex.split(cmd)):
+            with contextlib.redirect_stderr(io.StringIO()) as stderr:
+                returncode = main()
+
+    assert returncode == constants.INPUT_ERROR
+    assert 'Traceback' not in stderr.getvalue()
+
+    msg = app_mocks.caplog.text
+    assert 'Traceback' not in msg
+    assert re.search(r'Invalid value of environment variable ELB_JANITOR_SCHEDULE', msg)
+
+
+@mock.patch.dict(os.environ, {'ELB_JANITOR_SCHEDULE': '@weekly'})
+def test_invalid_janitor_schedule_aws(app_mocks):
+    """Test that invalid janitor schedule is properly reported"""
+
+    conf = f"""[cloud-provider]
+aws-region = test-region
+
+[blast]
+program = blastp
+db = s3://test-bucket/testdb
+queries = s3://test-bucket/test-query.fa
+results = s3://test-results
+"""
+
+    with NamedTemporaryFile() as f:
+        f.write(conf.encode())
+        f.flush()
+        f.seek(0)
+
+        cmd = f'elastic-blast submit --cfg {f.name}'
+        with patch.object(sys, 'argv', shlex.split(cmd)):
+            with contextlib.redirect_stderr(io.StringIO()) as stderr:
+                returncode = main()
+
+    assert returncode == constants.INPUT_ERROR
+    assert 'Traceback' not in stderr.getvalue()
+
+    msg = app_mocks.caplog.text
+    assert 'Traceback' not in msg
+    assert re.search(r'Invalid value of environment variable ELB_JANITOR_SCHEDULE', msg)
+
+
+@patch(target='elastic_blast.elb_config.get_gcp_project', new=MagicMock(return_value=None))
+def test_no_gcp_project(app_mocks):
+    """Test that missing GCP project is properly reported"""
+
+    conf = f"""[blast]
+program = blastp
+db = gs://test-bucket/testdb
+queries = gs://test-bucket/test-query.fa
+results = gs://test-results
+"""
+
+    with NamedTemporaryFile() as f:
+        f.write(conf.encode())
+        f.flush()
+        f.seek(0)
+
+        cmd = f'elastic-blast submit --cfg {f.name}'
+        with patch.object(sys, 'argv', shlex.split(cmd)):
+            with contextlib.redirect_stderr(io.StringIO()) as stderr:
+                returncode = main()
+
+    assert returncode == constants.INPUT_ERROR
+    assert 'Traceback' not in stderr.getvalue()
+
+    msg = app_mocks.caplog.text
+    assert 'Traceback' not in msg
+    assert re.search(r'GCP project is unset', msg)
+
+
+@patch(target='elastic_blast.elasticblast_factory.ElasticBlastGcp', new=MagicMock(return_value=MagicMock()))
+def test_default_cloud_provider_config(app_mocks):
+    """Test that default cloud provider parameters can be determined from the
+    results bucket."""
+
+    conf = f"""[blast]
+program = blastp
+db = gs://test-bucket/testdb
+queries = gs://test-bucket/test-query.fa
+results = gs://test-results
+"""
+
+    with NamedTemporaryFile() as f:
+        f.write(conf.encode())
+        f.flush()
+        f.seek(0)
+
+        cmd = f'elastic-blast submit --cfg {f.name}'
+        with patch.object(sys, 'argv', shlex.split(cmd)):
+            with contextlib.redirect_stderr(io.StringIO()) as stderr:
+                returncode = main()
+
+    assert returncode == 0
+    assert 'Traceback' not in stderr.getvalue()
+
+    msg = app_mocks.caplog.text
+    assert 'Traceback' not in msg
+    assert 'ERROR' not in msg

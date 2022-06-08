@@ -32,6 +32,7 @@ import pytest  # type: ignore
 from elastic_blast import gcp
 from elastic_blast import kubernetes
 from elastic_blast import config
+from elastic_blast import elb_config
 from elastic_blast.constants import CLUSTER_ERROR, ElbCommand
 from elastic_blast.util import SafeExecError, UserReportError
 from elastic_blast.elb_config import ElasticBlastConfig
@@ -64,9 +65,9 @@ def test_fake_gcloud(gke_mock):
 
 def test_get_gcp_project(gke_mock):
     """Test getting GCP project"""
-    project = gcp.get_gcp_project()
+    project = elb_config.get_gcp_project()
     assert project == GCP_PROJECT
-    gcp.safe_exec.assert_called()
+    elb_config.safe_exec.assert_called()
 
 
 def test_get_unset_gcp_project(mocker):
@@ -79,13 +80,13 @@ def test_get_unset_gcp_project(mocker):
         # this is how gcloud reports unset project
         return MockedCompletedProcess('(unset)')
 
-    mocker.patch('elastic_blast.gcp.safe_exec',
+    mocker.patch('elastic_blast.elb_config.safe_exec',
                  side_effect=subst_safe_exec_unset_project)
-    project = gcp.get_gcp_project()
+    project = elb_config.get_gcp_project()
 
     # unset project must be returned as None
     assert project is None
-    gcp.safe_exec.assert_called()
+    elb_config.safe_exec.assert_called()
 
 
 def test_set_gcp_project(gke_mock):
@@ -477,7 +478,7 @@ SKIP = not os.getenv('RUN_ALL_TESTS')
 @pytest.mark.skipif(SKIP, reason='This test requires specific GCP credentials and may create GCP resources. It should be used with care.')
 def test_get_gcp_project_real():
     """Test getting GCP project using real command line"""
-    result = gcp.get_gcp_project()
+    result = elb_config.get_gcp_project()
     # result must not be an empty string
     assert (result is None or len(result) > 0)
 
