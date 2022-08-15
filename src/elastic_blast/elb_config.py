@@ -88,7 +88,7 @@ from .constants import ELB_DFLT_GCP_REGION, ELB_DFLT_GCP_ZONE
 from .constants import ELB_DFLT_AWS_REGION, ELB_UNKNOWN_GCP_PROJECT
 from .util import validate_gcp_string, check_aws_region_for_invalid_characters
 from .util import validate_gke_cluster_name, ElbSupportedPrograms
-from .util import get_query_batch_size
+from .util import get_query_batch_size, get_gcp_project
 from .util import UserReportError, safe_exec
 from .util import gcp_get_regions, sanitize_for_k8s
 from .gcp_traits import get_machine_properties as gcp_get_machine_properties
@@ -174,10 +174,15 @@ class AWSRegion(str):
         """ Validate the value of this object is one of the valid AWS
         regions. Requires AWS credentials to invoke proper APIs """
         if dry_run: return
-        regions = aws_get_regions()
-        if str(self) not in regions:
-            msg = f'{str(self)} is not a valid AWS region'
-            raise ValueError(msg)
+        try:
+            boto_cfg = create_aws_config(str(self))
+            regions = aws_get_regions(boto_cfg)
+        except:
+            regions = []
+        finally:
+            if str(self) not in regions:
+                msg = f'{str(self)} is not a valid AWS region'
+                raise ValueError(msg)
 
 
 class BLASTProgram(str):
@@ -238,16 +243,15 @@ class GCPConfig(CloudProviderBaseConfig, ConfigParserToDataclassMapper):
         self.cloud = CSP.GCP
         self.user = ELB_UNKNOWN
 
+        # FIXME: need to pass dry-run to this method
         p = safe_exec('gcloud config get-value account')
         if p.stdout:
             self.user = p.stdout.decode('utf-8').rstrip()
+            logging.debug(f'gcloud returned "{self.user}"')
 
         if self.project == ELB_UNKNOWN_GCP_PROJECT:
             proj = get_gcp_project()
-            if not proj:
-                raise ValueError(f'GCP project is unset, please invoke gcloud config set project REPLACE_WITH_YOUR_PROJECT_NAME_HERE')
-            else:
-                self.project = GCPString(proj)
+            self.project = GCPString(proj)
 
     def validate(self, errors: List[str], task: ElbCommand):
         """Validate config"""
@@ -608,11 +612,23 @@ class ElasticBlastConfig:
         except ValueError as err:
             raise UserReportError(returncode=INPUT_ERROR, message=str(err))
 
+        # For custom BLASTDBs, check that they reside in the appropriate cloud
+        if self.blast and self.blast.db and '://' in self.blast.db:
+            if self.cloud_provider.cloud == CSP.GCP and \
+                    not self.blast.db.startswith(ELB_GCS_PREFIX):
+                msg = f'User database {self.blast.db} must reside in Google Cloud Storage (GCS)"'
+                raise UserReportError(returncode=BLASTDB_ERROR, message=msg)
+            elif self.cloud_provider.cloud == CSP.AWS and \
+                 not self.blast.db.startswith(ELB_S3_PREFIX):
+                msg = f'User database {self.blast.db} must reside in AWS S3"'
+                raise UserReportError(returncode=BLASTDB_ERROR, message=msg)
+
         # get database metadata
-        if self.blast and not self.blast.db_metadata:
+        if self.blast and not self.blast.db_metadata and not self.cluster.dry_run:
             try:
+                gcp_prj = None if self.cloud_provider.cloud == CSP.AWS else self.gcp.project
                 self.blast.db_metadata = get_db_metadata(self.blast.db, ElbSupportedPrograms().get_db_mol_type(self.blast.program),
-                                                         self.cluster.db_source)
+                                                         self.cluster.db_source, gcp_prj=gcp_prj)
             except FileNotFoundError:
                 # database metadata file is not mandatory for a user database (yet) EB-1308
                 logging.info('No database metadata')
@@ -669,7 +685,7 @@ class ElasticBlastConfig:
                 logging.debug(f'Requested number of vCPUs lowered to {self.cluster.num_cpus} because of instance type choice {self.cluster.machine_type}')
 
         # default memory limit for a blast search job
-        if self.cluster.mem_limit == ELB_NOT_INITIALIZED_MEM:
+        if self.cluster.mem_limit == ELB_NOT_INITIALIZED_MEM and not self.cluster.dry_run:
             if self.cluster.machine_type == 'optimal':
                 msg = 'You specified "optimal" cluster.machine-type, which requires configuring blast.mem-limit. Please provide that configuration parameter or change cluster.machine-type.'
                 raise UserReportError(returncode=INPUT_ERROR, message=msg)
@@ -679,7 +695,7 @@ class ElasticBlastConfig:
                                                    cloud_region=self.cloud_provider.region)
 
         # set batch length
-        if self.blast:
+        if self.blast and not self.cluster.dry_run:
             if self.blast.batch_len == ELB_NOT_INITIALIZED_NUM:
                 self.blast.batch_len = get_batch_length(self.cloud_provider.cloud,
                                                         self.blast.program,
@@ -1171,28 +1187,4 @@ class JSONEnumEncoder(json.JSONEncoder):
             return o.name
         else:
             return json.JSONEncoder(self, o)
-
-
-def get_gcp_project() -> Optional[str]:
-    """Return current GCP project or None if the property is unset.
-
-    Raises:
-        util.SafeExecError on problems with command line gcloud
-        RuntimeError if gcloud run is successful, but the result is empty"""
-    cmd: str = 'gcloud config get-value project'
-    p = safe_exec(cmd)
-    result: Optional[str]
-
-    # the result should not be empty, for unset properties gcloud returns the
-    # string: '(unset)' to stderr
-    if not p.stdout and not p.stderr:
-        raise RuntimeError('Current GCP project could not be established')
-
-    result = p.stdout.decode().split('\n')[0]
-
-    # return None if project is unset
-    if result == '(unset)':
-        result = None
-    return result
-
 

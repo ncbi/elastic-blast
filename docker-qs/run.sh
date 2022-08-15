@@ -76,10 +76,8 @@ fi
 
 TMP=`mktemp`
 if [[ $output_bucket =~ ^s3:// ]]; then
-  time fasta_split.py $input -l $batch_len -o output -c $TMP
-  find output -type f -name "batch_*.fa" | xargs -n1 basename > batch_list.txt
-  time aws s3 cp output $output_bucket/query_batches --recursive --only-show-errors
-  time aws s3 cp $TMP $output_bucket/metadata/query_length.txt --only-show-errors
+  time fasta_split.py $input -l $batch_len -o $output_bucket/query_batches -c $output_bucket/metadata/query_length.txt
+  aws s3 ls $output_bucket/query_batches/batch_ | awk '{print $NF;}' > batch_list.txt
   time aws s3 cp batch_list.txt $output_bucket/metadata/batch_list.txt --only-show-errors
 else
   if [ $copy_only -eq 1 ]; then

@@ -38,7 +38,6 @@ from elastic_blast.aws import check_cluster as aws_check_cluster
 from elastic_blast.filehelper import open_for_read, open_for_read_iter, open_for_write_immediate
 from elastic_blast.filehelper import check_for_read, check_dir_for_write, cleanup_temp_bucket_dirs
 from elastic_blast.filehelper import get_length, harvest_query_splitting_results
-from elastic_blast.object_storage_utils import write_to_s3
 from elastic_blast.split import FASTAReader
 from elastic_blast.gcp import enable_gcp_api
 from elastic_blast.gcp import check_cluster as gcp_check_cluster
@@ -78,7 +77,8 @@ def prepare_1_stage(cfg: ElasticBlastConfig, query_files):
     """ Prepare data for 1 stage cloud query split on AWS """
     query_file = query_files[0]
     # Get file length as approximation of sequence length
-    query_length = get_length(query_file)
+    gcp_prj = None if cfg.cloud_provider.cloud == CSP.AWS else cfg.gcp.project
+    query_length = get_length(query_file, gcp_prj = gcp_prj)
     if query_file.endswith('.gz'):
         query_length = query_length * 4 # approximation again
     batch_len = cfg.blast.batch_len
@@ -95,11 +95,8 @@ def write_config_to_metadata(cfg):
     # FIXME: refactor this code into object_storage_utils
     cfg_text = cfg.to_json()
     dst = os.path.join(cfg.cluster.results, ELB_METADATA_DIR, ELB_META_CONFIG_FILE)
-    if cfg.cloud_provider.cloud == CSP.AWS:
-        write_to_s3(dst, cfg_text)
-    else:
-        with open_for_write_immediate(dst) as f:
-            f.write(cfg_text)
+    with open_for_write_immediate(dst) as f:
+        f.write(cfg_text)
 
 
 # TODO: use cfg only when args.wait, args.sync, and args.run_label are replicated in cfg
@@ -144,7 +141,8 @@ def submit(args, cfg, clean_up_stack):
 
     # check database availability
     try:
-        get_blastdb_size(cfg.blast.db, cfg.cluster.db_source)
+        gcp_prj = None if cfg.cloud_provider.cloud == CSP.AWS else cfg.gcp.project
+        get_blastdb_size(cfg.blast.db, cfg.cluster.db_source, gcp_prj)
     except ValueError as err:
         raise UserReportError(returncode=BLASTDB_ERROR, message=str(err))
 
@@ -182,12 +180,13 @@ def check_running_cluster(cfg: ElasticBlastConfig) -> bool:
     if cfg.cluster.dry_run:
         return False
     metadata_dir = os.path.join(cfg.cluster.results, ELB_METADATA_DIR)
+    gcp_prj = None if cfg.cloud_provider.cloud == CSP.AWS else cfg.gcp.project
     if cfg.cloud_provider.cloud == CSP.AWS:
         metadata_file = os.path.join(metadata_dir, ELB_AWS_JOB_IDS)
     else:
         metadata_file = os.path.join(metadata_dir, ELB_STATE_DISK_ID_FILE)
     try:
-        check_for_read(metadata_file)
+        check_for_read(metadata_file, gcp_prj=gcp_prj)
         return True
     except FileNotFoundError:
         pass
@@ -209,8 +208,9 @@ def check_submit_data(query_files: List[str], cfg: ElasticBlastConfig) -> None:
     """
     dry_run = cfg.cluster.dry_run
     try:
+        gcp_prj = None if cfg.cloud_provider.cloud == CSP.AWS else cfg.gcp.project
         for query_file in query_files:
-            check_for_read(query_file, dry_run, True)
+            check_for_read(query_file, dry_run, True, gcp_prj)
     except FileNotFoundError:
         raise UserReportError(INPUT_ERROR, f'Query input {query_file} is not readable or does not exist')
     bucket = cfg.cluster.results
@@ -239,14 +239,15 @@ def split_query(query_files: List[str], cfg: ElasticBlastConfig) -> Tuple[List[s
         queries = [os.path.join(out_path, f'batch_{x:03d}.fa') for x in range(10)]
         logging.info(f'Splitting queries and writing batches to {out_path}')
     else:
-        reader = FASTAReader(open_for_read_iter(query_files), batch_len, out_path)
+        gcp_prj = None if cfg.cloud_provider.cloud == CSP.AWS else cfg.gcp.project
+        reader = FASTAReader(open_for_read_iter(query_files, gcp_prj), batch_len, out_path)
         query_length, queries = reader.read_and_cut()
         logging.info(f'{len(queries)} batches, {query_length} base/residue total')
         if len(queries) < num_concurrent_blast_jobs:
             adjusted_batch_len = int(query_length/num_concurrent_blast_jobs)
             msg = f'The provided elastic-blast configuration is sub-optimal as the query was split into {len(queries)} batch(es) and elastic-blast can run up to {num_concurrent_blast_jobs} concurrent BLAST jobs. elastic-blast changed the batch-len parameter to {adjusted_batch_len} to maximize resource utilization and improve performance.'
             logging.info(msg)
-            reader = FASTAReader(open_for_read_iter(query_files), adjusted_batch_len, out_path)
+            reader = FASTAReader(open_for_read_iter(query_files, gcp_prj), adjusted_batch_len, out_path)
             query_length, queries = reader.read_and_cut()
             logging.info(f'Re-computed {len(queries)} batches, {query_length} base/residue total')
     end = timer()
@@ -260,9 +261,10 @@ def assemble_query_file_list(cfg: ElasticBlastConfig) -> List[str]:
     is considered a list of files, otherwise it is a FASTA file with queries."""
     msg = []
     query_files = []
+    gcp_prj = None if cfg.cloud_provider.cloud == CSP.AWS else cfg.gcp.project
     for query_file in cfg.blast.queries_arg.split():
         if query_file.endswith(QUERY_LIST_EXT):
-            with open_for_read(query_file) as f:
+            with open_for_read(query_file, gcp_prj) as f:
                 for line in f:
                     if len(line.rstrip()) == 0:
                         continue

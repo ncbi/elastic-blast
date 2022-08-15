@@ -33,6 +33,7 @@ from elastic_blast import gcp
 from elastic_blast import kubernetes
 from elastic_blast import config
 from elastic_blast import elb_config
+from elastic_blast import util
 from elastic_blast.constants import CLUSTER_ERROR, ElbCommand
 from elastic_blast.util import SafeExecError, UserReportError
 from elastic_blast.elb_config import ElasticBlastConfig
@@ -65,9 +66,9 @@ def test_fake_gcloud(gke_mock):
 
 def test_get_gcp_project(gke_mock):
     """Test getting GCP project"""
-    project = elb_config.get_gcp_project()
+    project = util.get_gcp_project()
     assert project == GCP_PROJECT
-    elb_config.safe_exec.assert_called()
+    util.safe_exec.assert_called()
 
 
 def test_get_unset_gcp_project(mocker):
@@ -80,13 +81,10 @@ def test_get_unset_gcp_project(mocker):
         # this is how gcloud reports unset project
         return MockedCompletedProcess('(unset)')
 
-    mocker.patch('elastic_blast.elb_config.safe_exec',
+    mocker.patch('elastic_blast.util.safe_exec',
                  side_effect=subst_safe_exec_unset_project)
-    project = elb_config.get_gcp_project()
-
-    # unset project must be returned as None
-    assert project is None
-    elb_config.safe_exec.assert_called()
+    with pytest.raises(ValueError):
+        project = util.get_gcp_project()
 
 
 def test_set_gcp_project(gke_mock):

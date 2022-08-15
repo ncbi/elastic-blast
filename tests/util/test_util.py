@@ -43,7 +43,7 @@ from elastic_blast.elb_config import ElasticBlastConfig
 from elastic_blast.base import InstanceProperties
 from elastic_blast.db_metadata import DbMetadata
 import pytest
-from tests.utils import MockedCompletedProcess, gke_mock, GCP_REGIONS
+from tests.utils import MockedCompletedProcess, gke_mock, GCP_REGIONS, gcp_env_vars
 
 
 DB_METADATA = DbMetadata(version = '1',
@@ -126,18 +126,6 @@ class ElbLibTester(unittest.TestCase):
         with self.assertRaises(ValueError) as e:
             safe_exec(1)
 
-    @patch(target='elastic_blast.elb_config.gcp_get_regions', new=MagicMock(return_value=GCP_REGIONS))
-    def test_get_blastdb_size(self):
-        cfg = create_config_for_db('nr')
-        dbsize = get_blastdb_size(cfg.blast.db, cfg.cluster.db_source)
-        assert dbsize >= 227.4
-
-    @patch(target='elastic_blast.elb_config.gcp_get_regions', new=MagicMock(return_value=GCP_REGIONS))
-    def test_get_blastdb_size_invalid_database(self):
-        cfg = create_config_for_db('non_existent_blast_database')
-        with self.assertRaises(ValueError):
-            get_blastdb_size(cfg.blast.db, cfg.cluster.db_source)
-
     def test_sanitize_for_k8s(self):
         self.assertEqual('ref-viruses-rep-genomes', sanitize_for_k8s('ref_viruses_rep_genomes'))
         self.assertEqual('betacoronavirus', sanitize_for_k8s('Betacoronavirus'))
@@ -149,6 +137,21 @@ class ElbLibTester(unittest.TestCase):
 
     def test_sanitize_aws_user_name(self):
         self.assertEqual('user-name', sanitize_aws_batch_job_name('user.name'))
+
+@patch(target='elastic_blast.elb_config.gcp_get_regions', new=MagicMock(return_value=GCP_REGIONS))
+def test_get_blastdb_size(gcp_env_vars):
+    cfg = create_config_for_db('nr')
+    gcp_prj = os.environ.get('CLOUDSDK_CORE_PROJECT', "ncbi-sandbox-blast")
+    dbsize = get_blastdb_size(cfg.blast.db, cfg.cluster.db_source, gcp_prj)
+    assert dbsize >= 227.4
+
+@patch(target='elastic_blast.elb_config.gcp_get_regions', new=MagicMock(return_value=GCP_REGIONS))
+def test_get_blastdb_size_invalid_database(gcp_env_vars):
+    cfg = create_config_for_db('non_existent_blast_database')
+
+    with pytest.raises(ValueError):
+        gcp_prj = os.environ.get('CLOUDSDK_CORE_PROJECT', "ncbi-sandbox-blast")
+        get_blastdb_size(cfg.blast.db, cfg.cluster.db_source, gcp_prj)
 
 
 @patch(target='elastic_blast.elb_config.get_db_metadata', new=MagicMock(return_value=DB_METADATA))
@@ -340,30 +343,34 @@ def test_get_blastdb_info(mocker):
     DB = f'{DB_BUCKET}/{DB_NAME}'
     response = DB_NAME+'tar.gz'
 
+    orig_safe_exec = util.safe_exec
+
     def safe_exec_gsutil_ls(cmd):
         """Mocked util.safe_exec function that simulates gsutil ls"""
-        if cmd != f'gsutil ls {DB}.*':
-            raise ValueError(f'Bad gsutil command line: "{cmd}"')
-        return MockedCompletedProcess(response)
+        if cmd.startswith('gsutil') and f'ls {DB}.*' in cmd:
+            return MockedCompletedProcess(response)
+        else:
+            return orig_safe_exec(cmd)
 
     mocker.patch('elastic_blast.util.safe_exec', side_effect=safe_exec_gsutil_ls)
+    gcp_prj = os.environ.get('CLOUDSDK_CORE_PROJECT', "ncbi-sandbox-blast")
 
     # tar.gz file, db_path should explicitely mention it
-    db, db_path, k8sdblabel = util.get_blastdb_info(DB)
+    db, db_path, k8sdblabel = util.get_blastdb_info(DB, gcp_prj)
     assert(db_path == DB+'.tar.gz')
     assert(k8sdblabel == DB_LABEL)
     print(db, db_path, k8sdblabel)
 
     # no tar.gz file, db_path should have .*
     response = DB_NAME+'tar.gz.md5'
-    db, db_path, k8sdblabel = util.get_blastdb_info(DB)
+    db, db_path, k8sdblabel = util.get_blastdb_info(DB, gcp_prj)
     assert(db_path == DB+'.*')
     assert(k8sdblabel == DB_LABEL)
     print(db, db_path, k8sdblabel)
 
     # tar.gz file, db_path should explicitely mention it
     response = DB_NAME+'tar.gz'+'\n'+DB_NAME+'.ndb'
-    db, db_path, k8sdblabel = util.get_blastdb_info(DB)
+    db, db_path, k8sdblabel = util.get_blastdb_info(DB, gcp_prj)
     assert(db_path == DB+'.tar.gz')
     assert(k8sdblabel == DB_LABEL)
     print(db, db_path, k8sdblabel)
@@ -371,7 +378,7 @@ def test_get_blastdb_info(mocker):
     # empty result, should throw an exception
     response = ''
     with pytest.raises(ValueError):
-        util.get_blastdb_info(DB)
+        util.get_blastdb_info(DB, gcp_prj)
 
     # error executing gsutil, should throw an exception
     def safe_exec_gsutil_ls_exception(cmd):
@@ -379,4 +386,4 @@ def test_get_blastdb_info(mocker):
         raise SafeExecError(1, 'CommandException: One or more URLs matched no objects.')
     mocker.patch('elastic_blast.util.safe_exec', side_effect=safe_exec_gsutil_ls_exception)
     with pytest.raises(ValueError):
-        util.get_blastdb_info(DB)
+        util.get_blastdb_info(DB, gcp_prj)

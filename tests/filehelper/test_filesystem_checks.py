@@ -28,20 +28,22 @@ import pytest
 import os
 from elastic_blast import filehelper
 from tempfile import TemporaryDirectory
+import pytest
 
 TEST_DATA_DIR = os.path.join(os.path.dirname(__file__), 'data')
 WRITEABLE_BUCKET = 'gs://blast-test'
 
+GCP_PRJ = "ncbi-sandbox-blast"
 
 def test_check_for_read_success():
-    filehelper.check_for_read('gs://blast-db/latest-dir')
+    filehelper.check_for_read('gs://blast-db/latest-dir', gcp_prj=GCP_PRJ)
+    #filehelper.check_for_read('s3://ncbi-blast-databases/latest-dir')
     filehelper.check_for_read(os.path.join(TEST_DATA_DIR, 'test.tar'))
-    filehelper.check_for_read('https://storage.googleapis.com/blast-db/latest-dir')
 
 
 def test_check_for_read_failure():
     with pytest.raises(FileNotFoundError):
-        filehelper.check_for_read('gs://blast-db/non-existent-file')
+        filehelper.check_for_read('gs://blast-db/non-existent-file', gcp_prj=GCP_PRJ)
     with pytest.raises(FileNotFoundError):
         filehelper.check_for_read(os.path.join(TEST_DATA_DIR, 'non-existent-file'))
     with pytest.raises(FileNotFoundError):

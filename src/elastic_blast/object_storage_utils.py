@@ -39,6 +39,8 @@ def write_to_s3(dest: str, contents: str, boto_cfg: Config = None, dry_run: bool
         contents: what to write into said S3 object
         boto_cfg: boto3 library configuration
         dry_run: if True, does nothing
+
+        See also: elastic_blast.filehelper.open_for_write_immediate as an alternative to stream data to S3
     """
     if dry_run: 
         logging.debug(f'Would have written "{contents}" to {dest}')

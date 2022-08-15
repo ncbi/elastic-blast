@@ -356,7 +356,7 @@ def initialize_storage(cfg: ElasticBlastConfig, query_files: List[str] = [], wai
 
 def initialize_local_ssd(cfg: ElasticBlastConfig, query_files: List[str] = [], wait=ElbExecutionMode.WAIT) -> None:
     """ Initialize local SSDs for ElasticBLAST cluster """
-    db, db_path, _ = get_blastdb_info(cfg.blast.db)
+    db, db_path, _ = get_blastdb_info(cfg.blast.db, cfg.gcp.project)
     if not db:
         raise ValueError("Config parameter 'db' can't be empty")
     dry_run = cfg.cluster.dry_run
@@ -397,7 +397,7 @@ def initialize_local_ssd(cfg: ElasticBlastConfig, query_files: List[str] = [], w
     taxdb_path = ''
     if db_path:
         # Custom database
-        taxdb_path = gcp_get_blastdb_latest_path() + '/taxdb.*'
+        taxdb_path = gcp_get_blastdb_latest_path(cfg.gcp.project) + '/taxdb.*'
     subs = {
         'ELB_DB': db,
         'ELB_DB_PATH': db_path,
@@ -484,7 +484,7 @@ def initialize_persistent_disk(cfg: ElasticBlastConfig, query_files: List[str] =
     """
 
     # ${LOGDATETIME} setup_pd start >>${ELB_LOGFILE}
-    db, db_path, _ = get_blastdb_info(cfg.blast.db)
+    db, db_path, _ = get_blastdb_info(cfg.blast.db, cfg.gcp.project)
     if not db:
         raise ValueError("Config parameter 'db' can't be empty")
     cluster_name = cfg.cluster.name
@@ -494,7 +494,7 @@ def initialize_persistent_disk(cfg: ElasticBlastConfig, query_files: List[str] =
     taxdb_path = ''
     if db_path:
         # Custom database
-        taxdb_path = gcp_get_blastdb_latest_path() + '/taxdb.*'
+        taxdb_path = gcp_get_blastdb_latest_path(cfg.gcp.project) + '/taxdb.*'
 
     results_bucket = cfg.cluster.results
     dry_run = cfg.cluster.dry_run

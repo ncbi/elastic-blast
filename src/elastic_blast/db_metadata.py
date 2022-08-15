@@ -30,7 +30,7 @@ from dataclasses import dataclass
 from dataclasses_json import dataclass_json, Undefined, LetterCase
 from json.decoder import JSONDecodeError
 from marshmallow.exceptions import ValidationError
-from typing import List
+from typing import List, Optional
 from .constants import MolType, ELB_S3_PREFIX, ELB_GCS_PREFIX, BLASTDB_ERROR
 from .filehelper import open_for_read, check_for_read
 from .base import DBSource
@@ -55,7 +55,7 @@ class DbMetadata:
     number_of_volumes: int
 
 
-def get_db_metadata(db: str, dbtype: MolType, source: DBSource, dry_run: bool = False) -> DbMetadata:
+def get_db_metadata(db: str, dbtype: MolType, source: DBSource, dry_run: bool = False, gcp_prj: Optional[str] = None) -> DbMetadata:
     """
     Read database metadata.
 
@@ -79,24 +79,26 @@ def get_db_metadata(db: str, dbtype: MolType, source: DBSource, dry_run: bool = 
         if source == DBSource.AWS or source == DBSource.GCP:
             bucket = DB_BUCKET_AWS if source == DBSource.AWS else DB_BUCKET_GCP
             try:
-                with open_for_read(f'{bucket}/latest-dir') as f:
+                with open_for_read(f'{bucket}/latest-dir', gcp_prj) as f:
                     db_path = os.path.join(f'{bucket}/{f.readline().rstrip()}', db)
             except:
-                raise UserReportError(returncode=BLASTDB_ERROR, message=f'File "{bucket}/latest-dir" could not be read')
+                msg = f'File "{bucket}/latest-dir" could not be read'
+                logging.error(msg)
+                raise UserReportError(returncode=BLASTDB_ERROR, message=msg)
         else:
             db_path = os.path.join(f'{DB_BUCKET_NCBI}', db)
     # try metadata file version 1.2 first; if not found try version 1.1
     try:
         metadata_file = f'{db_path}{metadata_suffix_v12}'
         logging.debug(f'BLASTDB metadata file: {metadata_file}')
-        check_for_read(metadata_file, dry_run)
+        check_for_read(metadata_file, dry_run, gcp_prj=gcp_prj)
     except FileNotFoundError:
         metadata_file = f'{db_path}{metadata_suffix_v11}'
         logging.debug(f'BLASTDB metadata file: {metadata_file}')
-        check_for_read(metadata_file, dry_run)
+        check_for_read(metadata_file, dry_run, gcp_prj=gcp_prj)
 
     try:
-        with open_for_read(metadata_file) as f:
+        with open_for_read(metadata_file, gcp_prj) as f:
             lines = f.readlines()
             if isinstance(lines[0], bytes):
                 lines = [s.decode() for s in lines]

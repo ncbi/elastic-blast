@@ -238,13 +238,15 @@ def test_gcpconfig_from_configparser_errors():
         assert [message for message in errors if key in message and 'invalid value' in message and confpars[CFG_CLOUD_PROVIDER][key] in message]
 
 
-@patch(target='elastic_blast.elb_config.get_gcp_project', new=MagicMock(return_value=None))
 def test_gcpconfig_from_configparser_missing_project(gke_mock   ):
     """Test test missing GCP project is properly reported"""
+    gke_mock.cloud.conf['project'] = None
+
     confpars = configparser.ConfigParser()
 
     with pytest.raises(ValueError) as err:
         cfg = GCPConfig.create_from_cfg(confpars)
+    print(err.value)
     assert 'GCP project is unset' in str(err.value)
 
 

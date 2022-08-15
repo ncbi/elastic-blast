@@ -118,15 +118,16 @@ class ElasticBlast(metaclass=ABCMeta):
         """
         cfg = self.cfg
         status = ElbStatus.UNKNOWN
+        gcp_prj = None if cfg.aws else cfg.gcp.project
         try:
             failure_file = os.path.join(cfg.cluster.results, ELB_METADATA_DIR, ELB_STATUS_FAILURE)
-            check_for_read(failure_file, self.dry_run)
+            check_for_read(failure_file, self.dry_run, gcp_prj=gcp_prj)
         except FileNotFoundError:
             pass
         else:
             status = ElbStatus.FAILURE
             self.cached_status = status
-            with open_for_read(failure_file) as f:
+            with open_for_read(failure_file, gcp_prj) as f:
                 res = f.read()
                 if res:
                     self.cached_failure_message = res
@@ -134,7 +135,7 @@ class ElasticBlast(metaclass=ABCMeta):
 
         try:
             done_file = os.path.join(cfg.cluster.results, ELB_METADATA_DIR, ELB_STATUS_SUCCESS)
-            check_for_read(done_file, self.dry_run)
+            check_for_read(done_file, self.dry_run, gcp_prj=gcp_prj)
         except FileNotFoundError:
             pass
         else:

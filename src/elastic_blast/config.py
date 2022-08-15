@@ -117,6 +117,8 @@ def configure(args: argparse.Namespace) -> configparser.ConfigParser:
         retval[CFG_BLAST][CFG_BLAST_QUERY] = args.query
     if hasattr(args, CFG_BLAST_DB) and args.db:
         retval[CFG_BLAST][CFG_BLAST_DB] = args.db
+    if hasattr(args, CFG_BLAST_BATCH_LEN.replace('-', '_')) and args.batch_len:
+        retval[CFG_BLAST][CFG_BLAST_BATCH_LEN] = str(args.batch_len)
     if hasattr(args, 'blast_opts') and args.blast_opts:
         if args.blast_opts[0] == '--':
             args.blast_opts.pop(0)

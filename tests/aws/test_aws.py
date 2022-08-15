@@ -600,14 +600,8 @@ def test_incorrect_user_db():
 def test_wrong_provider_user_db():
     cfg = configparser.ConfigParser()
     cfg.read(f"{TEST_CONFIG_DATA_DIR}/aws-wrong-provider-custom-db.ini")
-    cfg = ElasticBlastConfig(cfg, task = ElbCommand.SUBMIT)
-    cfg.cluster.machine_type = 't2.micro'
-    try:
-        with pytest.raises(UserReportError) as exc_info:
-            b = aws.ElasticBlastAws(cfg, create=True)
-    finally:
-        # In case the test fails and cluster is created, clean up the cluster
-        b = aws.ElasticBlastAws(cfg)
-        b.delete()
+    with pytest.raises(UserReportError) as exc_info:
+        cfg = ElasticBlastConfig(cfg, task = ElbCommand.SUBMIT)
     assert(exc_info.value.returncode == BLASTDB_ERROR)
-    assert('User database should be in the AWS S3 bucket' in exc_info.value.message)
+    assert('User database ' in exc_info.value.message)
+    assert('must reside in AWS S3' in exc_info.value.message)

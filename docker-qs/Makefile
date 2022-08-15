@@ -28,7 +28,7 @@ SHELL=/bin/bash
 .PHONY: all pre-check check clean build publish gcp-build gcp-check gcp-clean
 
 IMG?=ncbi/elasticblast-query-split
-VERSION?=0.1.2
+VERSION?=0.1.3
 GCP_PROJECT?=$(shell gcloud config get-value project 2>/dev/null)
 GCP_TEST_BUCKET?=gs://elasticblast-test/query-split-run-test
 AWS_REGION?=us-east-1
@@ -78,6 +78,15 @@ gcp-list-tagless-images:
 .PHONY: aws-build
 aws-build:
 	gcloud builds submit --config=awscloudbuild.yaml --substitutions=TAG_NAME="${VERSION}",_IMG="${AWS_IMG}",_SERVER="${AWS_SERVER}",_AWS_ECR_PASSWD="`aws ecr-public get-login-password --region ${AWS_REGION}`" .
+
+# Use this target to build an image from your local sources as opposed to those on PyPI.org
+.PHONY: aws-build-from-local-sources
+aws-build-from-local-sources:
+	rsync -a ../setup.py ../setup.cfg_cloud ../src ../bin ../requirements ${PWD}/
+	sed -i~ -e '/^value = $${VERSION}/d;' setup.cfg_cloud
+	echo "value = ${VERSION}" >> setup.cfg_cloud
+	gcloud builds submit --config awscloudbuild.yaml --substitutions _SERVER=${AWS_SERVER},TAG_NAME=${VERSION},_IMG=${AWS_IMG},_DOCKERFILE=Dockerfile-build-from-local-sources,_AWS_ECR_PASSWD="`aws ecr-public get-login-password --region ${AWS_REGION}`"
+	rm -fr src bin requirements setup.cfg_cloud setup.py
 
 # This command needs to be run on an instance with docker installed. First build the image using "make build"
 ECR_REPO=?65123123.dkr.ecr.${AWS_REGION}.amazonaws.com

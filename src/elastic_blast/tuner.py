@@ -30,7 +30,6 @@ from dataclasses import dataclass
 from bisect import bisect_left
 import math
 from typing import Optional
-from .filehelper import open_for_read
 from .constants import BLASTDB_ERROR, INPUT_ERROR
 from .constants import UNKNOWN_ERROR, MolType, CSP
 from .constants import ELB_S3_PREFIX, ELB_GCS_PREFIX

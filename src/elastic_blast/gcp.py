@@ -384,7 +384,7 @@ class ElasticBlastGcp(ElasticBlast):
         cfg = self.cfg
         usage_reporting = get_usage_reporting()
 
-        db, _, db_label = get_blastdb_info(cfg.blast.db)
+        db, _, db_label = get_blastdb_info(cfg.blast.db, cfg.gcp.project)
 
         blast_program = cfg.blast.program
 

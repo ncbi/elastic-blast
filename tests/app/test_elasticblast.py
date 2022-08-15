@@ -119,7 +119,6 @@ def app_mocks(caplog, aws_credentials, gke_mock, mocker):
     #TODO: These function should be mocked at the level of cloud API calls
     mocker.patch('tests.app.elastic_blast_app.clean_up', new=MagicMock(return_value=[]))
     mocker.patch('elastic_blast.commands.submit.check_resource_quotas', new=MagicMock(return_value=None))
-    mocker.patch('elastic_blast.commands.submit.write_to_s3', new=MagicMock(return_value=None))
     mocker.patch('elastic_blast.elasticblast.copy_to_bucket', new=MagicMock(return_value=None))
     mocker.patch(target='elastic_blast.elb_config.aws_get_machine_properties', new=MagicMock(return_value=InstanceProperties(32, 120)))
     mocker.patch('elastic_blast.elasticblast_factory.ElasticBlastAws', new=MagicMock(return_value=MagicMock()))
@@ -242,6 +241,7 @@ def test_too_many_k8s_jobs_client_split(app_mocks, client_query_split):
         with contextlib.redirect_stderr(io.StringIO()) as stderr:
             returncode = main()
 
+    print(stderr.getvalue())
     assert returncode == constants.INPUT_ERROR
     assert 'Traceback' not in stderr.getvalue()
 
@@ -832,7 +832,7 @@ DB_METADATA = """{
 
 def test_database_too_large(app_mocks):
     """Test that a database too large to fit in an instance RAM will be reported"""
-    DB = 'gs://bucket/testdb'
+    DB = 's3://bucket/testdb'
     app_mocks.gke_mock.cloud.storage[f'{DB}-prot-metadata.json'] = DB_METADATA
 
     conf = f"""[cloud-provider]
@@ -1089,7 +1089,6 @@ results = s3://test-results
     assert re.search(r'Invalid value of environment variable ELB_JANITOR_SCHEDULE', msg)
 
 
-@patch(target='elastic_blast.elb_config.get_gcp_project', new=MagicMock(return_value=None))
 def test_no_gcp_project(app_mocks):
     """Test that missing GCP project is properly reported"""
 
@@ -1099,6 +1098,9 @@ db = gs://test-bucket/testdb
 queries = gs://test-bucket/test-query.fa
 results = gs://test-results
 """
+
+    # make GCP project unset in the mocked gcloud config
+    app_mocks.gke_mock.cloud.conf['project'] = None
 
     with NamedTemporaryFile() as f:
         f.write(conf.encode())
@@ -1110,6 +1112,7 @@ results = gs://test-results
             with contextlib.redirect_stderr(io.StringIO()) as stderr:
                 returncode = main()
 
+    print(stderr.getvalue())
     assert returncode == constants.INPUT_ERROR
     assert 'Traceback' not in stderr.getvalue()
 

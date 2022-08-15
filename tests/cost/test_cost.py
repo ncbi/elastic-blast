@@ -23,6 +23,7 @@
 import pytest  # type: ignore
 import os, subprocess, io
 from elastic_blast.cost import get_cost, DFLT_BQ_DATASET, DFLT_BQ_TABLE, BQ_ERROR, NO_RESULTS_ERROR, CMD_ARGS_ERROR
+from tests.utils import gcp_env_vars
 
 #TEST_CMD = 'python3 elb-cost.py'
 TEST_CMD = 'elb-cost.py'
@@ -85,7 +86,7 @@ def test_app_bq_error():
     with io.BytesIO(p.stderr) as f:
         assert len(f.readlines()) > 0, 'Application error message is missing'
 
-def test_app_label_format_error():
+def test_app_label_format_error(gcp_env_vars):
     """Test if the application returns the appropriate error code and an error
     message if run label was formatted incorrectly"""
     cmd = TEST_CMD + ' aaa --date-range 2020-01-09:2020-01-10'
@@ -94,7 +95,7 @@ def test_app_label_format_error():
     with io.BytesIO(p.stderr) as f:
         assert len(f.readlines()) > 0, 'Application error message is missing'
 
-def test_app_date_format_error():
+def test_app_date_format_error(gcp_env_vars):
     """Test if the application returns the appropriate error code and an error
     message if date range was formatted incorrectly"""
     cmd = TEST_CMD + ' aaa:bb --date-range 2020-01-09:2020-01-xx'

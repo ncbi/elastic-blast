@@ -32,12 +32,13 @@ import argparse
 import subprocess
 import datetime
 import json
+import inspect
 from functools import reduce
 from pkg_resources import resource_exists
-from typing import List, Union, Callable
+from typing import List, Union, Callable, Optional
 from .constants import MolType, GCS_DFLT_BUCKET
 from .constants import DEPENDENCY_ERROR, AWS_MAX_TAG_LENGTH, GCP_MAX_LABEL_LENGTH
-from .constants import AWS_MAX_JOBNAME_LENGTH, CSP
+from .constants import AWS_MAX_JOBNAME_LENGTH, CSP, ELB_GCS_PREFIX
 from .constants import ELB_DFLT_LOGLEVEL, ELB_DFLT_LOGFILE
 from .base import DBSource
 
@@ -206,7 +207,7 @@ def safe_exec(cmd: Union[List[str], str]) -> subprocess.CompletedProcess:
     return p
 
 
-def get_blastdb_info(blastdb: str):
+def get_blastdb_info(blastdb: str, gcp_prj: Optional[str] = None):
     """Get BLAST database short name, path (if applicable), and label
     for Kubernetes. Gets user provided database from configuration.
     For custom database finds short name from full path, and provides
@@ -219,10 +220,12 @@ def get_blastdb_info(blastdb: str):
     """
     db = blastdb
     db_path = ''
-    if db.startswith('gs://'):
+    if db.startswith(ELB_GCS_PREFIX):
         # Custom database, just check the presence
         try:
-            proc = safe_exec(f'gsutil ls {db}.*')
+            if not gcp_prj:
+                raise ValueError(f'elastic_blast.util.get_blastdb_info is missing the gcp_prj parameter')
+            proc = safe_exec(f'gsutil -u {gcp_prj} ls {db}.*')
         except SafeExecError:
             raise ValueError(f'Error requesting for {db}.*')
         output = proc.stdout.decode()
@@ -238,43 +241,49 @@ def get_blastdb_info(blastdb: str):
     return db, db_path, sanitize_for_k8s(db)
 
 
-def get_blastdb_size(db: str, db_source: DBSource) -> float:
+def get_blastdb_size(db: str, db_source: DBSource, gcp_prj: Optional[str] = None) -> float:
     """Request blast database size from GCP using gcp module
     If applied to custom db, just check the presence
     Returns the size in GB, if not found raises ValueError exception
 
     cfg: application configuration object
     """
-    if db.startswith('gs://'):
+    if db.startswith(ELB_GCS_PREFIX):
         # Custom database, just check the presence
         try:
-            safe_exec(f'gsutil ls {db}.*')
+            if not gcp_prj:
+                raise ValueError(f'elastic_blast.util.get_blastdb_size is missing the gcp_prj parameter')
+            safe_exec(f'gsutil -u {gcp_prj} ls {db}.*')
         except SafeExecError:
             raise ValueError(f'BLAST database {db} was not found')
         # TODO: find a way to check custom DB size w/o transferring it to user machine
         return 1000000
     if db_source == DBSource.GCP:
-        return gcp_get_blastdb_size(db)
+        if not gcp_prj:
+            raise ValueError(f'elastic_blast.util.get_blastdb_size is missing the gcp_prj parameter')
+        return gcp_get_blastdb_size(db, str(gcp_prj))
     elif db_source == DBSource.AWS:
         return 1000000   # FIXME
     raise NotImplementedError("Not implemented for sources other than GCP")
 
 
-def gcp_get_blastdb_latest_path() -> str:
+def gcp_get_blastdb_latest_path(gcp_prj: str) -> str:
     """Get latest path of GCP-based blastdb repository"""
-    cmd = f'gsutil cat {GCS_DFLT_BUCKET}/latest-dir'
+    if not gcp_prj:
+        raise ValueError(f'elastic_blast.util.gcp_get_blastdb_latest_path is missing the gcp_prj parameter')
+    cmd = f'gsutil -u {gcp_prj} cat {GCS_DFLT_BUCKET}/latest-dir'
     proc = safe_exec(cmd)
     return os.path.join(GCS_DFLT_BUCKET, proc.stdout.decode().rstrip())
 
 
-def gcp_get_blastdb_size(db: str) -> float:
+def gcp_get_blastdb_size(db: str, gcp_prj: str) -> float:
     """Request blast database size from GCP using gsutil
     Returns the size in GB, if not found raises ValueError exception
 
     db: database name
     """
-    latest_path = gcp_get_blastdb_latest_path()
-    cmd = f'gsutil cat {latest_path}/blastdb-manifest.json'
+    latest_path = gcp_get_blastdb_latest_path(gcp_prj)
+    cmd = f'gsutil -u {gcp_prj} cat {latest_path}/blastdb-manifest.json'
     proc = safe_exec(cmd)
     blastdb_metadata = json.loads(proc.stdout.decode())
     if not db in blastdb_metadata:
@@ -560,3 +569,73 @@ def get_resubmission_error_msg(results: str, cloud: CSP) -> str:
     else:
         retval += f'gsutil -qm rm -r {results}'
     return retval
+
+
+def get_gcp_project() -> Optional[str]:
+    """Return current GCP project as configured in gcloud.
+
+    Raises:
+        util.SafeExecError on problems with command line gcloud
+        ValueError if gcloud run is successful, but the project is not set"""
+    cmd: str = 'gcloud config get-value project'
+    p = safe_exec(cmd)
+    result: Optional[str]
+
+    # the result should not be empty, for unset properties gcloud returns the
+    # string: '(unset)' to stderr
+    if not p.stdout and not p.stderr:
+        raise RuntimeError('Current GCP project could not be established')
+
+    result = p.stdout.decode().split('\n')[0]
+    logging.debug(f'gcloud returned "{result}"')
+
+    # return None if project is unset
+    if result == '(unset)':
+        result = None
+    if not result:
+        raise ValueError(f'GCP project is unset, please invoke gcloud config set project REPLACE_WITH_YOUR_PROJECT_NAME_HERE')
+    return result
+
+
+class MetaFileName(type):
+    """ Auxiliary class to get the source file name """
+    def __repr__(self):
+        callerframerecord = inspect.stack()[1]
+        frame = callerframerecord[0]
+        info = inspect.getframeinfo(frame)
+        return str(info.filename)
+
+
+class __FILE__(metaclass=MetaFileName):
+    """ Auxiliary class to get the source file name """
+    pass
+
+
+class MetaFileLine(type):
+    """ Auxiliary class to get the source file number """
+    def __repr__(self):
+        callerframerecord = inspect.stack()[1]
+        frame = callerframerecord[0]
+        info = inspect.getframeinfo(frame)
+        return str(info.lineno)
+
+
+class __LINE__(metaclass=MetaFileLine):
+    """ Auxiliary class to get the source file number """
+    pass
+
+
+class MetaFunction(type):
+    """ Auxiliary class to get the current function name """
+    def __repr__(self):
+        callerframerecord = inspect.stack()[1]
+        frame = callerframerecord[0]
+        info = inspect.getframeinfo(frame)
+        return str(info.function)
+
+
+class __FUNCTION__(metaclass=MetaFunction):
+    """ Auxiliary class to get the current function name """
+    pass
+
+

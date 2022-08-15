@@ -75,7 +75,7 @@ def main():
         if args.db is not None:
             try:
                 db_metadata = get_db_metadata(args.db, sp.get_db_mol_type(args.program),
-                                              db_source)
+                                              db_source, gcp_prj=args.gcp_project)
             except FileNotFoundError:
                 raise UserReportError(returncode=BLASTDB_ERROR,
                                       message=f'Metadata for BLAST database "{args.db}" was not found or database molecular type is not the same as required by BLAST program: "{args.program}"')
@@ -169,6 +169,7 @@ def create_arg_parser():
                         help='Number of residues or bases in query sequecnes')
     optional.add_argument("--db-source", type=str, help="Where NCBI-provided databases are downloaded from, default: AWS", choices=['AWS', 'GCP', 'NCBI'])
     optional.add_argument("--region", type=str, help=f'Cloud Service Provider region. Defaults: {ELB_DFLT_AWS_REGION} for AWS; {ELB_DFLT_GCP_REGION} for GCP')
+    optional.add_argument("--gcp-project", type=str, help=f'GCP project, required if --db-source or --csp-target is GCP')
     optional.add_argument("--options", type=str, help='BLAST options', default='')
     optional.add_argument("--db-mem-limit-factor", type=float,
                           help='This number times database bytes-to-cache will produce memory limit for a BLAST search. (default: 0.0: for AWS, 1.1 for GCP)')

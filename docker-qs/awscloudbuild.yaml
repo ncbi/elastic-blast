@@ -1,6 +1,6 @@
 steps:
 - name: 'docker'
-  args: [ 'build', '-t', '${_IMG}:$TAG_NAME', '-t', '${_IMG}:latest', '.' ]
+  args: [ 'build', '-t', '${_IMG}:$TAG_NAME', '-t', '${_IMG}:latest', '-f', '${_DOCKERFILE}', '.' ]
 - name: 'docker'
   args: [ 'login', '-u', 'AWS', '-p', '${_AWS_ECR_PASSWD}', '${_SERVER}' ]
 - name: 'docker'

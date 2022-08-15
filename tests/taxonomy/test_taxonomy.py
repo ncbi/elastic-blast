@@ -25,10 +25,11 @@ Author: Greg Boratyn (boratyng@ncbi.nlm.nih.gov)
 """
 
 import configparser
-import re
+import re, io
 from tempfile import NamedTemporaryFile
 from urllib.error import HTTPError
 import time
+import boto3
 from unittest.mock import MagicMock, patch
 
 from elastic_blast import taxonomy
@@ -47,7 +48,7 @@ import pytest
 # input and output taxids for tests
 input_taxids = [9605, 9608]
 expected_taxids = set([9605, 9606, 63221, 741158, 1425170, 2665952, 2665953,
-                   9608, 9611, 9612, 9614, 9615, 9616, 9619, 9620, 9621, 9622, 9623, 9624, 9625, 9626, 9627, 9629, 9630, 9631, 30540, 32534, 34879, 34880, 45781, 55039, 55040, 68721, 68722, 68723, 68724, 68725, 68727, 68728, 68729, 68730, 68732, 68734, 68736, 68737, 68739, 68740, 68741, 69045, 71547, 132609, 143281, 188536, 192959, 228401, 242524, 242525, 244585, 246881, 246882, 286419, 354189, 354190, 354191, 383736, 425200, 425201, 425934, 443256, 476259, 476260, 494514, 554455, 561074, 613187, 644627, 659069, 673762, 676787, 945042, 990119, 1002243, 1002244, 1002254, 1002255, 1224817, 1295334, 1303779, 1316008, 1316009, 1320375, 1341016, 1353242, 1398410, 1419108, 1419257, 1419712, 1605264, 1621113, 1621114, 1621115, 1621116, 1621117, 1621118, 1707807, 1785177, 2494276, 2562269, 2605939, 2626217, 2627721, 2639686, 2658581, 2714668, 2714669, 2714670, 2714671, 2714672, 2714673, 2714674, 2714675, 2726995, 2726996, 2769327, 2769328, 2769329, 2793302, 2793303, 2841919, 2841920, 2841921, 2841922, 2841923, 2813598, 2813599])
+                   9608, 9611, 9612, 9614, 9615, 9616, 9619, 9620, 9621, 9622, 9623, 9624, 9625, 9626, 9627, 9629, 9630, 9631, 30540, 32534, 34879, 34880, 45781, 55039, 55040, 68721, 68722, 68723, 68724, 68725, 68727, 68728, 68729, 68730, 68732, 68734, 68736, 68737, 68739, 68740, 68741, 69045, 71547, 132609, 143281, 188536, 192959, 228401, 242524, 242525, 244585, 246881, 246882, 286419, 354189, 354190, 354191, 383736, 425200, 425201, 425934, 443256, 476259, 476260, 494514, 554455, 561074, 613187, 644627, 659069, 673762, 676787, 945042, 990119, 1002243, 1002244, 1002254, 1002255, 1224817, 1295334, 1303779, 1316008, 1316009, 1320375, 1341016, 1353242, 1398410, 1419108, 1419257, 1419712, 1605264, 1621113, 1621114, 1621115, 1621116, 1621117, 1621118, 1707807, 1785177, 2494276, 2562269, 2605939, 2626217, 2627721, 2639686, 2658581, 2714668, 2714669, 2714670, 2714671, 2714672, 2714673, 2714674, 2714675, 2726995, 2726996, 2769327, 2769328, 2769329, 2793302, 2793303, 2841919, 2841920, 2841921, 2841922, 2841923, 2813598, 2813599, 2879911])
 
 @pytest.fixture()
 def wait(mocker):
@@ -172,13 +173,11 @@ def test_get_user_taxids_errors():
 def test_get_species_taxids(wait):
     """Test translating higher level taxids into species level ones"""
     species_taxids = taxonomy.get_species_taxids(input_taxids)
-    list_difference = list(expected_taxids - set(species_taxids))
-    error_message = f"The taxonomy IDs returned has changed: actual {len(species_taxids)}, expected {len(expected_taxids)}"
-    error_message += f"List difference: {list_difference}"
-    assert sorted(species_taxids) == sorted(expected_taxids), error_message
+    for taxid in expected_taxids:
+        assert taxid in species_taxids, f'Expected taxid {taxid} not among returned species taxids'
 
 
-def test_setup_taxid_filtering_taxids(wait, cfg):
+def test_setup_taxid_filtering_taxids(wait, cfg, gke_mock):
     """Test preparing taxidlist file and blast options for taxid filtering
     -taxids option"""
     # set up blast command line options
@@ -191,14 +190,18 @@ def test_setup_taxid_filtering_taxids(wait, cfg):
     matches = re.findall(r'-taxidlist\s+(\S+)', cfg.blast.options)
     assert len(matches) == 1
     assert matches[0] == ELB_TAXIDLIST_FILE
-    key = '/'.join([cfg.cluster.results, ELB_QUERY_BATCH_DIR])
-    filename = '/'.join([filehelper.bucket_temp_dirs[key], matches[0]])
-    with open(filename) as f:
-        taxids = [int(i.rstrip()) for i in f.readlines()]
-    assert taxids == sorted(expected_taxids)
+
+    s3 = boto3.resource('s3')
+    obj = s3.Object(cfg.cluster.results[5:], f'{ELB_QUERY_BATCH_DIR}/{ELB_TAXIDLIST_FILE}')
+    with io.BytesIO() as f:
+        obj.download_fileobj(f)
+        f.seek(0)
+        taxids = [int(i.rstrip()) for i in f.read().decode().split()]
+    for taxid in expected_taxids:
+        assert taxid in taxids, f'Expected taxid {taxid} not found in returned species taxids'
 
 
-def test_setup_taxid_filtering_negative_taxids(wait, cfg):
+def test_setup_taxid_filtering_negative_taxids(wait, cfg, gke_mock):
     """Test preparing taxidlist file and blast options for taxid filtering
     -negative_taxids option"""
     # set up blast command line options
@@ -211,14 +214,17 @@ def test_setup_taxid_filtering_negative_taxids(wait, cfg):
     matches = re.findall(r'-negative_taxidlist\s+(\S+)', cfg.blast.options)
     assert len(matches) == 1
     assert matches[0] == ELB_TAXIDLIST_FILE
-    key = '/'.join([cfg.cluster.results, ELB_QUERY_BATCH_DIR])
-    filename = '/'.join([filehelper.bucket_temp_dirs[key], matches[0]])
-    with open(filename) as f:
-        taxids = [int(i.rstrip()) for i in f.readlines()]
-    assert taxids == sorted(expected_taxids)
+    s3 = boto3.resource('s3')
+    obj = s3.Object(cfg.cluster.results[5:], f'{ELB_QUERY_BATCH_DIR}/{ELB_TAXIDLIST_FILE}')
+    with io.BytesIO() as f:
+        obj.download_fileobj(f)
+        f.seek(0)
+        taxids = [int(i.rstrip()) for i in f.read().decode().split()]
+    for taxid in expected_taxids:
+        assert taxid in taxids, f'Expected taxid {taxid} not found in returned species taxids'
 
 
-def test_setup_taxid_filtering_taxidlist(wait, cfg):
+def test_setup_taxid_filtering_taxidlist(wait, cfg, gke_mock):
     """Test preparing taxidlist file and blast options for taxid filtering
     -taxidlist option"""
 
@@ -239,11 +245,14 @@ def test_setup_taxid_filtering_taxidlist(wait, cfg):
     matches = re.findall(r'-taxidlist\s+(\S+)', cfg.blast.options)
     assert len(matches) == 1
     assert matches[0] == ELB_TAXIDLIST_FILE
-    key = '/'.join([cfg.cluster.results, ELB_QUERY_BATCH_DIR])
-    filename = '/'.join([filehelper.bucket_temp_dirs[key], matches[0]])
-    with open(filename) as f:
-        taxids = [int(i.rstrip()) for i in f.readlines()]
-    assert taxids == sorted(expected_taxids)
+    s3 = boto3.resource('s3')
+    obj = s3.Object(cfg.cluster.results[5:], f'{ELB_QUERY_BATCH_DIR}/{ELB_TAXIDLIST_FILE}')
+    with io.BytesIO() as f:
+        obj.download_fileobj(f)
+        f.seek(0)
+        taxids = [int(i.rstrip()) for i in f.read().decode().split()]
+    for taxid in expected_taxids:
+        assert taxid in taxids, f'Expected taxid {taxid} not found in returned species taxids'
 
 
 def test_non_existent_taxid(wait, cfg):

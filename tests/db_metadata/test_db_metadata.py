@@ -35,13 +35,14 @@ from elastic_blast.base import DBSource
 from tests.utils import gke_mock, aws_credentials, DB_METADATA_PROT as DB_METADATA
 import pytest
 
+GCP_PRJ = "mocked-gcp-project"
 
 def test_get_db_metadata(gke_mock):
     """Test downloading and parsing BLAST database metadata"""
     REF_METADATA = json.loads(DB_METADATA)
 
     # for GCP
-    db = get_db_metadata('testdb', MolType.PROTEIN, DBSource.GCP)
+    db = get_db_metadata('testdb', MolType.PROTEIN, DBSource.GCP, gcp_prj=GCP_PRJ)
     assert db.dbtype == REF_METADATA['dbtype']
     assert db.bytes_to_cache == REF_METADATA['bytes-to-cache']
 
@@ -56,7 +57,7 @@ def test_get_db_metadata_user_db(gke_mock):
     REF_METADATA = json.loads(DB_METADATA)
 
     # for GCP
-    db = get_db_metadata('gs://test-bucket/testdb', MolType.PROTEIN, DBSource.GCP)
+    db = get_db_metadata('gs://test-bucket/testdb', MolType.PROTEIN, DBSource.GCP, gcp_prj=GCP_PRJ)
     assert db.dbtype == REF_METADATA['dbtype']
     assert db.bytes_to_cache == REF_METADATA['bytes-to-cache']
 
@@ -99,7 +100,7 @@ def test_get_db_metadata_version_12(gke_mock):
     REF_METADATA = json.loads(DB_METADATA_VERSION_12)
 
     # for GCP
-    db = get_db_metadata('testdb', MolType.NUCLEOTIDE, DBSource.GCP)
+    db = get_db_metadata('testdb', MolType.NUCLEOTIDE, DBSource.GCP, gcp_prj=GCP_PRJ)
     assert db.dbtype == REF_METADATA['dbtype']
     assert db.bytes_to_cache == REF_METADATA['bytes-to-cache']
     assert db.version == '1.2'
@@ -121,7 +122,7 @@ def test_get_db_metadata_user_db_version_12(gke_mock):
     REF_METADATA = json.loads(DB_METADATA_VERSION_12)
 
     # for GCP
-    db = get_db_metadata(f'gs://test-bucket/{DB_NAME}', MolType.NUCLEOTIDE, DBSource.GCP)
+    db = get_db_metadata(f'gs://test-bucket/{DB_NAME}', MolType.NUCLEOTIDE, DBSource.GCP, gcp_prj=GCP_PRJ)
     assert db.dbtype == REF_METADATA['dbtype']
     assert db.bytes_to_cache == REF_METADATA['bytes-to-cache']
     assert db.version == '1.2'
@@ -140,7 +141,7 @@ def test_missing_metadata_file(gke_mock):
         get_db_metadata('s3://some-bucket/non-existent-db', MolType.NUCLEOTIDE, DBSource.AWS)
 
     with pytest.raises(FileNotFoundError):
-        get_db_metadata('this-db-does-not-exist', MolType.PROTEIN, DBSource.GCP)
+        get_db_metadata('this-db-does-not-exist', MolType.PROTEIN, DBSource.GCP, gcp_prj=GCP_PRJ)
 
 
 # additional field at the end
@@ -178,7 +179,7 @@ def test_metadata_with_new_field(gke_mock):
     REF_METADATA = json.loads(DB_METADATA_NEW_FIELD)
     gke_mock.cloud.storage[f'{DB}-prot-metadata.json'] = DB_METADATA_NEW_FIELD
 
-    db = get_db_metadata(DB, MolType.PROTEIN, DBSource.GCP)
+    db = get_db_metadata(DB, MolType.PROTEIN, DBSource.GCP, gcp_prj=GCP_PRJ)
     assert db.dbtype == REF_METADATA['dbtype']
     assert db.bytes_to_cache == REF_METADATA['bytes-to-cache']
 
@@ -216,7 +217,7 @@ def test_missing_field(gke_mock):
     gke_mock.cloud.storage[f'{DB}-prot-metadata.json'] = DB_METADATA_MISSING_FIELD
 
     with pytest.raises(UserReportError) as err:
-        db = get_db_metadata(DB, MolType.PROTEIN, DBSource.GCP)
+        db = get_db_metadata(DB, MolType.PROTEIN, DBSource.GCP, gcp_prj=GCP_PRJ)
     assert err.value.returncode == BLASTDB_ERROR
     assert 'Missing field' in err.value.message
 
@@ -255,7 +256,7 @@ def test_spec_problem(gke_mock):
     gke_mock.cloud.storage[f'{DB}-prot-metadata.json'] = DB_METADATA_SPEC_PROBLEM
 
     with pytest.raises(UserReportError) as err:
-        db = get_db_metadata(DB, MolType.PROTEIN, DBSource.GCP)
+        db = get_db_metadata(DB, MolType.PROTEIN, DBSource.GCP, gcp_prj=GCP_PRJ)
     assert err.value.returncode == BLASTDB_ERROR
     assert 'Problem parsing BLAST database metadata file' in err.value.message
 
@@ -266,6 +267,6 @@ def test_malformed_json(gke_mock):
     gke_mock.cloud.storage[f'{DB}-prot-metadata.json'] = 'abc'
 
     with pytest.raises(UserReportError) as err:
-        db = get_db_metadata(DB, MolType.PROTEIN, DBSource.GCP)
+        db = get_db_metadata(DB, MolType.PROTEIN, DBSource.GCP, gcp_prj=GCP_PRJ)
     assert err.value.returncode == BLASTDB_ERROR
     assert 'is not a proper JSON file' in err.value.message

@@ -32,14 +32,15 @@ Implemented variants:
 Author: Victor Joukov joukovv@ncbi.nlm.nih.gov
 """
 
-import subprocess, os, io, gzip, tarfile, re, tempfile, shutil
+import subprocess, os, io, gzip, tarfile, re, tempfile, shutil, sys
 import logging
 import urllib.request
 from string import digits
 from random import sample
 from timeit import default_timer as timer
+from contextlib import contextmanager
 from tenacity import retry, stop_after_attempt, wait_exponential
-from typing import Dict, IO, Tuple, Iterable, Generator, TextIO, List
+from typing import Dict, IO, Tuple, Iterable, Generator, TextIO, List, Optional
 
 import boto3  # type: ignore
 from botocore.exceptions import ClientError  # type: ignore
@@ -234,14 +235,42 @@ def check_dir_for_write(dirname: str, dry_run=False) -> None:
         raise PermissionError()
 
 
+@contextmanager
 def open_for_write_immediate(fname):
-    " Open file on GCS filesystem for write in text mode. "
-    if not fname.startswith(ELB_GCS_PREFIX):
-        raise NotImplementedError("Immediate writing to cloud storage implemented only for GS")
-    proc = subprocess.Popen(['gsutil', 'cp', '-', fname],
-                            stdin=subprocess.PIPE, stderr=subprocess.DEVNULL,
-                            universal_newlines=True)
-    return proc.stdin
+    """ Open a file in a cloud bucket for write in text mode. """
+    if fname.startswith(ELB_GCS_PREFIX):
+        proc = subprocess.Popen(['gsutil', 'cp', '-', fname],
+                                stdin=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                                universal_newlines=True)
+        f = proc.stdin
+    elif fname.startswith(ELB_S3_PREFIX):
+        f = io.TextIOWrapper(buffer=io.BytesIO(), encoding='utf-8')
+        s3 = boto3.resource('s3')
+
+    else:
+        f = open(fname, 'w')
+
+    try:
+        yield f
+
+    except:
+        if fname.startswith(ELB_S3_PREFIX):
+            f.close()
+            raise
+    else:
+        if fname.startswith(ELB_S3_PREFIX):
+            f.flush()
+            buffer = f.detach()
+            buffer.seek(0)
+            bufsize = buffer.getbuffer().nbytes
+            logging.debug(f'Attempting to stream {bufsize} bytes to {fname}')
+
+            bucket, key = parse_bucket_name_key(fname)
+            obj = s3.Object(bucket, key)
+            obj.upload_fileobj(buffer)
+            buffer.close()
+            logging.debug(f'Uploaded {fname}')
+
 
 def open_for_write(fname):
     """ Open file on either local (no prefix), GCS, or AWS S3
@@ -249,7 +278,9 @@ def open_for_write(fname):
         copy_to_bucket is called.
     """
     global bucket_temp_dirs
-    if fname.startswith(ELB_GCS_PREFIX) or fname.startswith(ELB_S3_PREFIX):
+    if fname.startswith(ELB_S3_PREFIX):
+        return open_for_write_immediate(fname)
+    if fname.startswith(ELB_GCS_PREFIX):
         # for the same gs path open files in temp dir and put it into
         # bucket_temp_dirs dictionary, copy through to bucket in copy_to_bucket later
         last_slash = fname.rfind('/')
@@ -321,7 +352,7 @@ class TarMerge(io.TextIOWrapper):
 # are typing problems, which may indicate incompatibility between classes.
 # We need tests checking downstream logic for these different return types.
 # (EB-340)
-def unpack_stream(s:IO, gzipped:bool, tarred:bool) -> IO:
+def unpack_stream(s:Optional[IO], gzipped:bool, tarred:bool) -> IO:
     """ Helper function which inserts uncompressing/unarchiving
     transformers as needed depending on detected file type
     """
@@ -333,12 +364,17 @@ def unpack_stream(s:IO, gzipped:bool, tarred:bool) -> IO:
     return io.TextIOWrapper(gzip.GzipFile(fileobj=s)) if gzipped else s   #type: ignore
 
 
-def check_for_read(fname: str, dry_run : bool = False, print_file_size: bool = False) -> None:
+def check_for_read(fname: str, dry_run : bool = False, print_file_size: bool = False,
+                   gcp_prj: Optional[str] = None) -> None:
     """ Check that path on local, GS, AWS S3 or URL-available filesystem can be read from.
     raises FileNotFoundError if there is no such file
     """
+    if is_stdin(fname):
+        return
     if fname.startswith(ELB_GCS_PREFIX):
-        cmd = f'gsutil stat {fname}' if print_file_size else f'gsutil -q stat {fname}'
+        if not gcp_prj:
+            raise ValueError(f'elastic_blast.filehelper.check_for_read is missing the gcp_prj parameter')
+        cmd = f'gsutil -u {gcp_prj} stat {fname}' if print_file_size else f'gsutil -u {gcp_prj} -q stat {fname}'
         if dry_run:
             logging.info(cmd)
             return
@@ -389,12 +425,14 @@ def check_for_read(fname: str, dry_run : bool = False, print_file_size: bool = F
     open(fname, 'r')
 
 
-def get_length(fname: str, dry_run=False) -> int:
+def get_length(fname: str, dry_run: bool = False, gcp_prj: Optional[str] = None) -> int:
     """ Get length of a path on local, GS, AWS S3, or URL-available filesystem.
     raises FileNotFoundError if there is no such file
     """
     if fname.startswith(ELB_GCS_PREFIX):
-        cmd = f'gsutil stat {fname}'
+        if not gcp_prj:
+            raise ValueError(f'elastic_blast.filehelper.get_length is missing the gcp_prj parameter')
+        cmd = f'gsutil -u {gcp_prj} stat {fname}'
         if dry_run:
             logging.info(cmd)
             return 10000  # Arbitrary fake length
@@ -433,22 +471,25 @@ def get_length(fname: str, dry_run=False) -> int:
 
 error_report_funcs = {}
 
-def open_for_read(fname):
-    """ Open path for read on local, GS, or URL-available filesystem defined by prefix.
-    File can be gzipped, and archived with tar.
+def open_for_read(fname: str, gcp_prj: Optional[str] = None):
+    """ Open path for read on local, GS, URL-available filesystem defined by prefix,
+    or stdin. File can be gzipped, and archived with tar.
     """
     global error_report_funcs
     gzipped = fname[-3:] == ".gz"
-    tarred = re.match(r'^.*\.(tar(|\.gz|\.bz2)|tgz)$', fname)
+    tarred = re.match(r'^.*\.(tar(|\.gz|\.bz2)|tgz)$', fname) is not None
     binary = gzipped or tarred
     mode = 'rb' if binary else 'rt'
     if fname.startswith(ELB_GCS_PREFIX):
-        proc = subprocess.Popen(['gsutil', 'cat', fname],
+        if not gcp_prj:
+            raise ValueError(f'elastic_blast.filehelper.open_for_read is missing the gcp_prj parameter')
+        proc = subprocess.Popen(['gsutil', '-u', gcp_prj, 'cat', fname],
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             universal_newlines=not binary)
         fileobj = unpack_stream(proc.stdout, gzipped, tarred)
-        error_report_funcs[fileobj] = proc.stderr.read
+        if proc.stderr:
+            error_report_funcs[fileobj] = proc.stderr.read
         return fileobj
     if fname.startswith('s3'):
         s3 = boto3.client('s3')
@@ -467,12 +508,15 @@ def open_for_read(fname):
     if fname.startswith(ELB_HTTP_PREFIX) or fname.startswith(ELB_FTP_PREFIX):
         response = urllib.request.urlopen(fname)
         return unpack_stream(response, gzipped, tarred)
-    # regular file
-    f = open(fname, mode)
+    # regular file or stdin
+    if is_stdin(fname):
+        f : IO = sys.stdin
+    else:
+        f = open(fname, mode)
     return unpack_stream(f, gzipped, tarred)
 
 
-def open_for_read_iter(fnames: Iterable[str]) -> Generator[TextIO, None, None]:
+def open_for_read_iter(fnames: Iterable[str], gcp_prj: Optional[str] = None) -> Generator[TextIO, None, None]:
     """Generator function that Iterates over paths/uris and open them for
     reading.
 
@@ -482,7 +526,7 @@ def open_for_read_iter(fnames: Iterable[str]) -> Generator[TextIO, None, None]:
     Returns:
         Generator of files open for reading"""
     for fname in fnames:
-        with open_for_read(fname) as f:
+        with open_for_read(fname, gcp_prj) as f:
             yield f
 
 
@@ -520,3 +564,7 @@ def _is_local_file(filename: str) -> bool:
         return False
     return True
 
+
+def is_stdin(fname: str) -> bool:
+    """Check if a filename represents stdin"""
+    return fname == 'stdin' or fname == '-'

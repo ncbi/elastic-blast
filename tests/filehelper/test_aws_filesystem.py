@@ -28,6 +28,7 @@ import pytest
 import os
 import subprocess
 import boto3
+import botocore.errorfactory
 from elastic_blast import filehelper
 from elastic_blast.object_storage_utils import write_to_s3, delete_from_s3
 from tempfile import mktemp, NamedTemporaryFile
@@ -113,7 +114,10 @@ def test_check_aws_for_write_success():
 @pytest.mark.skipif(os.getenv('TEAMCITY_VERSION') is not None, reason='AWS credentials not set in TC')
 def test_check_aws_for_write_failure():
     tn = os.path.join(WRONG_BUCKET, mktemp(prefix='', dir=''))
-    with filehelper.open_for_write(tn) as f:
-        f.write('Test')
-    with pytest.raises(boto3.exceptions.S3UploadFailedError):
-        filehelper.copy_to_bucket()
+    try:
+        with filehelper.open_for_write(tn) as f:
+            f.write('Test')
+    except:
+        assert(True)
+    else:
+        assert(False)

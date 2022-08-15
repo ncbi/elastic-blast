@@ -160,6 +160,8 @@ def gke_mock(mocker):
 
     mock = GKEMock()
 
+    mock.cloud.conf['project'] = GCP_PROJECT
+
     mock.cloud.storage['gs://test-bucket/test-query.fa'] = '>query\nACTGGAGATGAC'
     mock.cloud.storage['gs://test-results'] = ''
     mock.cloud.storage[f'gs://{NOT_WRITABLE_BUCKET}'] = ''
@@ -234,6 +236,9 @@ class CloudResources:
     # dictionary of cloud storage objects, where key is object keya and value is
     # object content, any object is readable and writable
     storage: Dict[str, str] = field(default_factory=dict)
+
+    # gcloud config
+    conf: Dict[str, str] = field(default_factory=dict)
 
 
 def mocked_safe_exec(cmd: Union[List[str], str], cloud_state: CloudResources = None) -> MockedCompletedProcess:
@@ -379,8 +384,7 @@ def mocked_safe_exec(cmd: Union[List[str], str], cloud_state: CloudResources = N
         return MockedCompletedProcess()
 
     # Check whether a file exists in GCS
-    elif ' '.join(cmd).startswith('gsutil -q stat') or \
-         ' '.join(cmd).startswith('gsutil stat'):
+    elif ' '.join(cmd).startswith('gsutil') and 'stat' in cmd:
         if cloud_state:
             if cmd[-1] in cloud_state.storage:
                 return MockedCompletedProcess()
@@ -390,7 +394,7 @@ def mocked_safe_exec(cmd: Union[List[str], str], cloud_state: CloudResources = N
             return MockedCompletedProcess(stdout='',stderr='',returncode=0)
 
     # Check whether a file exists in GCS
-    elif ' '.join(cmd).startswith('gsutil -q cat') or ' '.join(cmd).startswith('gsutil cat'):
+    elif ' '.join(cmd).startswith('gsutil') and 'cat' in cmd:
         cmd = ' '.join(cmd)
         # simulate reading NCBI database manifest
         if cmd.endswith('latest-dir'):
@@ -402,15 +406,11 @@ def mocked_safe_exec(cmd: Union[List[str], str], cloud_state: CloudResources = N
             return MockedCompletedProcess(stdout='',stderr='',returncode=0)
 
     # copy files to GCS
-    elif ' '.join(cmd).startswith('gsutil -qm cp') or ' '.join(cmd).startswith('gsutil -mq cp'):
+    elif ' '.join(cmd).startswith('gsutil') and  'cp' in cmd:
         return MockedCompletedProcess()
 
     # remove a file from GCS
-    elif ' '.join(cmd).startswith('gsutil -q rm'):
-        return MockedCompletedProcess(stdout='',stderr='',returncode=0)
-
-    # Check whether a file is being removed from GCS
-    elif ' '.join(cmd).startswith('gsutil -mq rm'):
+    elif ' '.join(cmd).startswith('gsutil') and 'rm' in cmd:
         return MockedCompletedProcess(stdout='',stderr='',returncode=0)
 
     elif ' '.join(cmd).startswith('kubectl config current-context'):
@@ -484,6 +484,12 @@ class GKEMock:
         if cmd.startswith('gcloud compute disks delete'):
            self.disk_delete_called = True
 
+        if cmd.startswith('gcloud config get-value project'):
+            print(self.cloud.conf)
+            if 'project' in self.cloud.conf and self.cloud.conf['project']:
+                return MockedCompletedProcess(self.cloud.conf['project'])
+            return MockedCompletedProcess('(unset)')
+
         return mocked_safe_exec(cmd, self.cloud)
 
 
@@ -491,13 +497,13 @@ class GKEMock:
         """Mocked subprocess.Popen function, used to mock calls to gsutil used
             in elastic_blast.filehelper"""
         # open_for_read
-        if ' '.join(cmd).startswith('gsutil cat'):
+        if ' '.join(cmd).startswith('gsutil') and 'cat' in cmd:
             if cmd[-1] in self.cloud.storage:
                 return MockedCompletedProcess(stdout=self.cloud.storage[cmd[-1]], stderr='', subprocess_run_called=False)
             else:
                 return MockedCompletedProcess(returncode=1, stdout='', stderr=f'Object "{cmd[-1]}" does not exist', subprocess_run_called=False)
         # test dir for write
-        elif ' '.join(cmd).startswith('gsutil cp -'):
+        elif ' '.join(cmd).startswith('gsutil') and 'cp' in cmd and '-' in cmd:
             if '/'.join(cmd[-1].split('/')[:-1]) in self.cloud.storage:
                 if NOT_WRITABLE_BUCKET in cmd[-1]:
                     return MockedCompletedProcess(returncode=1, stderr=f'Mocked error: cannot write to bucker {cmd[-1]}')
@@ -531,6 +537,29 @@ class GKEMock:
         else:
             raise NotImplementedError(f'boto3 mock for {client} client is not implemented')
 
+
+@pytest.fixture()
+def gcp_env_vars():
+    env = { 'CLOUDSDK_CORE_PROJECT': 'ncbi-sandbox-blast' }
+    orig_env = {}
+
+    if 'TEAMCITY_VERSION' in os.environ:
+        for var_name in env:
+            if var_name in os.environ:
+                orig_env[var_name] = os.environ[var_name]
+            os.environ[var_name] = str(env[var_name])
+
+        yield env
+
+        # cleanup
+        for var_name in env:
+            if var_name in orig_env:
+                os.environ[var_name] = orig_env[var_name]
+            else:
+                # os.unsetenv does not work on every system
+                del os.environ[var_name]
+    else:
+        yield orig_env
 
 @pytest.fixture
 def aws_credentials():
@@ -566,6 +595,14 @@ class MockedS3Object:
         """Raise ClientError if the object is not in storage, otherwise do nothing"""
         if self.obj not in self.storage:
             raise ClientError(None, None)
+
+    def upload_fileobj(self, stream):
+        """Upload a file object to the cloud bucket"""
+        self.storage[self.obj] = stream.read()
+
+    def download_fileobj(self, stream):
+        """Download a file object from the cloud bucket"""
+        stream.write(self.storage[self.obj])
 
 
 class MockedEC2ClientBase:

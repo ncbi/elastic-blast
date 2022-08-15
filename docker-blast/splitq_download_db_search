@@ -249,15 +249,15 @@ def _download_database(args, is_user, db_done):
     verbose = ' --verbose --verbose --verbose --verbose --verbose --verbose' if args.verbose else ''
     creds = ' --no-sign-request' if args.no_creds else ''
     nprocs_to_download_db = min(MAX_PROCS_TO_DOWNLOAD_DB, int(os.cpu_count()/args.num_threads))
+    p = safe_exec(f"time update_blastdb.pl taxdb --decompress --source ncbi {verbose} --num_threads {nprocs_to_download_db}")
+    print(p.stdout.decode(), end='')
+    print(p.stderr.decode(), end='')
     if is_user:
-        p = safe_exec(f"time update_blastdb.pl taxdb --source {args.source}{verbose} --num_threads {nprocs_to_download_db}")
-        print(p.stdout.decode(), end='')
-        print(p.stderr.decode(), end='')
         p = safe_exec(f"time aws s3 cp --only-show-errors{creds} {os.path.join(args.db_path,'')} . --recursive --exclude * --include {args.db}.* --include taxdb.*")
         print(p.stdout.decode(), end='')
         print(p.stderr.decode(), end='')
     else:
-        p = safe_exec(f"time update_blastdb.pl {args.db} --source {args.source}{verbose} --num_threads {nprocs_to_download_db}")
+        p = safe_exec(f"time update_blastdb.pl {args.db} --decompress --source {args.source}{verbose} --num_threads {nprocs_to_download_db}")
         print(p.stdout.decode(), end='')
         print(p.stderr.decode(), end='')
     print('End database download')

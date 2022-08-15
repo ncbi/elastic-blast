@@ -52,6 +52,7 @@ RUN apt-get -y -m update && \
 
 RUN mkdir -p /blast/bin /blast/lib
 COPY --from=blast /blast/bin /blast/bin
+COPY update_blastdb.pl /blast/bin
 COPY --from=blast /blast/lib /blast/lib
 COPY --from=blast /root/edirect /root/edirect
 COPY splitq_download_db_search /blast/bin/
