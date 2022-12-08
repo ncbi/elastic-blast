@@ -51,7 +51,7 @@ Parameters:
   DiskType:
     Description: EBS volume disk type attached to instance
     Type: String
-    Default: gp2
+    Default: gp3
 
   ProvisionedIops:
     Description: Provisioned IOPS for EBS volume
@@ -796,7 +796,7 @@ Resources:
     Type: AWS::IAM::Role
     Condition: CreateEcsInstanceRole
     Properties:
-      RoleName: !Join [-, ['elasticblast-ecs-instance-role', !Ref Owner, !Ref RandomToken]]
+      RoleName: !Join [-, [elasticblast-e, !Ref Owner, !Ref RandomToken]]
       Description: Role for ECS instances, created by elastic-blast
       AssumeRolePolicyDocument:
         Version: 2012-10-17
@@ -821,7 +821,7 @@ Resources:
     Type: AWS::IAM::Role
     Condition: CreateBatchServiceRole
     Properties:
-      RoleName: !Join [-, ['elasticblast-batch-service-role', !Ref Owner, !Ref RandomToken]]
+      RoleName: !Join [-, [elasticblast-b, !Ref Owner, !Ref RandomToken]]
       Description: Role for AWS Batch service, created by elastic-blast
       Path: /service-role/
       AssumeRolePolicyDocument:
@@ -847,7 +847,7 @@ Resources:
     Type: AWS::IAM::Role
     Condition: CreateJobRole
     Properties:
-      RoleName: !Join [-, ['elasticblast-job-role', !Ref Owner, !Ref RandomToken]]
+      RoleName: !Join [-, [elasticblast-j, !Ref Owner, !Ref RandomToken]]
       Description: Role allowing elastic-blast jobs S3 access
       AssumeRolePolicyDocument:
         Version: 2012-10-17
@@ -876,7 +876,7 @@ Resources:
     Type: AWS::IAM::Role
     Condition: CreateSpotFleetRole
     Properties:
-      RoleName: !Join [-, ['elasticblast-spot-fleet-role', !Ref Owner, !Ref RandomToken]]
+      RoleName: !Join [-, [elasticblast-s, !Ref Owner, !Ref RandomToken]]
       Description: Role for AWS Batch Spot Fleet, created by elastic-blast
       Path: /service-role/
       AssumeRolePolicyDocument:

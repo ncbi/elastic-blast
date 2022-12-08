@@ -28,6 +28,8 @@ Author: Victor Joukov joukovv@ncbi.nlm.nih.gov
 
 import os
 import io
+import logging
+from timeit import default_timer as timer
 from .filehelper import open_for_write, get_error
 from typing import Union, List, Iterable, TextIO, Tuple
 from .constants import ELB_QUERY_BATCH_FILE_PREFIX
@@ -102,6 +104,7 @@ class FASTAReader():
         Return the total number
         of bases/residues in the input and list of query files written
         """
+        start = timer()
         nline = 0
         for f in self.file:
             for line in f:
@@ -116,6 +119,8 @@ class FASTAReader():
                 self.seq_buffer.append('\n')
         self.process_new_sequence()
         self.process_chunk()
+        end = timer()
+        logging.debug(f'Splitting: {end - start:.2f} seconds')
         if not nline:
             error = get_error(f)
             if error:

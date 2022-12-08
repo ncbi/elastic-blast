@@ -55,6 +55,7 @@ DB_METADATA = DbMetadata(version = '1',
 
 class TestResourceQuotasAws(unittest.TestCase):
 
+    @patch(target='elastic_blast.elb_config.enable_gcp_api', new=MagicMock())
     def setUp(self):
         """ Initialize 2 configurations: one for GCP another for AWS """
         cfg_gcp = configparser.ConfigParser()

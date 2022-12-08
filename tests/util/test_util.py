@@ -155,6 +155,7 @@ def test_get_blastdb_size_invalid_database(gcp_env_vars):
 
 
 @patch(target='elastic_blast.elb_config.get_db_metadata', new=MagicMock(return_value=DB_METADATA))
+@patch(target='elastic_blast.elb_config.enable_gcp_api', new=MagicMock())
 def create_config_for_db(dbname):
     """Create minimal config for a database name"""
     return ElasticBlastConfig(gcp_project = 'test-gcp-project',

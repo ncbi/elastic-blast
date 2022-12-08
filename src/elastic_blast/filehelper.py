@@ -45,6 +45,7 @@ from typing import Dict, IO, Tuple, Iterable, Generator, TextIO, List, Optional
 import boto3  # type: ignore
 from botocore.exceptions import ClientError  # type: ignore
 from botocore.config import Config  # type: ignore
+from boto3.s3.transfer import TransferConfig # type: ignore
 from .base import QuerySplittingResults
 from .util import safe_exec, SafeExecError
 from .constants import ELB_GCP_BATCH_LIST, ELB_METADATA_DIR, ELB_QUERY_LENGTH, ELB_QUERY_BATCH_DIR
@@ -52,7 +53,7 @@ from .constants import ELB_S3_PREFIX, ELB_GCS_PREFIX, ELB_FTP_PREFIX, ELB_HTTP_P
 from .constants import ELB_QUERY_BATCH_FILE_PREFIX
 
 
-def harvest_query_splitting_results(bucket_name: str, dry_run: bool = False, boto_cfg: Config = None) -> QuerySplittingResults:
+def harvest_query_splitting_results(bucket_name: str, dry_run: bool = False, boto_cfg: Config = None, gcp_project: Optional[str] = None) -> QuerySplittingResults:
     """ Retrieves the results for query splitting from bucket, used in 2-stage cloud
     query splitting """
     qlen = 0
@@ -75,10 +76,10 @@ def harvest_query_splitting_results(bucket_name: str, dry_run: bool = False, bot
             query_batches.append(os.path.join(ELB_S3_PREFIX, s3_bucket.name, obj.key))
     elif bucket_name.startswith(ELB_GCS_PREFIX):
         qlen_file = os.path.join(bucket_name, ELB_METADATA_DIR, ELB_QUERY_LENGTH)
-        with open_for_read(qlen_file) as ql:
+        with open_for_read(qlen_file, gcp_project) as ql:
             qlen = int(ql.read())
         qbatch_list_file = os.path.join(bucket_name, ELB_METADATA_DIR, ELB_GCP_BATCH_LIST)
-        with open_for_read(qbatch_list_file) as qlist:
+        with open_for_read(qbatch_list_file, gcp_project) as qlist:
             for line in qlist:
                 query_batches.append(line.strip())
     else:
@@ -246,6 +247,7 @@ def open_for_write_immediate(fname):
     elif fname.startswith(ELB_S3_PREFIX):
         f = io.TextIOWrapper(buffer=io.BytesIO(), encoding='utf-8')
         s3 = boto3.resource('s3')
+        trans_conf = TransferConfig(multipart_threshold=1024*25, max_concurrency=10, multipart_chunksize=1024*25, use_threads=True)
 
     else:
         f = open(fname, 'w')
@@ -265,11 +267,13 @@ def open_for_write_immediate(fname):
             bufsize = buffer.getbuffer().nbytes
             logging.debug(f'Attempting to stream {bufsize} bytes to {fname}')
 
+            start = timer()
             bucket, key = parse_bucket_name_key(fname)
             obj = s3.Object(bucket, key)
-            obj.upload_fileobj(buffer)
+            obj.upload_fileobj(buffer, Config=trans_conf)
             buffer.close()
-            logging.debug(f'Uploaded {fname}')
+            end = timer()
+            logging.debug(f'Uploaded {fname} in {end - start:.2f} seconds')
 
 
 def open_for_write(fname):
@@ -372,9 +376,8 @@ def check_for_read(fname: str, dry_run : bool = False, print_file_size: bool = F
     if is_stdin(fname):
         return
     if fname.startswith(ELB_GCS_PREFIX):
-        if not gcp_prj:
-            raise ValueError(f'elastic_blast.filehelper.check_for_read is missing the gcp_prj parameter')
-        cmd = f'gsutil -u {gcp_prj} stat {fname}' if print_file_size else f'gsutil -u {gcp_prj} -q stat {fname}'
+        prj = f'-u {gcp_prj}' if gcp_prj else ''
+        cmd = f'gsutil {prj} stat {fname}' if print_file_size else f'gsutil {prj} -q stat {fname}'
         if dry_run:
             logging.info(cmd)
             return
@@ -430,9 +433,8 @@ def get_length(fname: str, dry_run: bool = False, gcp_prj: Optional[str] = None)
     raises FileNotFoundError if there is no such file
     """
     if fname.startswith(ELB_GCS_PREFIX):
-        if not gcp_prj:
-            raise ValueError(f'elastic_blast.filehelper.get_length is missing the gcp_prj parameter')
-        cmd = f'gsutil -u {gcp_prj} stat {fname}'
+        prj = f'-u {gcp_prj}' if gcp_prj else ''
+        cmd = f'gsutil {prj} stat {fname}'
         if dry_run:
             logging.info(cmd)
             return 10000  # Arbitrary fake length
@@ -481,9 +483,9 @@ def open_for_read(fname: str, gcp_prj: Optional[str] = None):
     binary = gzipped or tarred
     mode = 'rb' if binary else 'rt'
     if fname.startswith(ELB_GCS_PREFIX):
-        if not gcp_prj:
-            raise ValueError(f'elastic_blast.filehelper.open_for_read is missing the gcp_prj parameter')
-        proc = subprocess.Popen(['gsutil', '-u', gcp_prj, 'cat', fname],
+        prj = f'-u {gcp_prj}' if gcp_prj else ''
+        cmd = f'gsutil {prj} cat {fname}'
+        proc = subprocess.Popen(cmd.split(),
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             universal_newlines=not binary)

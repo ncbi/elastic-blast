@@ -109,7 +109,7 @@ def get_instance_type_offerings(region: str) -> List[str]:
 
 def get_suitable_instance_types(min_memory: MemoryStr,
                                 min_cpus: PositiveInteger,
-                                instance_types: List[str] = None) -> List[Any]:
+                                instance_types: Optional[List[str]] = None) -> List[Any]:
     """Get a list of instance type descriptions with at least min_memory and
     number of CPUs
 

@@ -48,7 +48,8 @@ from .constants import K8S_MAX_JOBS_PER_DIR, ELB_STATE_DISK_ID_FILE, ELB_QUERY_B
 from .constants import ELB_CJS_DOCKER_IMAGE_GCP
 from .constants import ElbExecutionMode, ELB_JANITOR_SCHEDULE
 from .constants import ELB_DFLT_JANITOR_SCHEDULE_GCP, PERMISSIONS_ERROR, DEPENDENCY_ERROR
-from .filehelper import upload_file_to_gcs
+from .constants import CLUSTER_ERROR
+from .filehelper import open_for_write_immediate
 from .elb_config import ElasticBlastConfig
 
 
@@ -112,7 +113,7 @@ def get_persistent_disks(k8s_ctx: str, dry_run: bool = False) -> List[str]:
         p = safe_exec(cmd)
         if p.stdout:
             pds = json.loads(p.stdout.decode())
-            return [i['spec']['gcePersistentDisk']['pdName'] for i in pds['items']]
+            return [i['spec']['csi']['volumeHandle'].split('/')[-1] for i in pds['items']]
     return list()
 
 
@@ -179,7 +180,8 @@ def delete_all(k8s_ctx: str, dry_run: bool = False) -> List[str]:
     commands1 = [f'kubectl --context={k8s_ctx} delete jobs --ignore-not-found=true -l app=setup',
                 f'kubectl --context={k8s_ctx} delete jobs --ignore-not-found=true -l app=blast']
     commands2 = [f'kubectl --context={k8s_ctx} delete pvc --all --force=true',
-                f'kubectl --context={k8s_ctx} delete pv --all --force=true']
+                 f'kubectl --context={k8s_ctx} delete pv --all --force=true',
+                 f'kubectl --context={k8s_ctx} delete volumesnapshots --all --ignore-not-found=true --force=true']
 
     def run_commands(commands: List[str], dry_run: bool) -> List[str]:
         """ Run the commands in the argument list and return the names of the relevant k8s objects.
@@ -244,6 +246,19 @@ def delete_all(k8s_ctx: str, dry_run: bool = False) -> List[str]:
     inspect_storage_objects_for_debugging(k8s_ctx, dry_run)
     deleted2 = run_commands(commands2, dry_run)
     return deleted1 + deleted2
+
+
+def delete_volume_snapshots(k8s_ctx: str, dry_run: bool = False):
+    """Delete all volume snapshots associated with the kubernetes cluster"""
+    # We are not using --force=true here to do a graceful deletion. Volume
+    # snapshot does not need to wait for any pod or job to be deleted and it
+    # is fine if deletion takes some time. --ignore-not-found defaults to true
+    # if --all is used.
+    cmd = f'kubectl --context={k8s_ctx} delete volumesnapshot --all'
+    if dry_run:
+        logging.info(cmd)
+        return
+    safe_exec(cmd)
 
 
 def get_jobs(k8s_ctx: str, selector: Optional[str] = None, dry_run: bool = False) -> List[str]:
@@ -344,6 +359,94 @@ def _ensure_successful_job(k8s_ctx: str, k8s_job_file: pathlib.Path, dry_run: bo
         raise RuntimeError(f'{k8s_job_file} failed: {p.stderr.decode()}')
 
 
+def _snapshot_ready(k8s_ctx: str, k8s_spec_file: pathlib.Path, dry_run: bool = False) -> bool:
+    """Check whether persistent volume snapshot is ready
+    Parameters:
+        k8s_ctx: Kubernetes context
+        k8s_spec_file: Kubernetex spec file for the volume snapshot
+        dry_run: Dry run if true
+
+    Returns:
+        True if the snapshot is ready"""
+    if not k8s_spec_file.exists():
+        raise FileNotFoundError(str(k8s_spec_file))
+
+    cmd = f'kubectl --context={k8s_ctx} get -f {k8s_spec_file} -o json'
+
+    if dry_run:
+        logging.info(cmd)
+        return True
+
+    p = safe_exec(cmd)
+    if not p.stdout:
+        return False
+
+    json_output = json.loads(p.stdout.decode())
+    if 'status' not in json_output or 'readyToUse' not in json_output['status']:
+        return False
+
+    if not isinstance(json_output['status']['readyToUse'], bool):
+        raise UserReportError(returncode=CLUSTER_ERROR, message='Unexpected response when checking PVC snapshot readiness')
+
+    return json_output['status']['readyToUse']
+
+
+def _wait_for_snapshot(k8s_ctx: str, spec_file: pathlib.Path, attempts: int = 30, secs2wait: int = 20, dry_run: bool = False) -> None:
+    """Wait for the PVC snapshot to be ready or raise a TimeoutError after
+    specified number of attempts.
+    Parameters:
+        k8s_ctx: Kubernetes context
+        k8s_spec_file: Kubernetex spec file for the volume snapshot
+        attempts: Numnber of attempts
+        secs2wait: Time between attempts
+        dry_run: Dry run if true"""
+    for counter in range(attempts):
+        if _snapshot_ready(k8s_ctx, spec_file, dry_run):
+            break
+        time.sleep(secs2wait)
+    else:
+        raise TimeoutError(f'{spec_file} timed out')
+
+
+def _pvc_bound(k8s_ctx: str, pvc_name: str, dry_run: bool = False) -> bool:
+    """Check whether a persistent volume claim is bound to a kubernetes node
+    Parameters:
+        k8s_ctx: Kubernetes context
+        pvc_name: PVC name
+        dry_run: Dry run if true
+
+    Returns:
+        True if the snapshot is ready"""
+
+    cmd = f'kubectl --context={k8s_ctx} get pvc {pvc_name} -o json'
+
+    if dry_run:
+        logging.info(cmd)
+        return True
+
+    p = safe_exec(cmd)
+    if not p.stdout:
+        return False
+
+    json_output = json.loads(p.stdout.decode())
+    if 'status' not in json_output or 'phase' not in json_output['status']:
+        return False
+
+    logging.debug(f"PVC {pvc_name} status: {json_output['status']['phase']}")
+    return json_output['status']['phase'] == 'Bound'
+
+
+def wait_for_pvc(k8s_ctx: str, pvc_name: str, attempts: int = 30, secs2wait: int = 20, dry_run: bool = False) -> None:
+    """Wait for the persistent volume claim to be bound to an instance. A bound
+    PVC means that a persistent disk has been created."""
+    for counter in range(attempts):
+        if _pvc_bound(k8s_ctx, pvc_name, dry_run):
+            break
+        time.sleep(secs2wait)
+    else:
+        raise TimeoutError(f'Waiting for PVC {pvc_name} timed out')
+
+
 def initialize_storage(cfg: ElasticBlastConfig, query_files: List[str] = [], wait=ElbExecutionMode.WAIT) -> None:
     """ Initialize storage for ElasticBLAST cluster """
     use_local_ssd = cfg.cluster.use_local_ssd
@@ -351,12 +454,11 @@ def initialize_storage(cfg: ElasticBlastConfig, query_files: List[str] = [], wai
         initialize_local_ssd(cfg, query_files, wait)
     else:
         initialize_persistent_disk(cfg, query_files, wait)
-        label_persistent_disk(cfg)
 
 
 def initialize_local_ssd(cfg: ElasticBlastConfig, query_files: List[str] = [], wait=ElbExecutionMode.WAIT) -> None:
     """ Initialize local SSDs for ElasticBLAST cluster """
-    db, db_path, _ = get_blastdb_info(cfg.blast.db, cfg.gcp.project)
+    db, db_path, _ = get_blastdb_info(cfg.blast.db, cfg.gcp.get_project_for_gcs_downloads())
     if not db:
         raise ValueError("Config parameter 'db' can't be empty")
     dry_run = cfg.cluster.dry_run
@@ -395,9 +497,11 @@ def initialize_local_ssd(cfg: ElasticBlastConfig, query_files: List[str] = [], w
     program = cfg.blast.program
     job_init_template = 'job-init-local-ssd.yaml.template'
     taxdb_path = ''
+    gcp_project = cfg.gcp.get_project_for_gcs_downloads()
+    prj = f'--gcp-project ${gcp_project}' if gcp_project else ''
     if db_path:
         # Custom database
-        taxdb_path = gcp_get_blastdb_latest_path(cfg.gcp.project) + '/taxdb.*'
+        taxdb_path = gcp_get_blastdb_latest_path(cfg.gcp.get_project_for_gcs_downloads()) + '/taxdb.*'
     subs = {
         'ELB_DB': db,
         'ELB_DB_PATH': db_path,
@@ -412,7 +516,8 @@ def initialize_local_ssd(cfg: ElasticBlastConfig, query_files: List[str] = [], w
         'K8S_JOB_SUBMIT_JOBS' : K8S_JOB_SUBMIT_JOBS,
         'K8S_JOB_BLAST' : K8S_JOB_BLAST,
         'K8S_JOB_RESULTS_EXPORT' : K8S_JOB_RESULTS_EXPORT,
-        'TIMEOUT': str(init_blastdb_minutes_timeout*60)
+        'TIMEOUT': str(init_blastdb_minutes_timeout*60),
+        'GCP_PROJECT_OPT' : prj
     }
     logging.debug(f"Initializing local SSD: {ELB_DOCKER_IMAGE_GCP}")
     with TemporaryDirectory() as d:
@@ -484,7 +589,8 @@ def initialize_persistent_disk(cfg: ElasticBlastConfig, query_files: List[str] =
     """
 
     # ${LOGDATETIME} setup_pd start >>${ELB_LOGFILE}
-    db, db_path, _ = get_blastdb_info(cfg.blast.db, cfg.gcp.project)
+    db, db_path, _ = get_blastdb_info(cfg.blast.db,
+                                      cfg.gcp.get_project_for_gcs_downloads())
     if not db:
         raise ValueError("Config parameter 'db' can't be empty")
     cluster_name = cfg.cluster.name
@@ -494,7 +600,7 @@ def initialize_persistent_disk(cfg: ElasticBlastConfig, query_files: List[str] =
     taxdb_path = ''
     if db_path:
         # Custom database
-        taxdb_path = gcp_get_blastdb_latest_path(cfg.gcp.project) + '/taxdb.*'
+        taxdb_path = gcp_get_blastdb_latest_path(cfg.gcp.get_project_for_gcs_downloads()) + '/taxdb.*'
 
     results_bucket = cfg.cluster.results
     dry_run = cfg.cluster.dry_run
@@ -523,6 +629,8 @@ def initialize_persistent_disk(cfg: ElasticBlastConfig, query_files: List[str] =
         raise RuntimeError(f'kubernetes context is missing for "{cluster_name}"')
 
     init_blastdb_minutes_timeout = cfg.timeouts.init_pv
+    gcp_project = cfg.gcp.get_project_for_gcs_downloads()
+    prj = f'--gcp-project {gcp_project}' if gcp_project else ''
 
     subs = {
         # For cloud query split
@@ -545,7 +653,8 @@ def initialize_persistent_disk(cfg: ElasticBlastConfig, query_files: List[str] =
         # Container names
         'K8S_JOB_GET_BLASTDB' : K8S_JOB_GET_BLASTDB,
         'K8S_JOB_IMPORT_QUERY_BATCHES' : K8S_JOB_IMPORT_QUERY_BATCHES,
-        'TIMEOUT': str(init_blastdb_minutes_timeout*60)
+        'TIMEOUT': str(init_blastdb_minutes_timeout*60),
+        'GCP_PROJECT_OPT' : prj
     }
 
     logging.debug(f"Initializing persistent volume: {ELB_DOCKER_IMAGE_GCP} {ELB_QS_DOCKER_IMAGE_GCP}")
@@ -558,9 +667,9 @@ def initialize_persistent_disk(cfg: ElasticBlastConfig, query_files: List[str] =
         else:
             safe_exec(cmd)
 
-        pvc_yaml = os.path.join(d, 'pvc.yaml')
+        pvc_yaml = os.path.join(d, 'pvc-rwo.yaml')
         with open(pvc_yaml, 'wt') as f:
-            f.write(substitute_params(resource_string('elastic_blast', 'templates/pvc.yaml.template').decode(), subs))
+            f.write(substitute_params(resource_string('elastic_blast', 'templates/pvc-rwo.yaml.template').decode(), subs))
         cmd = f"kubectl --context={k8s_ctx} apply -f {pvc_yaml}"
         if dry_run:
             logging.info(cmd)
@@ -578,30 +687,24 @@ def initialize_persistent_disk(cfg: ElasticBlastConfig, query_files: List[str] =
             safe_exec(cmd)
 
         # wait for the disk to be provisioned
-        time.sleep(5)
-
-        # save persistent disk id so that it can be deleted on clean up
+        try:
+            wait_for_pvc(k8s_ctx, 'blast-dbs-pvc-rwo', dry_run=dry_run)
+        except TimeoutError:
+            logging.warning('Timed out waiting for PVC to bind')
         disks = get_persistent_disks(k8s_ctx, dry_run)
-        nretries = ELB_K8S_JOB_SUBMISSION_MAX_RETRIES
-        while nretries and not dry_run and not disks:
-            time.sleep(5)
-            disks = get_persistent_disks(k8s_ctx, dry_run)
-            nretries -= 1
         if disks:
             logging.debug(f'GCP disk IDs {disks}')
-            logging.debug(f'Disk id(s) got in {(ELB_K8S_JOB_SUBMISSION_MAX_RETRIES+1)-nretries} tries')
-            cfg.appstate.disk_id = disks[0]
-            disk_id_file = os.path.join(d, ELB_STATE_DISK_ID_FILE)
-            with open(disk_id_file, 'w') as f:
-                for d in disks:
-                    print(d, file=f)
+            cfg.appstate.disk_ids += disks
             dest = os.path.join(cfg.cluster.results, ELB_METADATA_DIR, ELB_STATE_DISK_ID_FILE)
-            upload_file_to_gcs(disk_id_file, dest, dry_run)
+            with open_for_write_immediate(dest) as f:
+                f.write(json.dumps(cfg.appstate.disk_ids))
         elif not dry_run:
             logging.error('Failed to get disk ID')
 
         if wait != ElbExecutionMode.WAIT:
             return
+
+        label_persistent_disk(cfg, 'blast-dbs-pvc-rwo')
 
         _wait_for_job(k8s_ctx, job_init_pv, init_blastdb_minutes_timeout,
                       dry_run=dry_run)
@@ -624,17 +727,61 @@ def initialize_persistent_disk(cfg: ElasticBlastConfig, query_files: List[str] =
             secs2sleep = int(os.getenv('ELB_PAUSE_AFTER_INIT_PV', str(ELB_PAUSE_AFTER_INIT_PV)))
             time.sleep(secs2sleep)
 
+        # PVC snapshot
+        logging.debug('Creating PVC snapshot')
+        start = timer()
+        snapshot_class = resource_filename('elastic_blast', 'templates/volume-snapshot-class.yaml')
+        cmd = f"kubectl --context={k8s_ctx} apply -f {snapshot_class}"
+        if dry_run:
+            logging.info(cmd)
+        else:
+            safe_exec(cmd)
 
-def label_persistent_disk(cfg: ElasticBlastConfig) -> None:
+        snapshot = resource_filename('elastic_blast', 'templates/volume-snapshot.yaml')
+        cmd = f"kubectl --context={k8s_ctx} apply -f {snapshot}"
+        if dry_run:
+            logging.info(cmd)
+        else:
+            safe_exec(cmd)
+
+        # wair until snapshot is ready
+        _wait_for_snapshot(k8s_ctx, pathlib.Path(snapshot), dry_run=dry_run)
+        end = timer()
+        logging.debug(f'PVC snapshot created and ready in {end - start:.2f} seconds')
+
+        # delete the persistent disk
+        logging.debug('Deleting writable persistent disk')
+        cmd = f'kubectl --context={k8s_ctx} delete -f {pvc_yaml}'
+        if dry_run:
+            logging.info(cmd)
+        else:
+            safe_exec(cmd)
+
+        # Create a new ReadOnlyMany PVC
+        logging.debug('Creating ReadOnlyMany PVC from snapshot')
+        cloned_pvc_yaml = os.path.join(d, 'pvc-rom.yaml')
+        with open(cloned_pvc_yaml, 'wt') as f:
+            f.write(substitute_params(resource_string('elastic_blast', 'templates/pvc-rom.yaml.template').decode(), subs))
+        cmd = f"kubectl --context={k8s_ctx} apply -f {cloned_pvc_yaml}"
+        if dry_run:
+            logging.info(cmd)
+        else:
+            safe_exec(cmd)
+
+
+def label_persistent_disk(cfg: ElasticBlastConfig, pv_claim: str) -> None:
+    """Label disk with given claim with standard labels
+    Arguments:
+        cfg: ElasticBlastConfig object
+        pv_claim: Name of PersistentVolumeClaim"""
+
     use_local_ssd = cfg.cluster.use_local_ssd
     if use_local_ssd:
         return
     dry_run = cfg.cluster.dry_run
     cluster_name = cfg.cluster.name
-    # Label disk with given claim with standard labels
-    pv_claim = 'blast-dbs-pvc'
     labels = cfg.cluster.labels
-    get_pv_cmd = f'kubectl --context={cfg.appstate.k8s_ctx} get pv -o custom-columns=CLAIM:.spec.claimRef.name,PDNAME:.spec.gcePersistentDisk.pdName'
+    get_pv_cmd = f'kubectl --context={cfg.appstate.k8s_ctx} get pv -o custom-columns=CLAIM:.spec.claimRef.name,PDNAME:.spec.csi.volumeHandle'
     if dry_run:
         logging.info(get_pv_cmd)
         pd_name = f'disk_name_with_claim_{pv_claim}'
@@ -647,7 +794,7 @@ def label_persistent_disk(cfg: ElasticBlastConfig) -> None:
             if len(parts) < 2:
                 continue
             if parts[0] == pv_claim:
-                pd_name = parts[1]
+                pd_name = parts[1].split('/')[-1]
         if not pd_name:
             logging.debug(f'kubectl get pv returned\n{output}')
             raise LookupError(f"Disk with claim '{pv_claim}' can't be found in cluster '{cluster_name}'")
@@ -783,8 +930,11 @@ def submit_job_submission_job(cfg: ElasticBlastConfig):
         'ELB_GCP_ZONE'         : cfg.gcp.zone,
         'ELB_RESULTS'          : cfg.cluster.results,
         'ELB_CLUSTER_NAME'     : cfg.cluster.name,
+        'ELB_PD_SIZE'          : cfg.cluster.pd_size,
+        'ELB_LABELS'           : cfg.cluster.labels,
         # For autoscaling
         'ELB_NUM_NODES' : str(cfg.cluster.num_nodes),
+        'ELB_USE_LOCAL_SSD': str(cfg.cluster.use_local_ssd).lower()
     }
     logging.debug(f"Submitting job submission job: {ELB_CJS_DOCKER_IMAGE_GCP}")
     with TemporaryDirectory() as d:

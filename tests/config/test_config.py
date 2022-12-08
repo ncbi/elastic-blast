@@ -76,6 +76,7 @@ DB_METADATA = DbMetadata(version = '1',
 @patch(target='elastic_blast.elb_config.get_db_metadata', new=MagicMock(return_value=DB_METADATA))
 @patch(target='elastic_blast.elb_config.safe_exec', new=MagicMock(side_effect=mocked_safe_exec))
 @patch(target='elastic_blast.util.safe_exec', new=MagicMock(side_effect=mocked_safe_exec))
+@patch(target='elastic_blast.gcp_traits.safe_exec', new=MagicMock(side_effect=mocked_safe_exec))
 class ElbConfigLibTester(unittest.TestCase):
 
     """ Testing class for this module. """

@@ -50,17 +50,7 @@ TEST_DATA_DIR = os.path.join(os.path.dirname(__file__), 'data')
 # Mocked tests
 
 
-@pytest.fixture
-def kubectl_mock(mocker):
-    """Fixture function that replaces util.safe_exec with mocked_safe_exec"""
-
-    # we need kubernetes.safe_exec instead of util.safe_exec here, because
-    # safe_exec is imported in kubernetes.py with 'from util import safe_exec'
-    # and safe_exec in kubernetes is seen as local, python is funny this way
-    mocker.patch('elastic_blast.kubernetes.safe_exec', side_effect=mocked_safe_exec)
-
-
-def test_fake_kubectl(kubectl_mock):
+def test_fake_kubectl(gke_mock):
     """Test that calling fake safe_exec with wrong command line results in
     ValueError"""
     with pytest.raises(ValueError):
@@ -95,7 +85,7 @@ def test_get_persistent_volumes_bad_json(mocker):
     kubernetes.safe_exec.assert_called()
 
 
-def test_get_persistent_disk(kubectl_mock):
+def test_get_persistent_disk(gke_mock):
     """Test getting k8s cluster persistent disks"""
     disks = kubernetes.get_persistent_disks(K8S_UNINITIALIZED_CONTEXT)
     assert sorted(disks) == sorted(GCP_DISKS)
@@ -144,10 +134,10 @@ def safe_exec_mock(mocker):
         print(cmd)
         if 'kubectl ' in cmd and 'get pv -o json' in cmd:
             result = {'items': []}  # type: ignore
-            result['items'].append({'spec': {'gcePersistentDisk': {'pdName': GCP_DISKS[0]}}})  # type: ignore
+            result['items'].append({'spec': {'csi': {'volumeHandle': f'/project/test-project/{GCP_DISKS[0]}'}}})  # type: ignore
             return MockedCompletedProcess(stdout=json.dumps(result))
         if 'kubectl ' in cmd and 'get pv' in cmd:
-            return MockedCompletedProcess(stdout='CLAIM PDNAME\nblast-dbs-pvc gke-some-synthetic-name')
+            return MockedCompletedProcess(stdout='CLAIM PDNAME\nblast-dbs-pvc-rwo gke-some-synthetic-name')
         if 'kubectl' in cmd and 'get -f' in cmd:
             fn = os.path.join(TEST_DATA_DIR, 'job-status.json')
             return MockedCompletedProcess(stdout=Path(fn).read_text())
@@ -168,6 +158,7 @@ def safe_exec_mock(mocker):
     mocker.patch('elastic_blast.kubernetes.safe_exec', side_effect=print_safe_exec)
     mocker.patch('elastic_blast.elb_config.safe_exec', side_effect=print_safe_exec)
     mocker.patch('elastic_blast.util.safe_exec', side_effect=print_safe_exec)
+    mocker.patch('elastic_blast.gcp_traits.safe_exec', side_effect=print_safe_exec)
 
 
 DB_METADATA = DbMetadata(version = '1',
@@ -183,24 +174,25 @@ DB_METADATA = DbMetadata(version = '1',
                          number_of_volumes = 1)
 
 @patch(target='elastic_blast.elb_config.get_db_metadata', new=MagicMock(return_value=DB_METADATA))
-def test_initialize_persistent_disk(gke_mock, safe_exec_mock, mocker):
+@patch(target='elastic_blast.kubernetes.wait_for_pvc', new=MagicMock(return_value=None))
+@patch(target='elastic_blast.kubernetes._wait_for_snapshot', new=MagicMock(return_value=None))
+@patch(target='elastic_blast.kubernetes._wait_for_job', new=MagicMock(return_value=None))
+def test_initialize_persistent_disk(gke_mock, safe_exec_mock):
     """Exercises initialize_persistent_disk with mock safe_exec and prints out
     arguments to safe_exec
     Run pytest -s -v tests/kubernetes to verify correct order of calls"""
     from argparse import Namespace
-    def mocked_upload_file_to_gcs(fname, loc, dryrun):
-        """Mocked upload to GS function"""
-        pass
-    mocker.patch('elastic_blast.kubernetes.upload_file_to_gcs', side_effect=mocked_upload_file_to_gcs)
-
     args = Namespace(cfg=os.path.join(TEST_DATA_DIR, 'initialize_persistent_disk.ini'))
     cfg = ElasticBlastConfig(configure(args), task = ElbCommand.SUBMIT)
     cfg.appstate.k8s_ctx = K8S_UNINITIALIZED_CONTEXT
+    cfg.cluster.labels = FAKE_LABELS
     kubernetes.initialize_persistent_disk(cfg)
 
 
 @patch(target='elastic_blast.elb_config.get_db_metadata', new=MagicMock(return_value=DB_METADATA))
-def test_initialize_persistent_disk_failed(gke_mock, mocker):
+@patch(target='elastic_blast.kubernetes.wait_for_pvc', new=MagicMock())
+@patch(target='elastic_blast.kubernetes.label_persistent_disk', new=MagicMock())
+def test_initialize_persistent_disk_failed(gke_mock, safe_exec_mock, mocker):
     def fake_safe_exec_failed_job(cmd):
         fn = os.path.join(TEST_DATA_DIR, 'job-status-failed.json')
         return MockedCompletedProcess(stdout=Path(fn).read_text())
@@ -233,16 +225,17 @@ def test_label_persistent_disk(safe_exec_mock):
     # Replace labels with well-known fake for the purpose of testing command match,
     # see above in safe_exec_mock
     cfg.cluster.labels = FAKE_LABELS
-    kubernetes.label_persistent_disk(cfg)
+    kubernetes.label_persistent_disk(cfg, 'blast-dbs-pvc-rwo')
 
 
-def test_delete_all(kubectl_mock):
+def test_delete_all(gke_mock):
     """Test deleteting all jobs, persistent volume claims and persistent volumes"""
     deleted = kubernetes.delete_all(K8S_UNINITIALIZED_CONTEXT)
     assert sorted(set(deleted)) == sorted(K8S_JOBS + GKE_PVS)
     kubernetes.safe_exec.assert_called()
 
 
+@patch.dict(os.environ, {'ELB_PAUSE_AFTER_INIT_PV': '1'})
 def test_delete_all_no_resources(mocker):
     """Test deleting all whem no resources were created"""
     def safe_exec_no_resources(cmd):
@@ -258,7 +251,7 @@ def test_delete_all_no_resources(mocker):
     kubernetes.safe_exec.assert_called()
 
 
-def test_get_jobs(kubectl_mock):
+def test_get_jobs(gke_mock):
     """Test getting kubernetes job ids"""
     jobs = kubernetes.get_jobs(K8S_UNINITIALIZED_CONTEXT)
     assert sorted(jobs) == sorted(K8S_JOBS)

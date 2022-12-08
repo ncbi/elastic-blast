@@ -60,7 +60,7 @@ elastic-blast3.7: ${PYTHON_SRC} ${YAML_TEMPLATES} ${VENV} validate-cf-templates
 # Python support
 
 ${VENV}: requirements/base.txt requirements/test.txt
-	[ -d ${VENV} ] || python3 -m venv $@
+	[ -d ${VENV} ] || virtualenv -p python3 $@
 	source ${VENV}/bin/activate && pip3 install -qe . -r requirements/test.txt
 	source ${VENV}/bin/activate && python3 setup.py install_data
 
@@ -107,7 +107,7 @@ yamllint: ${VENV}
 	source ${VENV}/bin/activate && \
 		yamllint -d share/etc/yamllint-config.yaml src/elastic_blast/templates/storage-gcp-ssd.yaml
 	source ${VENV}/bin/activate && \
-		yamllint -d share/etc/yamllint-config.yaml src/elastic_blast/templates/pvc.yaml.template
+		yamllint -d share/etc/yamllint-config.yaml src/elastic_blast/templates/pvc-*.yaml.template
 	source ${VENV}/bin/activate && \
 		yamllint -d share/etc/yamllint-config.yaml src/elastic_blast/templates/job-init-*
 	source ${VENV}/bin/activate && \

@@ -29,7 +29,7 @@ import logging
 import os
 from abc import ABCMeta, abstractmethod
 from collections import defaultdict
-from typing import Any, List, Tuple, Dict, DefaultDict
+from typing import Any, List, Tuple, Dict, DefaultDict, Optional
 
 from .constants import ELB_QUERY_BATCH_DIR, ELB_METADATA_DIR
 from .filehelper import copy_to_bucket, remove_bucket_key, cleanup_temp_bucket_dirs
@@ -39,7 +39,7 @@ from .constants import ElbStatus, ELB_STATUS_SUCCESS, ELB_STATUS_FAILURE
 
 class ElasticBlast(metaclass=ABCMeta):
     """ Base class for core ElasticBLAST functionality. """
-    def __init__(self, cfg: ElasticBlastConfig, create=False, cleanup_stack: List[Any]=None):
+    def __init__(self, cfg: ElasticBlastConfig, create=False, cleanup_stack: Optional[List[Any]]=None):
         self.cfg = cfg
         self.cleanup_stack = cleanup_stack if cleanup_stack else []
         self.dry_run = self.cfg.cluster.dry_run
@@ -118,7 +118,7 @@ class ElasticBlast(metaclass=ABCMeta):
         """
         cfg = self.cfg
         status = ElbStatus.UNKNOWN
-        gcp_prj = None if cfg.aws else cfg.gcp.project
+        gcp_prj = None if cfg.aws else cfg.gcp.get_project_for_gcs_downloads()
         try:
             failure_file = os.path.join(cfg.cluster.results, ELB_METADATA_DIR, ELB_STATUS_FAILURE)
             check_for_read(failure_file, self.dry_run, gcp_prj=gcp_prj)

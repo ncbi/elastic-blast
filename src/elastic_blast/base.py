@@ -106,10 +106,13 @@ class MemoryStr(str):
     def __new__(cls, value):
         """Constructor, validates that argumant is a valid GCP name"""
         str_value = str(value)
-        number_re = re.compile(r'^\d+[kKmMgGtT]$|^\d+.\d+[kKmMgGtT]$')
+        number_re = re.compile(r'^\d+[kKmMgGtT]i?$|^\d+.\d+[kKmMgGtT]i?$')
         if not number_re.match(str_value):
             raise ValueError('Memory request or limit must be specified by a number followed by a unit, for example 100m')
-        if float(str_value[:-1]) <= 0:
+        unit_pos = -1
+        if str_value.endswith('i'):
+            unit_pos = -2
+        if float(str_value[:unit_pos]) <= 0:
             raise ValueError('Memory request or limit must be larger than zero')
         return super(cls, cls).__new__(cls, str_value)
 
@@ -117,25 +120,20 @@ class MemoryStr(str):
     def asGB(self) -> float:
         """Return the amount of memory in GB as float"""
         mult = 1.0
-        if self[-1].upper() == 'K':
+        unit_pos = -1;
+        if self.endswith('i'):
+            unit_pos = -2
+        if self[unit_pos].upper() == 'K':
             mult /= 1024 ** 2
-        elif self[-1].upper() == 'M':
+        elif self[unit_pos].upper() == 'M':
             mult /= 1024
-        elif self[-1].upper() == 'T':
+        elif self[unit_pos].upper() == 'T':
             mult *= 1024
-        return float(self[:-1]) * mult
+        return float(self[:unit_pos]) * mult
 
     def asMB(self) -> float:
         """Return the amount of memory in MB as float"""
-        mult = 1.0
-        if self[-1].upper() == 'K':
-            mult /= 1024
-        elif self[-1].upper() == 'G':
-            mult *= 1024
-        elif self[-1].upper() == 'T':
-            mult *= 1024 ** 2
-        return float(self[:-1]) * mult
-
+        return self.asGB() * 1024
 
 class DBSource(Enum):
     """Sources of a BLAST database supported by update_blastdb.pl from BLAST+ package"""

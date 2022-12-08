@@ -101,8 +101,8 @@ MAX_NUM_THREADS_AWS = 16
 MAX_NUM_THREADS_GCP = 15
 
 
-def get_mt_mode(program: str, options: str = '', db_metadata: DbMetadata = None,
-                query: SeqData = None) -> MTMode:
+def get_mt_mode(program: str, options: str = '', db_metadata: Optional[DbMetadata] = None,
+                query: Optional[SeqData] = None) -> MTMode:
     """
     Compute BLAST search MT mode
 
@@ -141,7 +141,8 @@ def get_mt_mode(program: str, options: str = '', db_metadata: DbMetadata = None,
     return MTMode.ZERO
 
 
-def get_num_cpus(cloud_provider: CSP, program: str, mt_mode: MTMode, query: SeqData = None) -> int:
+def get_num_cpus(cloud_provider: CSP, program: str, mt_mode: MTMode,
+                 query: Optional[SeqData] = None) -> int:
     """Get number of CPUs to use to optimally run BLAST
 
     Arguments:
@@ -164,7 +165,7 @@ def get_num_cpus(cloud_provider: CSP, program: str, mt_mode: MTMode, query: SeqD
 
 
 def get_batch_length(cloud_provider: CSP, program: str, mt_mode: MTMode,
-                     num_cpus: int, db_metadata: DbMetadata = None) -> int:
+                     num_cpus: int, db_metadata: Optional[DbMetadata] = None) -> int:
     """
     Get batch length for BLAST batch search
 

@@ -43,6 +43,8 @@ from elastic_blast.filehelper import open_for_read, open_for_write, copy_to_buck
 from elastic_blast.split import FASTAReader
 from elastic_blast.jobs import write_job_files
 from elastic_blast.constants import ELB_QUERY_BATCH_FILE_PREFIX
+from elastic_blast.constants import ELB_DFLT_LOGFILE, ELB_DFLT_LOGLEVEL
+from elastic_blast.util import config_logging
 
 
 DEFAULT_BATCH_LEN    = 5000000
@@ -74,6 +76,12 @@ def parse_arguments():
         help='file to report total number of bases/residues in input file')
     parser.add_argument("-n", "--dry-run", action='store_true', 
                         help="Do not run any commands, just show what would be executed")
+    parser.add_argument("--logfile", default=argparse.SUPPRESS, type=str,
+                                    help=f"Default: {ELB_DFLT_LOGFILE}")
+    parser.add_argument("--loglevel", default=argparse.SUPPRESS,
+                                    help=f"Default: {ELB_DFLT_LOGLEVEL}",
+                                    choices=["DEBUG", "INFO", "WARNING",
+                                             "ERROR", "CRITICAL"])
     return parser.parse_args()
 
 def main():
@@ -89,6 +97,8 @@ def main():
     count_file   = args.count
     dry_run      = args.dry_run
     job_template_text = ''
+
+    config_logging(args)
     try:
         if job_template:
             with open_for_read(job_template) as f:

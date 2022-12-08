@@ -34,6 +34,7 @@ K8S_JOB_GET_BLASTDB=get-blastdb
 K8S_JOB_IMPORT_QUERY_BATCHES=import-query-batches
 K8S_JOB_SUBMIT_JOBS=submit-jobs
 ELB_PAUSE_AFTER_INIT_PV=150
+ELB_DISK_ID_FILE=disk-id.txt
 
 GSUTIL_COPY='gsutil -q cp'
 GCLOUD=gcloud
@@ -53,6 +54,7 @@ ELB_RESULTS=test
 ELB_CLUSTER_NAME=test-cluster
 ELB_GCP_PROJECT=test-project
 ELB_GCP_ZONE=test-zone
+ELB_USE_LOCAL_SSD=false
 mkdir -p test/metadata
 cp ../src/elastic_blast/templates/blast-batch-job.yaml.template test/metadata/job.yaml.template
 for ((i=0; i<1020; i++)) do printf 'batch_%03d.fa\n' "$i" >> test/metadata/batch_list.txt; done
@@ -78,19 +80,50 @@ if [[ "$s" != Complete*( Complete) ]]; then
     exit 1
 fi
 
-# Unmount ReadWrite blastdb volume, necessary for cluster use
+
+# Get init-pv job logs
 pods=`kubectl get pods -l job-name=init-pv -o jsonpath='{.items[*].metadata.name}'`
 for pod in $pods; do
     for c in ${K8S_JOB_GET_BLASTDB} ${K8S_JOB_IMPORT_QUERY_BATCHES}; do
         ${KUBECTL} logs $pod -c $c --timestamps --since=24h --tail=-1 | ${GSUTIL_COPY} /dev/stdin ${ELB_RESULTS}/logs/k8s-$pod-$c.log
     done
 done
-if [ ! -z "$pods" ]; then
+
+
+# no need to deal with persistent disks and snapshots if a local SSD is used
+if ! $ELB_USE_LOCAL_SSD ; then
+
+    # Create a volume snapshot
+    ${KUBECTL} apply -f /templates/volume-snapshot-class.yaml
+    ${KUBECTL} apply -f /templates/volume-snapshot.yaml
+    sleep 5
+
+    # Wait for the snapshot to be ready
+    while true; do
+        st=$(${KUBECTL} get volumesnapshot blast-dbs-snapshot -o jsonpath='{.status.readyToUse}')
+        [ $? -ne 0 ] && echo "ERROR: Getting volume snapshot status" && exit 1
+        [ $st == true ] && break
+        echo "Volume snapshot status: $st"
+        sleep 30
+    done
+
+    # save writable disk id
+    export pv_rwo=$(${KUBECTL} get pvc blast-dbs-pvc-rwo -o jsonpath='{.spec.volumeName}')
+
+    # Delete the job to unmount ReadWrite blastdb volume
     ${KUBECTL} delete job init-pv
     # Wait for disk to be unmounted
     echo Waiting for $ELB_PAUSE_AFTER_INIT_PV sec to unmount PV disk
     sleep $ELB_PAUSE_AFTER_INIT_PV
+
+    # Delete ReadWriteOnce PVC
+    ${KUBECTL} delete pvc blast-dbs-pvc-rwo
+
+    # Create ReadOnlyMany PVC
+    envsubst '${ELB_PD_SIZE}' </templates/pvc-rom.yaml.template >pvc-rom.yaml
+    ${KUBECTL} apply -f pvc-rom.yaml
 fi
+
 
 # Debug job fail - set env variable ELB_DEBUG_SUBMIT_JOB_FAIL to non empty value
 [ -n "${ELB_DEBUG_SUBMIT_JOB_FAIL:-}" ] && echo Job submit job failed for debug && exit 1
@@ -144,4 +177,42 @@ if ${GSUTIL_COPY} ${ELB_RESULTS}/${ELB_METADATA_DIR}/job.yaml.template . &&
     fi
     copy_job_logs_to_results_bucket submit "${K8S_JOB_SUBMIT_JOBS}"
     echo Done
+else
+    echo "Job file or batch list not found in GCS"
+    exit 1
+fi
+
+
+# no need to deal with persistent disks and snapshots if a local SSD is used
+if $ELB_USE_LOCAL_SSD ; then
+    exit 0
+fi
+
+
+# wait for PVC to bind
+while true; do
+    st=$(${KUBECTL} get -f pvc-rom.yaml -o jsonpath='{.status.phase}')
+    [ $? -ne 0 ] && echo "ERROR: Getting PVC bind state" && exit 1
+    [ $st == Bound ] && break
+    echo "PVC status: $st"
+    sleep 30
+done
+
+# label the new persistent disk
+export pv=$(${KUBECTL} get -f pvc-rom.yaml -o jsonpath='{.spec.volumeName}')
+jq -n --arg dd $pv '[$dd]' | gsutil cp - ${ELB_RESULTS}/${ELB_METADATA_DIR}/$ELB_DISK_ID_FILE
+gcloud compute disks update $pv --update-labels ${ELB_LABELS} --zone ${ELB_GCP_ZONE} --project ${ELB_GCP_PROJECT}
+
+# delete snapshot
+${KUBECTL} delete volumesnapshot --all
+
+# check if the writable disk was deleted and try deleting again,
+# if unsuccessful save its id in GS
+if gcloud compute disks describe $pv_rwo --zone $ELB_GCP_ZONE ; then
+    gcloud compute disks delete $pv_rwo --zone $ELB_GCP_ZONE
+    sleep 10
+
+    if gcloud compute disks describe $pv_rwo --zone $ELB_GCP_ZONE ; then
+        jq -n --arg d1 $pv_rwo --arg d2 $pv '[d1, d2]' | gsutil cp - ${ELB_RESULTS}/${ELB_METADATA_DIR}/$ELB_DISK_ID_FILE
+    fi
 fi

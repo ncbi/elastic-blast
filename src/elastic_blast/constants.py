@@ -97,7 +97,9 @@ ELB_DFLT_OUTFMT = 11
 
 ELB_DFLT_USE_PREEMPTIBLE = False
 
-ELB_DFLT_GCP_PD_SIZE = '3000G'
+# Using Gi unit rather than G is safer for volume cloning and creating volumes
+# from snapshots
+ELB_DFLT_GCP_PD_SIZE = '3000Gi'
 
 ELB_DFLT_GCP_MACHINE_TYPE = 'n1-highmem-32'
 ELB_DFLT_AWS_MACHINE_TYPE = 'm5.8xlarge'
@@ -148,7 +150,7 @@ ELB_DFLT_BLAST_JOB_TEMPLATE = 'resource:templates/blast-batch-job.yaml.template'
 ELB_LOCAL_SSD_BLAST_JOB_TEMPLATE = 'resource:templates/blast-batch-job-local-ssd.yaml.template'
 GCS_DFLT_BUCKET = 'gs://blast-db'
 
-GCP_APIS = ['serviceusage', 'container', 'storage-api', 'storage-component']
+GCP_APIS = ['compute', 'serviceusage', 'container', 'storage-api', 'storage-component']
 # https://cloud.google.com/kubernetes-engine/docs/how-to/creating-managing-labels#requirements
 GCP_MAX_NUM_LABELS = 64
 # https://cloud.google.com/kubernetes-engine/docs/how-to/creating-managing-labels#requirements
@@ -202,10 +204,10 @@ ELB_DFLT_GCP_ZONE = 'us-east4-b'
 ELB_DFLT_AWS_REGION = 'us-east-1'
 ELB_UNKNOWN_GCP_PROJECT = 'elb-unknown-gcp-project'
 
-ELB_DOCKER_VERSION = '1.1.1'
-ELB_QS_DOCKER_VERSION = '0.1.3'
-ELB_JANITOR_DOCKER_VERSION = '0.2.0'
-ELB_JOB_SUBMIT_DOCKER_VERSION = '2.0.0'
+ELB_DOCKER_VERSION = '1.1.3'
+ELB_QS_DOCKER_VERSION = '0.1.4'
+ELB_JANITOR_DOCKER_VERSION = '0.3.0'
+ELB_JOB_SUBMIT_DOCKER_VERSION = '3.0.0'
 
 ELB_DOCKER_IMAGE_GCP = f'gcr.io/ncbi-sandbox-blast/ncbi/elb:{ELB_DOCKER_VERSION}'
 ELB_DOCKER_IMAGE_AWS = f'public.ecr.aws/ncbi-elasticblast/elasticblast-elb:{ELB_DOCKER_VERSION}'

@@ -39,7 +39,7 @@ import uuid
 from pprint import pformat
 from pathlib import Path
 
-from typing import Any, Dict, List, Tuple
+from typing import Any, Dict, List, Tuple, Optional
 
 import boto3  # type: ignore
 from botocore.exceptions import ClientError, NoCredentialsError, ParamValidationError, WaiterError # type: ignore
@@ -153,7 +153,7 @@ class ElasticBlastAws(ElasticBlast):
     (janitor module)
     """
 
-    def __init__(self, cfg: ElasticBlastConfig, create=False, cleanup_stack: List[Any]=None):
+    def __init__(self, cfg: ElasticBlastConfig, create=False, cleanup_stack: Optional[List[Any]]=None):
         """ Class constructor: it's meant to be a starting point and to implement
         a base class with the core ElasticBLAST interface
         Parameters:
@@ -176,7 +176,9 @@ class ElasticBlastAws(ElasticBlast):
         self.iam = boto3.resource('iam', config=self.boto_cfg)
         self.ec2 = boto3.resource('ec2', config=self.boto_cfg)
 
-        self.owner = sanitize_aws_batch_job_name(getpass.getuser().lower())
+        # Per EB-1554, to prevent role names from getting longer than 64 characters
+        MAX_USERNAME_LENGTH=38 
+        self.owner = sanitize_aws_batch_job_name(getpass.getuser()[:MAX_USERNAME_LENGTH].lower())
         self.results_bucket = cfg.cluster.results
         self.vpc_id = cfg.aws.vpc
         self.subnets = None
@@ -223,9 +225,9 @@ class ElasticBlastAws(ElasticBlast):
             if re.match(r'[cmr]5a?dn?\.\d{0,2}x?large', instance_type) or instance_type.startswith('x1'):
                 use_ssd = True
                 # Shrink the default EBS root disk since EC2 instances will use locally attached SSDs
-                logging.warning("Using gp2 30GB EBS root disk because locally attached SSDs will be used")
+                disk_type = 'gp3'
                 disk_size = 30
-                disk_type = 'gp2'
+                logging.warning(f"Using {disk_type} {disk_size}GB EBS root disk because locally attached SSDs will be used")
             if instance_type.lower() == 'optimal':  # EXPERIMENTAL!
                 max_cpus = self.cfg.cluster.num_nodes * self.cfg.cluster.num_cpus
             else:

@@ -46,13 +46,16 @@ RESOURCES = [
     'job-cloud-split-local-ssd.yaml.template',
     'job-init-local-ssd.yaml.template',
     'storage-gcp-ssd.yaml',
-    'pvc.yaml.template',
+    'pvc-rwo.yaml.template',
+    'pvc-rom.yaml.template',
     'job-init-pv.yaml.template',
     'elb-janitor-rbac.yaml',
     'elb-janitor-cronjob.yaml.template',
     'job-submit-jobs.yaml.template',
     'blast-batch-job.yaml.template',
-    'blast-batch-job-local-ssd.yaml.template'
+    'blast-batch-job-local-ssd.yaml.template',
+    'volume-snapshot-class.yaml',
+    'volume-snapshot.yaml'
 ]
 # Not used by elastic-blast tool:
 # storage-gcp.yaml
@@ -223,9 +226,8 @@ def get_blastdb_info(blastdb: str, gcp_prj: Optional[str] = None):
     if db.startswith(ELB_GCS_PREFIX):
         # Custom database, just check the presence
         try:
-            if not gcp_prj:
-                raise ValueError(f'elastic_blast.util.get_blastdb_info is missing the gcp_prj parameter')
-            proc = safe_exec(f'gsutil -u {gcp_prj} ls {db}.*')
+            prj = f'-u {gcp_prj}' if gcp_prj else ''
+            proc = safe_exec(f'gsutil {prj} ls {db}.*')
         except SafeExecError:
             raise ValueError(f'Error requesting for {db}.*')
         output = proc.stdout.decode()
@@ -251,39 +253,36 @@ def get_blastdb_size(db: str, db_source: DBSource, gcp_prj: Optional[str] = None
     if db.startswith(ELB_GCS_PREFIX):
         # Custom database, just check the presence
         try:
-            if not gcp_prj:
-                raise ValueError(f'elastic_blast.util.get_blastdb_size is missing the gcp_prj parameter')
-            safe_exec(f'gsutil -u {gcp_prj} ls {db}.*')
+            prj = f'-u {gcp_prj}' if gcp_prj else ''
+            safe_exec(f'gsutil {prj} ls {db}.*')
         except SafeExecError:
             raise ValueError(f'BLAST database {db} was not found')
         # TODO: find a way to check custom DB size w/o transferring it to user machine
         return 1000000
     if db_source == DBSource.GCP:
-        if not gcp_prj:
-            raise ValueError(f'elastic_blast.util.get_blastdb_size is missing the gcp_prj parameter')
-        return gcp_get_blastdb_size(db, str(gcp_prj))
+        return gcp_get_blastdb_size(db, gcp_prj)
     elif db_source == DBSource.AWS:
         return 1000000   # FIXME
     raise NotImplementedError("Not implemented for sources other than GCP")
 
 
-def gcp_get_blastdb_latest_path(gcp_prj: str) -> str:
+def gcp_get_blastdb_latest_path(gcp_prj: Optional[str]) -> str:
     """Get latest path of GCP-based blastdb repository"""
-    if not gcp_prj:
-        raise ValueError(f'elastic_blast.util.gcp_get_blastdb_latest_path is missing the gcp_prj parameter')
-    cmd = f'gsutil -u {gcp_prj} cat {GCS_DFLT_BUCKET}/latest-dir'
+    prj = f'-u {gcp_prj}' if gcp_prj else ''
+    cmd = f'gsutil {prj} cat {GCS_DFLT_BUCKET}/latest-dir'
     proc = safe_exec(cmd)
     return os.path.join(GCS_DFLT_BUCKET, proc.stdout.decode().rstrip())
 
 
-def gcp_get_blastdb_size(db: str, gcp_prj: str) -> float:
+def gcp_get_blastdb_size(db: str, gcp_prj: Optional[str]) -> float:
     """Request blast database size from GCP using gsutil
     Returns the size in GB, if not found raises ValueError exception
 
     db: database name
     """
     latest_path = gcp_get_blastdb_latest_path(gcp_prj)
-    cmd = f'gsutil -u {gcp_prj} cat {latest_path}/blastdb-manifest.json'
+    prj = f'-u {gcp_prj}' if gcp_prj else ''
+    cmd = f'gsutil {prj} cat {latest_path}/blastdb-manifest.json'
     proc = safe_exec(cmd)
     blastdb_metadata = json.loads(proc.stdout.decode())
     if not db in blastdb_metadata:

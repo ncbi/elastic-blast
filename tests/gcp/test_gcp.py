@@ -452,6 +452,7 @@ def test_remove_split_query(mocker):
         return MockedCompletedProcess('')
 
     mocker.patch('elastic_blast.gcp.safe_exec', side_effect=safe_exec_gsutil_rm)
+    mocker.patch('elastic_blast.gcp_traits.safe_exec', side_effect=mocked_safe_exec)
     with patch(target='elastic_blast.elb_config.safe_exec', new=MagicMock(side_effect=GKEMock().mocked_safe_exec)):
         with patch(target='elastic_blast.util.safe_exec', new=MagicMock(side_effect=GKEMock().mocked_safe_exec)):
             cfg = ElasticBlastConfig(gcp_project = 'test-gcp-project',

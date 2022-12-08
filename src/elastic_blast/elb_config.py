@@ -92,6 +92,7 @@ from .util import get_query_batch_size, get_gcp_project
 from .util import UserReportError, safe_exec
 from .util import gcp_get_regions, sanitize_for_k8s
 from .gcp_traits import get_machine_properties as gcp_get_machine_properties
+from .gcp_traits import enable_gcp_api
 from .aws_traits import get_machine_properties as aws_get_machine_properties
 from .aws_traits import get_regions as aws_get_regions
 from .aws_traits import create_aws_config
@@ -224,9 +225,11 @@ class GCPConfig(CloudProviderBaseConfig, ConfigParserToDataclassMapper):
     network: Optional[str] = None
     subnet: Optional[str] = None
     user: Optional[str] = None
-    # FIXME: This is a temporary fix for EB-1530. gke_version should be set to
-    # None once the proper fix is implemented.
-    gke_version: Optional[str] = '1.21'
+    # gke_version should be set to None to use the default GKE, otherwise use a specific version supported by GKE (e.g.: 1.25)
+    gke_version: Optional[str] = None
+    # if True, GCP project will be passed to gsutil calls that download files
+    # from GCS and users will be charged for the downloads.
+    requester_pays: bool = False
 
     # mapping to class attributes to ConfigParser parameters so that objects
     # can be initialized from ConfigParser objects
@@ -237,7 +240,8 @@ class GCPConfig(CloudProviderBaseConfig, ConfigParserToDataclassMapper):
                'user': None,
                'network': ParamInfo(CFG_CLOUD_PROVIDER, CFG_CP_GCP_NETWORK),
                'subnet': ParamInfo(CFG_CLOUD_PROVIDER, CFG_CP_GCP_SUBNETWORK),
-               'gke_version': ParamInfo(CFG_CLOUD_PROVIDER, CFG_CP_GCP_GKE_VERSION)}
+               'gke_version': ParamInfo(CFG_CLOUD_PROVIDER, CFG_CP_GCP_GKE_VERSION),
+               'requester_pays': None}
  
     def __post_init__(self):
         self.cloud = CSP.GCP
@@ -252,11 +256,20 @@ class GCPConfig(CloudProviderBaseConfig, ConfigParserToDataclassMapper):
         if self.project == ELB_UNKNOWN_GCP_PROJECT:
             proj = get_gcp_project()
             self.project = GCPString(proj)
+        else:
+            self.requester_pays = True
 
     def validate(self, errors: List[str], task: ElbCommand):
         """Validate config"""
         if bool(self.network) != bool(self.subnet):
             errors.append('Both gcp-network and gcp-subnetwork need to be specified if one of them is specified')
+
+    def get_project_for_gcs_downloads(self) -> Optional[str]:
+        """Get GCP project for downloads from GCS buckets. Returns GCP project
+        if requester_pays is True, otherwise None. If GCP project is provided
+        to the gsutil call, then a user is paying for this download."""
+        return str(self.project) if self.requester_pays else None
+
 
 @dataclass_json(letter_case=LetterCase.KEBAB)
 @dataclass
@@ -441,6 +454,15 @@ class ClusterConfig(ConfigParserToDataclassMapper):
         if cloud_provider == CSP.GCP:
             if not self.pd_size:
                 self.pd_size = ELB_DFLT_GCP_PD_SIZE
+
+            # This is needed for PVC cloning or creating PVs from snapshots.
+            # A cloned volume must be at least as large as the source volume.
+            # Volume sizes expressed as GB are rounded and the cloned volume
+            # may end up smaller than the source one. GiBs are more exact.
+            if not self.pd_size.endswith('i') and \
+                   self.pd_size[-1].lower() in ['k', 'm', 'g', 't']:
+                self.pd_size += 'i'
+
         else:
             if not self.pd_size:
                 self.pd_size = ELB_DFLT_AWS_PD_SIZE
@@ -495,7 +517,7 @@ class AppState:
     """Application state values"""
 
     # The GCP persistent disk ID
-    disk_id: Optional[str] = None
+    disk_ids: List[str] = field(default_factory=list)
     # The kubernetes context
     k8s_ctx: Optional[str] = None
 
@@ -606,6 +628,9 @@ class ElasticBlastConfig:
 
         # post-init activities
 
+        if self.cloud_provider.cloud == CSP.GCP:
+            enable_gcp_api(self.gcp.project, self.cluster.dry_run)
+
         try:
             if self.cloud_provider.region:
                 self.cloud_provider.region.validate(dry_run)
@@ -626,9 +651,10 @@ class ElasticBlastConfig:
         # get database metadata
         if self.blast and not self.blast.db_metadata and not self.cluster.dry_run:
             try:
-                gcp_prj = None if self.cloud_provider.cloud == CSP.AWS else self.gcp.project
+                gcp_prj = None if self.cloud_provider.cloud == CSP.AWS else self.gcp.get_project_for_gcs_downloads()
                 self.blast.db_metadata = get_db_metadata(self.blast.db, ElbSupportedPrograms().get_db_mol_type(self.blast.program),
-                                                         self.cluster.db_source, gcp_prj=gcp_prj)
+                                                         self.cluster.db_source,
+                                                         gcp_prj=gcp_prj)
             except FileNotFoundError:
                 # database metadata file is not mandatory for a user database (yet) EB-1308
                 logging.info('No database metadata')
@@ -1043,7 +1069,7 @@ def create_labels(cloud_provider: CSP,
                   results: str,
                   blast_conf: Optional[BlastConfig],
                   cluster_name: str,
-                  user_provided_labels: str = None) -> str:
+                  user_provided_labels: Optional[str] = None) -> str:
     """Generate labels for cloud resources"""
     if cloud_provider == CSP.AWS:
         sanitize = sanitize_aws_tag

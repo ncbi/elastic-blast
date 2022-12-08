@@ -42,13 +42,13 @@ from .base import MemoryStr, QuerySplittingResults
 
 from .subst import substitute_params
 
-from .filehelper import open_for_write_immediate, open_for_read
+from .filehelper import open_for_write_immediate
 from .jobs import read_job_template, write_job_files
 from .util import ElbSupportedPrograms, safe_exec, UserReportError, SafeExecError
 from .util import validate_gcp_disk_name, get_blastdb_info, get_usage_reporting
 
 from . import kubernetes
-from .constants import CLUSTER_ERROR, ELB_NUM_JOBS_SUBMITTED, GCP_APIS, ELB_METADATA_DIR, K8S_JOB_SUBMIT_JOBS
+from .constants import CLUSTER_ERROR, ELB_NUM_JOBS_SUBMITTED, ELB_METADATA_DIR, K8S_JOB_SUBMIT_JOBS
 from .constants import ELB_STATE_DISK_ID_FILE, DEPENDENCY_ERROR
 from .constants import ELB_QUERY_BATCH_DIR, ELB_DFLT_MIN_NUM_NODES
 from .constants import K8S_JOB_CLOUD_SPLIT_SSD, K8S_JOB_INIT_PV
@@ -62,10 +62,11 @@ from .constants import GKE_CLUSTER_STATUS_STOPPING, GKE_CLUSTER_STATUS_ERROR
 from .constants import STATUS_MESSAGE_ERROR
 from .elb_config import ElasticBlastConfig
 from .elasticblast import ElasticBlast
+from .gcp_traits import enable_gcp_api
 
 class ElasticBlastGcp(ElasticBlast):
     """ Implementation of core ElasticBLAST functionality in GCP. """
-    def __init__(self, cfg: ElasticBlastConfig, create=False, cleanup_stack: List[Any]=None):
+    def __init__(self, cfg: ElasticBlastConfig, create=False, cleanup_stack: Optional[List[Any]]=None):
         super().__init__(cfg, create, cleanup_stack)
         self.query_files: List[str] = []
         self.cluster_initialized = False
@@ -173,6 +174,22 @@ class ElasticBlastGcp(ElasticBlast):
                 else:
                     safe_exec(cmd)
                 logging.info('Done enabling autoscaling')
+
+            if not self.cfg.cluster.use_local_ssd:
+                if not self.cfg.appstate.k8s_ctx:
+                    raise RuntimeError('K8s context not set')
+                kubernetes.wait_for_pvc(self.cfg.appstate.k8s_ctx, 'blast-dbs-pvc')
+                # save persistent disk id
+                disk_ids = kubernetes.get_persistent_disks(self.cfg.appstate.k8s_ctx)
+                logging.debug(f'New persistent disk id: {disk_ids}')
+                self.cfg.appstate.disk_ids += disk_ids
+                dest = os.path.join(self.cfg.cluster.results, ELB_METADATA_DIR,
+                                    ELB_STATE_DISK_ID_FILE)
+                with open_for_write_immediate(dest) as f:
+                    f.write(json.dumps(self.cfg.appstate.disk_ids))
+
+                kubernetes.label_persistent_disk(self.cfg, 'blast-dbs-pvc')
+                kubernetes.delete_volume_snapshots(self.cfg.appstate.k8s_ctx)
 
         self.cleanup_stack.clear()
         self.cleanup_stack.append(lambda: kubernetes.collect_k8s_logs(self.cfg))
@@ -305,7 +322,7 @@ class ElasticBlastGcp(ElasticBlast):
 
 
     def delete(self):
-        enable_gcp_api(self.cfg)
+        enable_gcp_api(self.cfg.gcp.project, self.cfg.cluster.dry_run)
         delete_cluster_with_cleanup(self.cfg)
 
     def _initialize_cluster(self):
@@ -316,7 +333,7 @@ class ElasticBlastGcp(ElasticBlast):
         disk_quota = disk_limit - disk_usage
         if pd_size > disk_quota:
             raise UserReportError(INPUT_ERROR, f'Requested disk size {pd_size}G is larger than allowed ({disk_quota}G) for region {cfg.gcp.region}\n'
-                'Please adjust parameter [cluster] pd-size to less than {disk_quota}G, run your request in another region, or\n'
+                f'Please adjust parameter [cluster] pd-size to less than {disk_quota}G, run your request in another region, or\n'
                 'request a disk quota increase (see https://cloud.google.com/compute/quotas)')
         logging.info('Starting cluster')
         clean_up_stack.append(lambda: logging.debug('Before creating cluster'))
@@ -383,8 +400,8 @@ class ElasticBlastGcp(ElasticBlast):
         """ Prepare substitution dictionary for job generation """
         cfg = self.cfg
         usage_reporting = get_usage_reporting()
-
-        db, _, db_label = get_blastdb_info(cfg.blast.db, cfg.gcp.project)
+        db, _, db_label = get_blastdb_info(cfg.blast.db,
+                                           cfg.gcp.get_project_for_gcs_downloads())
 
         blast_program = cfg.blast.program
 
@@ -475,7 +492,7 @@ class ElasticBlastGcp(ElasticBlast):
     def _enable_gcp_apis(self) -> None:
         """ Enables GCP APIs only once per object initialization """
         if not self.apis_enabled:
-            enable_gcp_api(self.cfg)
+            enable_gcp_api(self.cfg.gcp.project, self.cfg.cluster.dry_run)
             self.apis_enabled = True
 
     def _get_gke_credentials(self) -> str:
@@ -483,27 +500,6 @@ class ElasticBlastGcp(ElasticBlast):
         if not self.cfg.appstate.k8s_ctx:
             self.cfg.appstate.k8s_ctx = get_gke_credentials(self.cfg)
         return self.cfg.appstate.k8s_ctx
-
-def enable_gcp_api(cfg: ElasticBlastConfig):
-    """ Enable GCP APIs if they are not already enabled
-    parameters:
-        cfg: configuration object
-    raises:
-        SafeExecError if there is an error checking or trying to enable APIs
-    """
-    dry_run = cfg.cluster.dry_run
-    for api in GCP_APIS:
-        cmd = 'gcloud services list --enabled --format=value(config.name) '
-        cmd += f'--filter=config.name={api}.googleapis.com '
-        cmd += f'--project {cfg.gcp.project}'
-        if dry_run:
-            logging.info(cmd)
-        else:
-            p = safe_exec(cmd)
-            if not p.stdout:
-                cmd = f'gcloud services enable {api}.googleapis.com '
-                cmd += f'--project {cfg.gcp.project}'
-                p = safe_exec(cmd)
 
 
 def set_gcp_project(project: str) -> None:
@@ -555,9 +551,9 @@ def delete_disk(name: str, cfg: ElasticBlastConfig) -> None:
 def _get_pd_id(cfg: ElasticBlastConfig) -> List[str]:
     """ Try to get the GCP persistent disk ID from elastic-blast records"""
     retval = list()
-    if cfg.appstate.disk_id:
-        retval = [cfg.appstate.disk_id]
-        logging.debug(f'GCP disk ID {retval[0]}')
+    if cfg.appstate.disk_ids:
+        retval = cfg.appstate.disk_ids
+        logging.debug(f'GCP disk ID {retval}')
         # no need to get disk id from GS if we already have it
         return retval
 
@@ -572,17 +568,18 @@ def _get_pd_id(cfg: ElasticBlastConfig) -> List[str]:
     cmd = f'gsutil -q cat {disk_id_on_gcs}'
     try:
         p = safe_exec(cmd)
-        gcp_disk_id = p.stdout.decode().strip('\n')
+        gcp_disk_ids = json.loads(p.stdout.decode())
         err = p.stderr.decode()
-        if gcp_disk_id:
-            logging.debug(f"Retrieved GCP disk ID {gcp_disk_id} from {disk_id_on_gcs}")
+        if gcp_disk_ids:
+            logging.debug(f"Retrieved GCP disk IDs {gcp_disk_ids} from {disk_id_on_gcs}")
             try:
-                validate_gcp_disk_name(gcp_disk_id)
+                for disk_id in gcp_disk_ids:
+                    validate_gcp_disk_name(disk_id)
             except ValueError:
-                logging.error(f'GCP disk ID "{gcp_disk_id}" retrieved from {disk_id_on_gcs} is invalid.')
+                logging.error(f'GCP disk ID "{disk_id}" retrieved from {disk_id_on_gcs} is invalid.')
                 gcp_disk_id = ''
             else:
-                retval.append(gcp_disk_id)
+                retval += gcp_disk_ids
         else:
             raise RuntimeError('Persistent disk id stored in GS is empty')
     except Exception as e:

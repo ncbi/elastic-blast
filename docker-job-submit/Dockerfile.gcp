@@ -28,10 +28,13 @@ LABEL Vendor="NCBI/NLM/NIH"
 LABEL Maintainer=camacho@ncbi.nlm.nih.gov
 
 COPY cloud-job-submit.sh /usr/bin/
+COPY templates/volume-snapshot-class.yaml /templates/
+COPY templates/volume-snapshot.yaml /templates/
+COPY templates/pvc-rom.yaml.template /templates/
 
 RUN chmod +x /usr/bin/cloud-job-submit.sh && \
     apk -U upgrade && \
-    apk add --no-cache bash gettext curl && \
+    apk add --no-cache bash gettext curl jq && \
 	curl -LO https://storage.googleapis.com/kubernetes-release/release/`curl -s https://storage.googleapis.com/kubernetes-release/release/stable.txt`/bin/linux/amd64/kubectl && \
 	chmod +x ./kubectl && \
 	mv kubectl /usr/bin/ && \

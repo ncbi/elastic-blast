@@ -3,10 +3,10 @@ apiVersion: storage.k8s.io/v1
 kind: StorageClass
 metadata:
   name: gcp-pd-ssd
-provisioner: kubernetes.io/gce-pd
+provisioner: pd.csi.storage.gke.io
 parameters:
   type: pd-ssd
-  fsType: ext4
+  csi.storage.k8s.io/fstype: ext4
   replication-type: none
 reclaimPolicy: Delete
 allowVolumeExpansion: true

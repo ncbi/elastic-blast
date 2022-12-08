@@ -191,12 +191,14 @@ def gke_mock(mocker):
     mocker.patch('elastic_blast.util.safe_exec', side_effect=mock.mocked_safe_exec)
     mocker.patch('elastic_blast.filehelper.safe_exec', side_effect=mock.mocked_safe_exec)
     mocker.patch('elastic_blast.elb_config.safe_exec', side_effect=mock.mocked_safe_exec)
+    mocker.patch('elastic_blast.gcp_traits.safe_exec', side_effect=mock.mocked_safe_exec)
     mocker.patch('elastic_blast.tuner.aws_get_machine_type', new=MagicMock(return_value='test-machine-type'))
 #    mocker.patch('subprocess.Popen', new=MagicMock(return_value=MockedCompletedProcess()))
     mocker.patch('subprocess.Popen', side_effect=mock.mocked_popen)
     mocker.patch('boto3.resource', side_effect=mock.mocked_resource)
     mocker.patch('boto3.client', side_effect=mock.mocked_client)
     mocker.patch('botocore.exceptions.ClientError.__init__', new=MagicMock(return_value=None))
+    mocker.patch.dict(os.environ, {'ELB_PAUSE_AFTER_INIT_PV': '1'})
 
     yield mock
     del mock
@@ -214,6 +216,7 @@ K8S_JOB_STATUS = ['Failed', 'Succeeded', 'Pending', 'Running']
 BLASTDB = 'mocked_blastdb'
 
 
+@patch(target='elastic_blast.elb_config.enable_gcp_api', new=MagicMock())
 def get_mocked_config() -> ElasticBlastConfig:
     """Generate config for mocked gcloud and kubeclt"""
     cfg = ElasticBlastConfig(gcp_project = GCP_PROJECT,
@@ -318,7 +321,7 @@ def mocked_safe_exec(cmd: Union[List[str], str], cloud_state: CloudResources = N
     elif cmd[0] == 'kubectl' and 'get pv -o json' in ' '.join(cmd):
         result = {'items': []}  # type: ignore
         for i in GCP_DISKS:
-            result['items'].append({'spec': {'gcePersistentDisk': {'pdName': i}}})  # type: ignore
+            result['items'].append({'spec': {'csi': {'volumeHandle': f'/test-project/test-region/{i}'}}})  # type: ignore
         return MockedCompletedProcess(json.dumps(result))
 
     # get kubernetes jobs
@@ -361,6 +364,10 @@ def mocked_safe_exec(cmd: Union[List[str], str], cloud_state: CloudResources = N
 
     # delete all pvs
     elif cmd[0] == 'kubectl' and 'delete pv --all' in ' '.join(cmd):
+        return MockedCompletedProcess('\n')
+
+    # delete all volume snapshots
+    elif cmd[0] == 'kubectl' and 'delete volumesnapshots --all' in ' '.join(cmd):
         return MockedCompletedProcess('\n')
 
     # check if kubernetes client is installed or cluster is alive
@@ -596,7 +603,7 @@ class MockedS3Object:
         if self.obj not in self.storage:
             raise ClientError(None, None)
 
-    def upload_fileobj(self, stream):
+    def upload_fileobj(self, stream, Config = None):
         """Upload a file object to the cloud bucket"""
         self.storage[self.obj] = stream.read()
 

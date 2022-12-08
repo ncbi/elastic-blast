@@ -97,7 +97,7 @@ EOF
     else
       time gsutil -qm cp $TMP $output_bucket/metadata/query_length.txt
       if [ $split_to_cloud -eq 1 ]; then
-        gsutil -mq cp "$local_output_dir/batch_*.fa" $output_bucket/query_batches
+        gsutil -mq cp "$local_output_dir/batch_*.fa" $output_bucket/query_batches/
       fi
     fi
   fi

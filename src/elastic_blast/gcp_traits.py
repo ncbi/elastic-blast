@@ -24,8 +24,10 @@ elb/gcp_traits.py - helper module for GCP machine info
 Author: Victor Joukov joukovv@ncbi.nlm.nih.gov
 """
 
-import re
+import re, logging
 from .base import InstanceProperties
+from .util import safe_exec
+from .constants import GCP_APIS
 
 GCP_MACHINES = {
     "n1-standard" : 3.75,
@@ -60,3 +62,25 @@ def get_machine_properties(machineType: str) -> InstanceProperties:
         err = f'Cannot get properties for {machineType}'
         raise NotImplementedError(err)
     return InstanceProperties(ncpu, nram)
+
+
+def enable_gcp_api(project: str, dry_run: bool):
+    """ Enable GCP APIs if they are not already enabled
+    parameters:
+        project: GCP project
+        dry_run: True for dry run
+    raises:
+        SafeExecError if there is an error checking or trying to enable APIs
+    """
+    for api in GCP_APIS:
+        cmd = 'gcloud services list --enabled --format=value(config.name) '
+        cmd += f'--filter=config.name={api}.googleapis.com '
+        cmd += f'--project {project}'
+        if dry_run:
+            logging.info(cmd)
+        else:
+            p = safe_exec(cmd)
+            if not p.stdout:
+                cmd = f'gcloud services enable {api}.googleapis.com '
+                cmd += f'--project {project}'
+                p = safe_exec(cmd)

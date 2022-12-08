@@ -46,7 +46,6 @@ from elastic_blast.constants import ElbCommand
 from elastic_blast.constants import ELB_DFLT_LOGLEVEL, ELB_DFLT_LOGFILE
 from elastic_blast.constants import CFG_CLOUD_PROVIDER, CFG_CP_GCP_PROJECT
 
-
 DESC = r"""This application facilitates running BLAST on large amounts of query sequence data
 on the cloud"""
 

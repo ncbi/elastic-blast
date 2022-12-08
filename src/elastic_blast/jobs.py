@@ -30,13 +30,14 @@ import os
 import re
 from typing import List
 from pkg_resources import resource_string
+from typing import Optional
 
 from .filehelper import open_for_read, open_for_write
 from .subst import substitute_params
 from .constants import ELB_DFLT_BLAST_JOB_TEMPLATE, ELB_LOCAL_SSD_BLAST_JOB_TEMPLATE
 from .elb_config import ElasticBlastConfig
 
-def read_job_template(template_name=ELB_DFLT_BLAST_JOB_TEMPLATE, cfg: ElasticBlastConfig = None):
+def read_job_template(template_name=ELB_DFLT_BLAST_JOB_TEMPLATE, cfg: Optional[ElasticBlastConfig] = None):
     """ Read job template file or resource
     Parameters:
         template_name - name of file to read or default resource
