@@ -1,5 +1,5 @@
 wheel==0.37.1
-setuptools==65.5.0
+setuptools==65.5.1
 importlib-resources==5.4.0
 importlib-metadata==4.11.1
 pex==2.1.117
