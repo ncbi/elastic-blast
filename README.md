@@ -47,6 +47,13 @@ most suitable to you:
 * [Installation for the AWS Cloud Shell][3]
 * [Installation for the GCP Cloud Shell][4]
 
+
+Publication:
+------------
+
+Camacho C, Boratyn GM, Joukov V, Vera Alvarez R, Madden TL. ElasticBLAST: accelerating sequence search via cloud computing. BMC Bioinformatics. 2023 Mar 26;24(1):117. doi: [10.1186/s12859-023-05245-9](https://bmcbioinformatics.biomedcentral.com/articles/10.1186/s12859-023-05245-9). PMID: [36967390](https://pubmed.ncbi.nlm.nih.gov/36967390/); PMCID: [PMC10040096](https://www.ncbi.nlm.nih.gov/pmc/articles/PMC10040096/).
+
+
 Developer information
 ---------------------
 

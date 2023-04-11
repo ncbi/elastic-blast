@@ -1,22 +1,46 @@
-cff-version: "1.1.0"
+cff-version: "1.2.0"
 message: "If you use this software, please cite it using these metadata."
 title: ElasticBLAST
 version: "1.0.0"
 date-released: 2022-12-05
 license: "NCBI Public Domain"
 repository-code: "https://github.com/ncbi/elastic-blast/"
+url: "https://blast.ncbi.nlm.nih.gov/doc/elastic-blast/"
 authors: 
+- family-names: Camacho
+  given-names: Christiam E.
+  orcid: https://orcid.org/0000-0002-6709-8298
+- family-names: Boratyn
+  given-names: Greg
+- family-names: Joukov
+  given-names: Victor
+  orcid: https://orcid.org/0000-0003-2962-8902
+- family-names: Merezhuk
+  given-names: Yuri
+- family-names: Madden
+  given-names: Thomas
+  orcid: https://orcid.org/0000-0003-1641-7321
+preferred-citation:
+  type: article
+  authors:
   - family-names: Camacho
-    given-names: Christiam E.
+    given-names: Christiam
     orcid: https://orcid.org/0000-0002-6709-8298
   - family-names: Boratyn
-    given-names: Greg
+    given-names: Grzegorz M
   - family-names: Joukov
     given-names: Victor
     orcid: https://orcid.org/0000-0003-2962-8902
-  - family-names: Merezhuk
-    given-names: Yuri
+  - family-names: Vera Alvarez
+    given-names: Roberto
   - family-names: Madden
-    given-names: Thomas
+    given-names: Thomas L
     orcid: https://orcid.org/0000-0003-1641-7321
-
+  doi: 10.1186/s12859-023-05245-9
+  journal: BMC Bioinformatics
+  month: 3
+  start: 117
+  title: "ElasticBLAST: accelerating sequence search via cloud computing"
+  issue: 1
+  volume: 24
+  year: 2023
