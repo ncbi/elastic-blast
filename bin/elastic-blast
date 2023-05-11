@@ -40,6 +40,7 @@ from elastic_blast.util import validate_installation, check_positive_int, config
 from elastic_blast.util import ElbSupportedPrograms, clean_up
 from elastic_blast import constants
 from elastic_blast.gcp import check_prerequisites
+from elastic_blast.aws import check_auxiliary_versions
 from elastic_blast.config import configure
 from elastic_blast.elb_config import ElasticBlastConfig
 from elastic_blast.constants import ElbCommand
@@ -73,8 +74,11 @@ def main():
         config_logging(args)
         cfg = configure(args)
         logging.info(f"ElasticBLAST {args.subcommand} {VERSION}")
+        logging.info(f'python version: {":".join(sys.version.split())}')
         if CFG_CP_GCP_PROJECT in cfg[CFG_CLOUD_PROVIDER]:
             check_prerequisites()
+        else:
+            check_auxiliary_versions()
         task = ElbCommand(args.subcommand.lower())
         cfg = ElasticBlastConfig(cfg, args.dry_run, task=task)
         logging.debug(pformat(cfg.asdict()))

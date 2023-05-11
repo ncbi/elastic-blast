@@ -38,6 +38,7 @@ from elastic_blast.util import safe_exec, SafeExecError, convert_disk_size_to_gb
 from elastic_blast.util import sanitize_for_k8s
 from elastic_blast.util import validate_gcp_string, convert_labels_to_aws_tags
 from elastic_blast.util import validate_gcp_disk_name, gcp_get_regions
+from elastic_blast.util import ElbSupportedPrograms, UserReportError
 from elastic_blast.gcp_traits import get_machine_properties
 from elastic_blast.elb_config import ElasticBlastConfig
 from elastic_blast.base import InstanceProperties
@@ -64,6 +65,21 @@ def test_mol_type():
     assert(len(choices) == 2)
     assert('prot' in choices)
     assert('nucl' in choices)
+
+
+def test_get_task():
+    """Test parsing blast options for the task parameter"""
+    sp = ElbSupportedPrograms()
+    for program in sp._tasks.keys():
+        for task in sp._tasks[program]:
+            assert sp.get_task(program, f'-task {task}') == task
+            assert sp.get_task(program, f'-evalue 0.01') is None
+
+    with pytest.raises(UserReportError):
+        sp.get_task('blastp', '-task blastx-fast')
+
+    with pytest.raises(UserReportError):
+        sp.get_task('rpsblast', '-task rpsblast-fast')
 
 
 class ElbLibTester(unittest.TestCase):

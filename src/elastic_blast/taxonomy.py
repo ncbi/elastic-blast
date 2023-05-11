@@ -42,7 +42,7 @@ from typing import List, Dict
 
 
 # retry function up to 3 times if utllib.errors.HTTPError occurs
-@retry(retry=retry_if_exception_type(HTTPError), reraise=True, stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10))
+@retry(retry=retry_if_exception_type(HTTPError), reraise=True, stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10))  # type: ignore
 def entrez_query(tool: str, query: Dict[str, str]) -> str:
     """Run NCBI entrez query using e-utils.
 
@@ -80,7 +80,7 @@ def get_species_taxids(user_taxids: List[int]) -> List[int]:
         # esearch
         result = entrez_query('esearch', {'db': 'taxonomy',
                                           'term': f'txid{taxid}[orgn]',
-                                          'usehistory': 'y'})
+                                          'usehistory': 'y'}) # type: ignore
 
         # report an error if taxid is invalid
         if 'PhraseNotFound' in result:
@@ -99,7 +99,7 @@ def get_species_taxids(user_taxids: List[int]) -> List[int]:
         result = entrez_query('efetch', {'db': 'taxonomy',
                                          'WebEnv': webenv,
                                          'query_key': query_key,
-                                         'format': 'uid'})
+                                         'format': 'uid'}) # type: ignore
 
         species_taxids += [int(num) for num in re.findall(r'(\d+)', result)]
         # E-utils allows up to 3 requests per second

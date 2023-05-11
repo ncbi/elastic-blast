@@ -63,6 +63,7 @@ from .constants import STATUS_MESSAGE_ERROR
 from .elb_config import ElasticBlastConfig
 from .elasticblast import ElasticBlast
 from .gcp_traits import enable_gcp_api
+from . import VERSION
 
 class ElasticBlastGcp(ElasticBlast):
     """ Implementation of core ElasticBLAST functionality in GCP. """
@@ -422,6 +423,7 @@ class ElasticBlastGcp(ElasticBlast):
             'ELB_DOCKER_IMAGE': ELB_DOCKER_IMAGE_GCP,
             'ELB_TIMEFMT': '%s%N',  # timestamp in nanoseconds
             'BLAST_ELB_JOB_ID': uuid.uuid4().hex,
+            'BLAST_ELB_VERSION': VERSION,
             'BLAST_USAGE_REPORT': str(usage_reporting).lower(),
             'K8S_JOB_GET_BLASTDB' : K8S_JOB_GET_BLASTDB,
             'K8S_JOB_LOAD_BLASTDB_INTO_RAM' : K8S_JOB_LOAD_BLASTDB_INTO_RAM,
@@ -547,7 +549,7 @@ def delete_disk(name: str, cfg: ElasticBlastConfig) -> None:
     safe_exec(cmd)
 
 
-@retry(reraise=True, stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10))
+@retry(reraise=True, stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10)) # type: ignore
 def _get_pd_id(cfg: ElasticBlastConfig) -> List[str]:
     """ Try to get the GCP persistent disk ID from elastic-blast records"""
     retval = list()
@@ -600,7 +602,7 @@ def delete_cluster_with_cleanup(cfg: ElasticBlastConfig) -> None:
     try_kubernetes = True
     pds = []
     try:
-        pds = _get_pd_id(cfg)
+        pds = _get_pd_id(cfg) # type: ignore
     except Exception as e:
         logging.error(f'Unable to read disk id from GS: {e}')
     else:
@@ -915,22 +917,27 @@ def check_prerequisites() -> None:
     If execution of one of these tools is unsuccessful
     it will throw UserReportError exception."""
     try:
-        safe_exec('gcloud --version')
+        p = safe_exec('gcloud --version')
     except SafeExecError as e:
         message = f"Required pre-requisite 'gcloud' doesn't work, check installation of GCP SDK.\nDetails: {e.message}"
         raise UserReportError(DEPENDENCY_ERROR, message)
+    logging.debug(f'{":".join(p.stdout.decode().split())}')
+
     try:
         # client=true prevents kubectl from addressing server which can be down at the moment
-        safe_exec('kubectl version --client=true')
+        p = safe_exec('kubectl version --client=true')
     except SafeExecError as e:
         message = f"Required pre-requisite 'kubectl' doesn't work, check Kubernetes installation.\nDetails: {e.message}"
         raise UserReportError(DEPENDENCY_ERROR, message)
+    logging.debug(f'{":".join(p.stdout.decode().split())}')
+
     # Check we have gsutil available
     try:
-        safe_exec('gsutil --version')
+        p = safe_exec('gsutil --version')
     except SafeExecError as e:
         message = f"Required pre-requisite 'gsutil' doesn't work, check installation of GCP SDK.\nDetails: {e.message}\nNote: this is because your query is located on GS, you may try another location"
         raise UserReportError(DEPENDENCY_ERROR, message)
+    logging.debug(f'{":".join(p.stdout.decode().split())}')
 
 
 def remove_split_query(cfg: ElasticBlastConfig) -> None:

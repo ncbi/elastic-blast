@@ -57,7 +57,7 @@ from .constants import ELB_BLASTDB_MEMORY_MARGIN
 from .constants import CFG_CLOUD_PROVIDER
 from .constants import CFG_CP_GCP_PROJECT, CFG_CP_GCP_REGION, CFG_CP_GCP_ZONE
 from .constants import CFG_CP_GCP_NETWORK, CFG_CP_GCP_SUBNETWORK
-from .constants import CFG_CP_GCP_GKE_VERSION
+from .constants import CFG_CP_GCP_K8S_VERSION
 from .constants import CFG_CP_AWS_REGION, CFG_CP_AWS_VPC, CFG_CP_AWS_SUBNET
 from .constants import CFG_CP_AWS_JOB_ROLE, CFG_CP_AWS_BATCH_SERVICE_ROLE
 from .constants import CFG_CP_AWS_INSTANCE_ROLE, CFG_CP_AWS_SPOT_FLEET_ROLE
@@ -86,6 +86,7 @@ from .constants import AWS_ROLE_PREFIX, CFG_CP_AWS_AUTO_SHUTDOWN_ROLE
 from .constants import BLASTDB_ERROR, ELB_UNKNOWN, ELB_JANITOR_SCHEDULE
 from .constants import ELB_DFLT_GCP_REGION, ELB_DFLT_GCP_ZONE
 from .constants import ELB_DFLT_AWS_REGION, ELB_UNKNOWN_GCP_PROJECT
+from .constants import ELB_DFLT_GCP_K8S_VERSION
 from .util import validate_gcp_string, check_aws_region_for_invalid_characters
 from .util import validate_gke_cluster_name, ElbSupportedPrograms
 from .util import get_query_batch_size, get_gcp_project
@@ -225,8 +226,7 @@ class GCPConfig(CloudProviderBaseConfig, ConfigParserToDataclassMapper):
     network: Optional[str] = None
     subnet: Optional[str] = None
     user: Optional[str] = None
-    # gke_version should be set to None to use the default GKE, otherwise use a specific version supported by GKE (e.g.: 1.25)
-    gke_version: Optional[str] = None
+    gke_version: Optional[str] = ELB_DFLT_GCP_K8S_VERSION
     # if True, GCP project will be passed to gsutil calls that download files
     # from GCS and users will be charged for the downloads.
     requester_pays: bool = False
@@ -240,7 +240,7 @@ class GCPConfig(CloudProviderBaseConfig, ConfigParserToDataclassMapper):
                'user': None,
                'network': ParamInfo(CFG_CLOUD_PROVIDER, CFG_CP_GCP_NETWORK),
                'subnet': ParamInfo(CFG_CLOUD_PROVIDER, CFG_CP_GCP_SUBNETWORK),
-               'gke_version': ParamInfo(CFG_CLOUD_PROVIDER, CFG_CP_GCP_GKE_VERSION),
+               'gke_version': ParamInfo(CFG_CLOUD_PROVIDER, CFG_CP_GCP_K8S_VERSION),
                'requester_pays': None}
  
     def __post_init__(self):
@@ -723,8 +723,11 @@ class ElasticBlastConfig:
         # set batch length
         if self.blast and not self.cluster.dry_run:
             if self.blast.batch_len == ELB_NOT_INITIALIZED_NUM:
+                blast_task = ElbSupportedPrograms().get_task(self.blast.program,
+                                                             self.blast.options)
                 self.blast.batch_len = get_batch_length(self.cloud_provider.cloud,
                                                         self.blast.program,
+                                                        blast_task,
                                                         mt_mode,
                                                         self.cluster.num_cpus,
                                                         self.blast.db_metadata)
@@ -806,6 +809,7 @@ class ElasticBlastConfig:
                               program: Optional[str] = None,
                               db: Optional[str] = None,
                               queries: Optional[str] = None,
+                              options: str = '',
                               dry_run: Optional[bool] = None,
                               cluster_name: Optional[str] = None,
                               machine_type: str = ''):
@@ -842,7 +846,8 @@ class ElasticBlastConfig:
                 raise ValueError('BLAST queries are missing')
             self.blast = BlastConfig(program = BLASTProgram(program),
                                      db = db,
-                                     queries_arg = queries)
+                                     queries_arg = queries,
+                                     options = options)
 
             self.timeouts = TimeoutsConfig()
             self.appstate = AppState()

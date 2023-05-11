@@ -137,22 +137,50 @@ def test_get_batch_length():
     """Test computing batch length"""
     PROGRAM = 'blastx'
     NUM_CPUS = 16
-    assert get_batch_length(CSP.AWS, program = PROGRAM, mt_mode = MTMode.ZERO,
+    assert get_batch_length(CSP.AWS, program = PROGRAM, task = None,
+                            mt_mode = MTMode.ZERO,
                             num_cpus = NUM_CPUS) == get_query_batch_size(PROGRAM)
 
     PROGRAM = 'blastp'
-    assert get_batch_length(CSP.AWS, program = PROGRAM, mt_mode = MTMode.ONE,
+    assert get_batch_length(CSP.AWS, program = PROGRAM, task = None,
+                            mt_mode = MTMode.ONE,
                             num_cpus = NUM_CPUS) == get_query_batch_size(PROGRAM) * NUM_CPUS * 2
 
     PROGRAM = 'rpsblast'
     NUM_CPUS = 16
-    assert get_batch_length(CSP.AWS, program = PROGRAM, mt_mode = MTMode.ONE,
+    assert get_batch_length(CSP.AWS, program = PROGRAM, task = None,
+                            mt_mode = MTMode.ONE,
                             num_cpus = NUM_CPUS) == get_query_batch_size(PROGRAM) * NUM_CPUS * 2
 
     PROGRAM = 'rpsblast'
     NUM_CPUS = 100
-    assert get_batch_length(CSP.GCP, program = PROGRAM, mt_mode = MTMode.ONE,
+    assert get_batch_length(CSP.GCP, program = PROGRAM, task = None,
+                            mt_mode = MTMode.ONE,
                             num_cpus = NUM_CPUS) == get_query_batch_size(PROGRAM) * MAX_NUM_THREADS_GCP * 2
+
+    PROGRAM = 'blastn'
+    NUM_CPUS = 100
+    assert get_batch_length(CSP.GCP, program = PROGRAM, task = None,
+                            mt_mode = MTMode.ZERO,
+                            num_cpus = NUM_CPUS) == get_query_batch_size(PROGRAM)
+
+    PROGRAM = 'blastn'
+    NUM_CPUS = 100
+    assert get_batch_length(CSP.GCP, program = PROGRAM, task = 'megablast',
+                            mt_mode = MTMode.ZERO,
+                            num_cpus = NUM_CPUS) == get_query_batch_size(PROGRAM)
+
+    PROGRAM = 'blastn'
+    NUM_CPUS = 100
+    assert get_batch_length(CSP.GCP, program = PROGRAM, task = 'blastn',
+                            mt_mode = MTMode.ZERO,
+                            num_cpus = NUM_CPUS) == 1000000
+
+    PROGRAM = 'blastn'
+    NUM_CPUS = 100
+    assert get_batch_length(CSP.GCP, program = PROGRAM, task = 'dc-megablast',
+                            mt_mode = MTMode.ZERO,
+                            num_cpus = NUM_CPUS) == 1000000
 
 
 @patch(target='elastic_blast.tuner.aws_get_machine_properties', new=MagicMock(return_value=InstanceProperties(32, 128)))

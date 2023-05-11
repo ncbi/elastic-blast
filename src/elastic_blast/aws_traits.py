@@ -31,6 +31,7 @@ from typing import Optional, List, Any
 from .util import UserReportError, check_aws_region_for_invalid_characters
 from .base import InstanceProperties, PositiveInteger, MemoryStr
 from .constants import ELB_DFLT_AWS_REGION, INPUT_ERROR, PERMISSIONS_ERROR
+from .constants import DEPENDENCY_ERROR
 
 
 def create_aws_config(region: Optional[str] = None) -> Config:
@@ -90,12 +91,13 @@ def get_machine_properties(instance_type: str, boto_cfg: Config = None) -> Insta
 
 def get_instance_type_offerings(region: str) -> List[str]:
     """Get a list of instance types offered in an AWS region"""
-    ec2 = boto3.client('ec2')
+    boto_cfg = create_aws_config(region)
+    ec2 = boto3.client('ec2', config=boto_cfg)
     try:
         current = ec2.describe_instance_type_offerings(LocationType='region', Filters=[{'Name': 'location', 'Values': [region]}])
         instance_types = current['InstanceTypeOfferings']
         while 'NextToken' in current:
-            current = ec2.describe_instance_type_offerings(LocationType='regioon', Filters=[{'Name': 'location', 'Values': [region]}], NextToken=current['NextToken'])
+            current = ec2.describe_instance_type_offerings(LocationType='region', Filters=[{'Name': 'location', 'Values': [region]}], NextToken=current['NextToken'])
             instance_types += current['InstanceTypeOfferings']
     except ClientError as err:
         logging.debug(err)
@@ -104,6 +106,9 @@ def get_instance_type_offerings(region: str) -> List[str]:
         logging.debug(err)
         raise UserReportError(returncode=PERMISSIONS_ERROR, message=str(err))
 
+    if not instance_types:
+        raise UserReportError(returncode=DEPENDENCY_ERROR,
+                              message=f'Could not get instance types available in region: {region}')
     return [it['InstanceType'] for it in instance_types]
 
 

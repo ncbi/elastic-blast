@@ -106,8 +106,10 @@ def main():
                                 mt_mode = mt_mode,
                                 query = query_data)
         conf[CFG_BLAST][CFG_BLAST_PROGRAM] = args.program
+        task = ElbSupportedPrograms().get_task(args.program, args.options)
         conf[CFG_BLAST][CFG_BLAST_BATCH_LEN] = str(get_batch_length(cloud_provider = cloud_provider,
                                                           program = args.program,
+                                                          task = task,
                                                           mt_mode = mt_mode,
                                                           num_cpus = num_cpus))
 

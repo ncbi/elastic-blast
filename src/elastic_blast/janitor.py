@@ -56,7 +56,7 @@ def copy_to_results_bucket_if_not_present(filename: str, bucket: str):
         if bucket.startswith(ELB_S3_PREFIX):
             copy_file_to_s3(bucket, Path(filename))
         else:
-            upload_file_to_gcs(filename, bucket)
+            upload_file_to_gcs(filename, bucket) # type: ignore
 
 
 def janitor(elb: ElasticBlast) -> None:

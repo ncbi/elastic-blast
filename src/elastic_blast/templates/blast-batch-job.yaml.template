@@ -64,6 +64,8 @@ spec:
           value: "${BLAST_ELB_JOB_ID}"
         - name: BLAST_ELB_BATCH_NUM
           value: "${BLAST_ELB_BATCH_NUM}"
+        - name: BLAST_ELB_VERSION
+          value: "${BLAST_ELB_VERSION}"
         command: ["/bin/bash", "-c"]
         args:
         - echo "BASH version ${BASH_VERSION}";

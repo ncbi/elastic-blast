@@ -1359,6 +1359,36 @@ def test_mt_mode_and_batch_len_blastn(gke_mock):
         assert '-mt_mode 1' not in cfg.blast.options
         assert cfg.blast.batch_len == 5e6
 
+        # test batch-len for task blastn and dc-megablast
+        BLASTN_KWARGS = {'program': PROGRAM,
+                         'queries': 'test-query.fa',
+                         'db': 'gs://bucket/some-db',
+                         'options': '-task blastn',
+                         'results': 'gs://test-results',
+                         'gcp_project': 'test-project',
+                         'gcp_region': 'test-region',
+                         'gcp_zone': 'test-zone',
+                         'task': ElbCommand.SUBMIT}
+
+        cfg = ElasticBlastConfig(**BLASTN_KWARGS)
+        cfg.validate()
+        assert '-mt_mode 1' not in cfg.blast.options
+        assert cfg.blast.batch_len == 1e6
+
+        DC_MEGABLAST_KWARGS = {'program': PROGRAM,
+                               'queries': 'test-query.fa',
+                               'db': 's3://bucket/some-db',
+                               'options': '-task dc-megablast',
+                               'results': 's3://test-results',
+                               'aws_region': 'test-region',
+                               'task': ElbCommand.SUBMIT}
+
+        cfg = ElasticBlastConfig(**DC_MEGABLAST_KWARGS)
+        cfg.validate()
+        assert '-mt_mode 1' not in cfg.blast.options
+        assert cfg.blast.batch_len == 1e6
+
+
     # without db_metadata
 
     # GCP
@@ -1707,6 +1737,43 @@ def test_mt_mode_and_batch_len_user_selected(gke_mock):
        cfg.validate()
        assert cfg.blast.batch_len == BATCH_LEN
        assert cfg.blast.user_provided_batch_len
+
+
+def test_verify_blast_task(gke_mock):
+    """Test that blast task is properly parsed"""
+    kwargs = {'program': 'blastn',
+              'queries': 'test-queries.fa',
+              'db': 'testdb',
+              'results': 'gs://test-results',
+              'gcp_region': 'test-region',
+              'gcp_zone': 'test-zone',
+              'gcp_project': 'test-project',
+              'task': ElbCommand.SUBMIT}
+
+    tasks = {'blastp': ['blastp', 'blastp-fast', 'blastp-short'],
+             'blastn': ['blastn', 'blastn-short', 'dc-megablast', 'megablast'],
+             'blastx': ['blastx', 'blastx-fast'],
+             'tblastn': ['tblastn', 'tblastn-fast']}
+
+    for program in tasks.keys():
+        for task in tasks[program]:
+            kwargs['program'] = program
+            kwargs['options'] = f'-task {task}'
+            ElasticBlastConfig(**kwargs)
+            kwargs['options'] = f'-outfmt 6'
+            ElasticBlastConfig(**kwargs)
+
+    kwargs['program'] = 'rpstblastn'
+    kwargs['options'] = '-task megablast'
+    with pytest.raises(UserReportError):
+        ElasticBlastConfig(**kwargs)
+    
+    kwargs['program'] = 'blastp'
+    kwargs['options'] = '-task megablast'
+    with pytest.raises(UserReportError):
+        ElasticBlastConfig(**kwargs)
+
+
 
 
 def test_sanitize_gcp_label():

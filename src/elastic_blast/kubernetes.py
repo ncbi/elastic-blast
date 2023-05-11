@@ -117,7 +117,7 @@ def get_persistent_disks(k8s_ctx: str, dry_run: bool = False) -> List[str]:
     return list()
 
 
-@retry( stop=(stop_after_delay(ELB_K8S_JOB_SUBMISSION_TIMEOUT) | stop_after_attempt(ELB_K8S_JOB_SUBMISSION_MAX_RETRIES)), wait=wait_random(min=ELB_K8S_JOB_SUBMISSION_MIN_WAIT, max=ELB_K8S_JOB_SUBMISSION_MAX_WAIT))
+@retry( stop=(stop_after_delay(ELB_K8S_JOB_SUBMISSION_TIMEOUT) | stop_after_attempt(ELB_K8S_JOB_SUBMISSION_MAX_RETRIES)), wait=wait_random(min=ELB_K8S_JOB_SUBMISSION_MIN_WAIT, max=ELB_K8S_JOB_SUBMISSION_MAX_WAIT)) # type: ignore
 def submit_jobs_with_retries(k8s_ctx: str, path: pathlib.Path, dry_run=False) -> List[str]:
     """ Retry kubernetes job submissions with the parameters specified in the decorator """
     return submit_jobs(k8s_ctx, path, dry_run)
@@ -146,7 +146,7 @@ def submit_jobs(k8s_ctx: str, path: pathlib.Path, dry_run=False) -> List[str]:
         elif num_files > K8S_MAX_JOBS_PER_DIR:
             files = os.listdir(str(path))
             for i, f in enumerate(sorted(files, key=lambda x: int(os.path.splitext(x)[0].split('_')[1]))):
-                retval += submit_jobs_with_retries(k8s_ctx, pathlib.Path(os.path.join(path, f)), dry_run)
+                retval += submit_jobs_with_retries(k8s_ctx, pathlib.Path(os.path.join(path, f)), dry_run) # type: ignore
                 perc_done = i / num_files * 100.
                 if i % 50 == 0:
                     logging.debug(f'Submitted job file # {i} of {num_files} {perc_done:.2f}% done')

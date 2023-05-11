@@ -28,7 +28,7 @@ def check_resource_quotas(cfg: ElasticBlastConfig) -> None:
         return
     if cfg.cloud_provider.cloud == elastic_blast.config.CSP.AWS:
         boto_cfg = create_aws_config(cfg.aws.region)
-        ResourceCheckAwsEc2CloudFormation(boto_cfg)()
+        ResourceCheckAwsEc2CloudFormation(cfg, boto_cfg)()
         ResourceCheckAwsBatch(boto_cfg)()
     elif cfg.cloud_provider.cloud == elastic_blast.config.CSP.GCP:
         raise NotImplementedError('Resource check for GCP is not implemented yet')

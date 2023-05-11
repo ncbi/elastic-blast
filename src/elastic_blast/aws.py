@@ -51,7 +51,7 @@ from copy import deepcopy
 from .util import convert_labels_to_aws_tags, convert_disk_size_to_gb
 from .util import convert_memory_to_mb, UserReportError
 from .util import ElbSupportedPrograms, get_usage_reporting, sanitize_aws_batch_job_name
-from .util import get_resubmission_error_msg
+from .util import get_resubmission_error_msg, safe_exec
 from .constants import BLASTDB_ERROR, CLUSTER_ERROR, ELB_QUERY_LENGTH, PERMISSIONS_ERROR
 from .constants import ELB_QUERY_BATCH_DIR, ELB_METADATA_DIR
 from .constants import ELB_DOCKER_IMAGE_AWS, INPUT_ERROR, ELB_QS_DOCKER_IMAGE_AWS
@@ -70,6 +70,7 @@ from .object_storage_utils import write_to_s3
 from .base import DBSource
 from .elb_config import ElasticBlastConfig, sanitize_aws_tag
 from .elasticblast import ElasticBlast
+from . import VERSION
 
 
 CF_TEMPLATE = os.path.join(os.path.dirname(__file__), 'templates', 'elastic-blast-cf.yaml')
@@ -144,6 +145,17 @@ class JobIds:
         if self.job_submission:
             id_list.append(self.job_submission)
         return id_list
+
+
+def check_auxiliary_versions():
+    """Check version of auxiliary tools: awscli. No errors will be reported
+    if the tools are not accessible."""
+    try:
+        p = safe_exec('aws --version')
+    except:
+        logging.debug('Could not check awscli version')
+    else:
+        logging.debug(f'{":".join(p.stdout.decode().split())}')
 
 
 class ElasticBlastAws(ElasticBlast):
@@ -852,7 +864,9 @@ class ElasticBlastAws(ElasticBlast):
                                             {'name': 'BLAST_USAGE_REPORT',
                                              'value': 'true'},
                                             {'name': 'BLAST_ELB_BATCH_NUM',
-                                             'value': str(i)}]
+                                             'value': str(i)},
+                                            {'name': 'BLAST_ELB_VERSION',
+                                             'value': VERSION}]
             else:
                 overrides['environment'] = [{'name': 'BLAST_USAGE_REPORT',
                                              'value': 'false'}]

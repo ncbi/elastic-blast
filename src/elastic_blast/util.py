@@ -40,6 +40,7 @@ from .constants import MolType, GCS_DFLT_BUCKET
 from .constants import DEPENDENCY_ERROR, AWS_MAX_TAG_LENGTH, GCP_MAX_LABEL_LENGTH
 from .constants import AWS_MAX_JOBNAME_LENGTH, CSP, ELB_GCS_PREFIX
 from .constants import ELB_DFLT_LOGLEVEL, ELB_DFLT_LOGFILE
+from .constants import INPUT_ERROR
 from .base import DBSource
 
 RESOURCES = [
@@ -88,6 +89,12 @@ class ElbSupportedPrograms:
         'tblastx'
     ]
 
+    _tasks = {'blastp': ['blastp', 'blastp-fast', 'blastp-short'],
+              'blastn': ['blastn', 'blastn-short', 'dc-megablast', 'megablast'],
+              'blastx': ['blastx', 'blastx-fast'],
+              'tblastn': ['tblastn', 'tblastn-fast']}
+              
+
     def get(self):
         return self._programs
 
@@ -128,6 +135,21 @@ class ElbSupportedPrograms:
         else:
             raise NotImplementedError(f'Invalid BLAST program "{program}"')
         return retval
+
+
+    def get_task(self, program: str, options: str) -> Optional[str]:
+        """Parse blast command line options and return task or None if the
+        task was not specified in the command line. Raise UserReportError for
+        inapropriate tasks."""
+        m = re.search(r'-task ([\w-]+)', options)
+        if not m:
+            return None
+        task = m.group(1)
+        if program.lower() not in self._tasks.keys():
+            raise UserReportError(INPUT_ERROR, f'Incorrect -task option in "{options}". {program} does not support the task command line parameter.')
+        if task.lower() not in self._tasks[program.lower()]:
+            raise UserReportError(INPUT_ERROR, f'Incorrect -task option in "{options}". Allowed task values for {program} are {self._tasks[program]}.')
+        return task.lower()
 
 
 def get_query_batch_size(program: str) -> int:

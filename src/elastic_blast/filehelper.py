@@ -33,7 +33,7 @@ Author: Victor Joukov joukovv@ncbi.nlm.nih.gov
 """
 
 import subprocess, os, io, gzip, tarfile, re, tempfile, shutil, sys
-import logging
+import logging, shlex
 import urllib.request
 from string import digits
 from random import sample
@@ -83,12 +83,12 @@ def harvest_query_splitting_results(bucket_name: str, dry_run: bool = False, bot
             for line in qlist:
                 query_batches.append(line.strip())
     else:
-        raise NotImplementedError(f'Harvesting query splitting results from {bucket} not supported')
+        raise NotImplementedError(f'Harvesting query splitting results from {bucket_name} not supported')
 
     return QuerySplittingResults(query_length=qlen, query_batches=query_batches)
 
 
-@retry(reraise=True, stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10))
+@retry(reraise=True, stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10))    # type: ignore
 def upload_file_to_gcs(filename: str, gcs_location: str, dry_run: bool = False) -> None:
     """ Function to copy the filename provided to GCS """
     cmd = f'gsutil -qm cp {filename} {gcs_location}'
@@ -484,8 +484,8 @@ def open_for_read(fname: str, gcp_prj: Optional[str] = None):
     mode = 'rb' if binary else 'rt'
     if fname.startswith(ELB_GCS_PREFIX):
         prj = f'-u {gcp_prj}' if gcp_prj else ''
-        cmd = f'gsutil {prj} cat {fname}'
-        proc = subprocess.Popen(cmd.split(),
+        cmd = f'gsutil {prj} cat ' + shlex.quote(fname)
+        proc = subprocess.Popen(shlex.split(cmd),
             stdout=subprocess.PIPE,
             stderr=subprocess.PIPE,
             universal_newlines=not binary)

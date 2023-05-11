@@ -43,3 +43,4 @@ clouseau*
 submit-and-wait-for-results.sh
 aws-docker-login.txt
 elb-run-report.csv
+aws-credentials

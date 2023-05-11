@@ -164,14 +164,16 @@ def get_num_cpus(cloud_provider: CSP, program: str, mt_mode: MTMode,
             return min([num_cpus, MAX_NUM_THREADS_GCP])
 
 
-def get_batch_length(cloud_provider: CSP, program: str, mt_mode: MTMode,
-                     num_cpus: int, db_metadata: Optional[DbMetadata] = None) -> int:
+def get_batch_length(cloud_provider: CSP, program: str, task: Optional[str],
+                     mt_mode: MTMode, num_cpus: int,
+                     db_metadata: Optional[DbMetadata] = None) -> int:
     """
     Get batch length for BLAST batch search
 
     Arguments:
         cloud_provider: Cloud provider
         program: BLAST program
+        task: BLAST task command line parameter value
         mt_mode: BLAST MT mode
         num_cpus: Number of threads/CPUs to use
         db_metadata: BLAST database metadata
@@ -192,6 +194,10 @@ def get_batch_length(cloud_provider: CSP, program: str, mt_mode: MTMode,
             batch_len *= 2
     else:
         # MTMode.ZERO
+        if program.lower() == 'blastn':
+            if task and task in ['blastn', 'dc-megablast']:
+                batch_len = 1000000
+
         if db_metadata:
             if program.lower() == 'blastp':
                 batch_len = 20000

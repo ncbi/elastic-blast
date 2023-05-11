@@ -204,7 +204,7 @@ ELB_DFLT_GCP_ZONE = 'us-east4-b'
 ELB_DFLT_AWS_REGION = 'us-east-1'
 ELB_UNKNOWN_GCP_PROJECT = 'elb-unknown-gcp-project'
 
-ELB_DOCKER_VERSION = '1.1.3'
+ELB_DOCKER_VERSION = '1.2.0'    # ElasticBLAST 1.1.0 uses BLAST+ 2.14.0
 ELB_QS_DOCKER_VERSION = '0.1.4'
 ELB_JANITOR_DOCKER_VERSION = '0.3.0'
 ELB_JOB_SUBMIT_DOCKER_VERSION = '3.0.0'
@@ -226,6 +226,11 @@ ELB_DFLT_AWS_PD_SIZE = '1000G'
 ELB_DFLT_AWS_PROVISIONED_IOPS = '2000'
 ELB_DFLT_AWS_SPOT_BID_PERCENTAGE = '100'
 
+# This value is assigned to gke_version. It should be set to None to use the
+# default k8s version in GKE, otherwise it should be set to a specific version
+# supported by GKE (e.g.: 1.25)
+ELB_DFLT_GCP_K8S_VERSION = '1.25'
+
 # Config sections
 CFG_CLOUD_PROVIDER = 'cloud-provider'
 CFG_CLUSTER = 'cluster'
@@ -239,7 +244,7 @@ CFG_CP_GCP_REGION = 'gcp-region'
 CFG_CP_GCP_ZONE = 'gcp-zone'
 CFG_CP_GCP_NETWORK = 'gcp-network'
 CFG_CP_GCP_SUBNETWORK = 'gcp-subnetwork'
-CFG_CP_GCP_GKE_VERSION = 'gke-version'
+CFG_CP_GCP_K8S_VERSION = 'gke-version'
 CFG_CP_AWS_REGION = 'aws-region'
 CFG_CP_AWS_KEY_PAIR = 'aws-key-pair'
 CFG_CP_AWS_VPC = 'aws-vpc'
