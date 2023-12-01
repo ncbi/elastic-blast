@@ -98,8 +98,10 @@ def main():
         if args.total_query_length:
             query_data = SeqData(args.total_query_length,
                                  sp.get_query_mol_type(args.program))
+
+        # MT mode is only used to inform selection of ElasticBLAST batch-length, memory,
+        # and machine type as the best guess. BLAST+ selects MT mode.
         mt_mode = get_mt_mode(args.program, args.options, db_metadata, query_data)
-        options += f' {mt_mode}'
 
         num_cpus = get_num_cpus(cloud_provider = cloud_provider,
                                 program = args.program,

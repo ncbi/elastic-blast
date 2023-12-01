@@ -33,8 +33,8 @@ from elastic_blast import util
 from elastic_blast.constants import ELB_DFLT_GCP_MACHINE_TYPE
 from elastic_blast.constants import ElbCommand, MolType
 from elastic_blast.util import get_query_batch_size
-from elastic_blast.util import convert_memory_to_mb, get_blastdb_size, sanitize_aws_batch_job_name
-from elastic_blast.util import safe_exec, SafeExecError, convert_disk_size_to_gb
+from elastic_blast.util import get_blastdb_size, sanitize_aws_batch_job_name
+from elastic_blast.util import safe_exec, SafeExecError
 from elastic_blast.util import sanitize_for_k8s
 from elastic_blast.util import validate_gcp_string, convert_labels_to_aws_tags
 from elastic_blast.util import validate_gcp_disk_name, gcp_get_regions
@@ -67,13 +67,21 @@ def test_mol_type():
     assert('nucl' in choices)
 
 
+def get_default_task(program: str) -> str:
+    """Get default blast task"""
+    if program == 'blastn':
+        return 'megablast'
+    else:
+        return program
+
+
 def test_get_task():
     """Test parsing blast options for the task parameter"""
     sp = ElbSupportedPrograms()
     for program in sp._tasks.keys():
         for task in sp._tasks[program]:
             assert sp.get_task(program, f'-task {task}') == task
-            assert sp.get_task(program, f'-evalue 0.01') is None
+            assert sp.get_task(program, f'-evalue 0.01') == get_default_task(program)
 
     with pytest.raises(UserReportError):
         sp.get_task('blastp', '-task blastx-fast')
@@ -192,7 +200,8 @@ def test_safe_exec_run(mocker):
     mocker.patch('subprocess.run')
     safe_exec(cmd)
     # test subprocess.run is called with check=True
-    subprocess.run.assert_called_with(cmd, check=True, stdout=-1, stderr=-1)
+    subprocess.run.assert_called_with(cmd, check=True, stdout=-1, stderr=-1,
+                                      env=None)
 
 
 @patch(target='elastic_blast.elb_config.get_db_metadata', new=MagicMock(return_value=DB_METADATA))
@@ -221,36 +230,6 @@ def test_convert_labels_to_aws_tags(gke_mock):
     assert('Owner' in t.keys())
     assert('results' in t.keys())
     assert(t['results'] == 's3://some.bucket.with_s0me-interesting-name-end')
-
-
-def test_disk_size_conversions():
-    rv = convert_disk_size_to_gb('100G')
-    assert(rv == 100)
-    rv = convert_disk_size_to_gb('50')
-    assert(rv == 50)
-    rv = convert_disk_size_to_gb('2.5T')
-    assert(rv == 2500)
-    rv = convert_disk_size_to_gb('500m')
-    assert(rv == 1)
-    rv = convert_disk_size_to_gb('1500m')
-    assert(rv == 1)
-    rv = convert_disk_size_to_gb('0.5G')
-    assert(rv == 1)
-
-
-def test_memory_conversions():
-    rv = convert_memory_to_mb('100G')
-    assert(rv == 100000)
-    rv = convert_memory_to_mb('50')
-    assert(rv == 50000)
-    rv = convert_memory_to_mb('2.5T')
-    assert(rv == 2500000)
-    rv = convert_memory_to_mb('500m')
-    assert(rv == 500)
-    rv = convert_memory_to_mb('1500m')
-    assert(rv == 1500)
-    rv = convert_memory_to_mb('0.5G')
-    assert(rv == 500)
 
 
 def test_validate_gcp_string():

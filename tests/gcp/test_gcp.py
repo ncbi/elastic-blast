@@ -135,7 +135,7 @@ def test_delete_disk(gke_mock):
 def test_delete_nonexistent_disk(mocker):
     """Test that deleting a GCP disk that does not exits raises util.SafeExecError"""
 
-    def fake_subprocess_run(cmd, check, stdout, stderr):
+    def fake_subprocess_run(cmd, check, stdout, stderr, env):
         """Fake subprocess.run function that raises exception and emulates
         command line returning with a non-zero exit code"""
         raise subprocess.CalledProcessError(returncode=1, cmd=cmd, output=b'',

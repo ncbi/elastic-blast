@@ -18,42 +18,26 @@
 #   
 # Please cite NCBI in any work or product based on this material.
 
-FROM ncbi/blast:latest as blast
+FROM ncbi/blast:2.15.0 as blast
 ARG version
 LABEL Description="NCBI BLAST" Vendor="NCBI/NLM/NIH" Version=${version} Maintainer=camacho@ncbi.nlm.nih.gov
-
-FROM google/cloud-sdk:slim
-# FROM resets ARGs, thus repeated ARG instruction
-ARG version
 
 USER root
 WORKDIR /root/
 
 COPY requirements.txt .
+
+RUN apt-get -y -m update && \
+    apt-get install -y python3 python3-pip time parallel vmtouch curl wget unzip && \
+	rm -rf /var/lib/apt/lists/*  
+
 RUN python3 -m pip install --no-cache-dir --upgrade pip && \
     python3 -m pip install --no-cache-dir -r requirements.txt && \
     rm -frv requirements.txt
 
-RUN apt-get -y -m update && \
-    apt-get install -y libgomp1 libnet-perl libidn11 libxml-simple-perl libjson-perl perl-doc liblmdb-dev time parallel vmtouch cpanminus curl wget libio-socket-ssl-perl libhtml-parser-perl unzip && \
-	rm -rf /var/lib/apt/lists/*  
-
-RUN mkdir -p /blast/bin /blast/lib
-COPY --from=blast /blast/bin /blast/bin
-COPY --from=blast /blast/lib /blast/lib
-COPY --from=blast /root/edirect /root/edirect
 COPY splitq_download_db_search /blast/bin/
 RUN sed -i -e "s/\$VERSION/$version/" /blast/bin/splitq_download_db_search
 COPY fasta-split /blast/bin/
-
-
-RUN mkdir -p /blast/blastdb /blast/blastdb_custom
-RUN sed -i '$ a BLASTDB=/blast/blastdb:/blast/blastdb_custom' /etc/environment
-ENV BLASTDB /blast/blastdb:/blast/blastdb_custom
-ENV PATH="/root/edirect:/blast/bin:${PATH}"
-
-
-WORKDIR /blast
 
 CMD ["/bin/bash"]
 

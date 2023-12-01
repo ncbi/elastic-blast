@@ -44,9 +44,44 @@ Parameters:
   ElbResults:
     Description: ElasticBLAST results bucket
     Type: String
+  LambdaExecutionRoleArn:
+    Description: "ARN of preexisting Janitor Lambda Execution Role"
+    Type: String
+    Default: ''
+  CopyZipsRoleArn:
+    Description: "ARN of preexisting Janitor Copy Zips Role"
+    Type: String
+    Default: ''
+
+Conditions:
+  CreateLambdaExecutionRole: !Equals [!Ref LambdaExecutionRoleArn, '']
+  CreateCopyZipsRole: !Equals [!Ref CopyZipsRoleArn, '']
 
 Resources:
+  # Implements conditional dependsOn at the Lambda when role is created by CFN (only)\
+  # https://garbe.io/blog/2017/07/17/cloudformation-hacks/#:%7E:text=Hack%20VII%3A%20DependsOn%20with%20condition
+  
+  # This handle is created only when role is created by CFN
+  CreateExecutionRoleWaitHandle:
+    Condition: CreateLambdaExecutionRole
+    DependsOn: ElasticBlastJanitorLambdaExecutionRole
+    Type: "AWS::CloudFormation::WaitConditionHandle"
+
+  # This handle is created regardless
+  PassedExecutionRoleWaitHandle:
+    Type: "AWS::CloudFormation::WaitConditionHandle"
+
+  # This wait condition consumes the handle bound to role creation when appropriate, else the PassedRole handle
+  # Now we can conditionally depend other resources directly on this wait condition
+  RoleInPlaceWaitCondition: 
+    Type: "AWS::CloudFormation::WaitCondition"
+    Properties: 
+      Handle: !If [CreateLambdaExecutionRole, !Ref CreateExecutionRoleWaitHandle, !Ref PassedExecutionRoleWaitHandle]
+      Timeout: "1"
+      Count: 0
+
   ElasticBlastJanitorLambdaExecutionRole:
+    Condition: CreateLambdaExecutionRole
     Type: "AWS::IAM::Role"
     Properties:
       Description: !Sub "Role to run ElasticBLAST janitor on ${StackName}"
@@ -97,9 +132,7 @@ Resources:
           Value: elastic-blast
   ElasticBlastJanitorLambda:
     Type: "AWS::Lambda::Function"
-    DependsOn:
-      - ElasticBlastJanitorLambdaExecutionRole
-      - CopyZips
+    DependsOn: [CopyZips, RoleInPlaceWaitCondition]
     Properties:
       FunctionName: !Sub "${StackName}-ElasticBlastJanitorLambda"
       Description: !Sub "ElasticBLAST janitor lambda function for ${StackName}"
@@ -107,10 +140,11 @@ Resources:
         S3Bucket: !Ref 'CopyZipsLambdaBucket'
         S3Key: !Sub '${S3Key}elasticblast-janitor-lambda-deployment.zip'
       Handler: "lambda_elb.handler"
-      Runtime: python3.8
+      Runtime: python3.9
       Timeout: 900
       MemorySize: 256
-      Role: !GetAtt ElasticBlastJanitorLambdaExecutionRole.Arn
+      Role:
+        !If [CreateLambdaExecutionRole, !GetAtt 'ElasticBlastJanitorLambdaExecutionRole.Arn', !Ref LambdaExecutionRoleArn ]
       Tags:
         - Key: Name
           Value: !Join [-, [elasticblast, !Ref Owner, 'janitor', 'lambda']]
@@ -163,6 +197,7 @@ Resources:
       Objects:
         - elasticblast-janitor-lambda-deployment.zip
   CopyZipsRole:
+    Condition: CreateCopyZipsRole
     Type: AWS::IAM::Role
     Properties:
       Description: !Sub "Role to deploy ElasticBLAST janitor lambda on ${StackName}"
@@ -198,8 +233,10 @@ Resources:
       Description: !Sub Imports ElasticBLAST janitor lambda into ${CopyZipsLambdaBucket} for ${StackName}
 
       Handler: index.handler
-      Runtime: python3.8
-      Role: !GetAtt 'CopyZipsRole.Arn'
+      Runtime: python3.9
+      Role:
+        !If [CreateCopyZipsRole, !GetAtt 'CopyZipsRole.Arn', !Ref CopyZipsRoleArn ]
+
       Timeout: 240
       Code:
         ZipFile: |

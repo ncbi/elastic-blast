@@ -79,58 +79,58 @@ def test_get_mt_mode():
                              bytes_to_cache = 100,
                              number_of_volumes = 1)
 
-    query = SeqData(length = 20000, moltype = MolType.PROTEIN)
-    assert get_mt_mode(program = 'blastp', options = '', db_metadata = db_metadata, query = query) == MTMode.ONE
+    query = SeqData(length = 200000, moltype = MolType.PROTEIN)
+    assert get_mt_mode(program = 'blastp', options = '', db_metadata = db_metadata, query = query) == MTMode.QUERY
 
 
     db_metadata.dbtype = 'Protein'
     db_metadata.number_of_letters = 50000000000
     query = SeqData(length = 20000, moltype = MolType.PROTEIN)
-    assert get_mt_mode(program = 'blastp', options = '', db_metadata = db_metadata, query = query) == MTMode.ZERO
+    assert get_mt_mode(program = 'blastp', options = '', db_metadata = db_metadata, query = query) == MTMode.DB
 
     db_metadata.dbtype = 'Protein'
     db_metadata.number_of_letters = 50000000000
-    query = SeqData(length = 20000, moltype = MolType.PROTEIN)
-    assert get_mt_mode(program = 'blastp', options = '-taxidlist list', db_metadata = db_metadata, query = query) == MTMode.ONE
+    query = SeqData(length = 200000, moltype = MolType.PROTEIN)
+    assert get_mt_mode(program = 'blastp', options = '-taxidlist list', db_metadata = db_metadata, query = query) == MTMode.QUERY
 
     db_metadata.dbtype = 'Nucleotide'
     db_metadata.number_of_letters = 1000
     query = SeqData(length = 5000000, moltype = MolType.PROTEIN)
-    assert get_mt_mode(program = 'blastp', options = '', db_metadata = db_metadata, query = query) == MTMode.ONE
+    assert get_mt_mode(program = 'blastp', options = '', db_metadata = db_metadata, query = query) == MTMode.QUERY
 
     db_metadata.dbtype = 'Nucleotide'
     db_metadata.number_of_letters = 20000000000
     query = SeqData(length = 5000000, moltype = MolType.PROTEIN)
-    assert get_mt_mode(program = 'blastp', options = '', db_metadata = db_metadata, query = query) == MTMode.ZERO
+    assert get_mt_mode(program = 'blastp', options = '', db_metadata = db_metadata, query = query) == MTMode.DB
 
     db_metadata.dbtype = 'Nucleotide'
     db_metadata.number_of_letters = 500
     query = SeqData(length = 5000000, moltype = MolType.PROTEIN)
-    assert get_mt_mode(program = 'tblastn', options = '', db_metadata = db_metadata, query = query) == MTMode.ZERO
+    assert get_mt_mode(program = 'tblastn', options = '', db_metadata = db_metadata, query = query) == MTMode.QUERY
 
     db_metadata.dbtype = 'Nucleotide'
     db_metadata.number_of_letters = 500
     query = SeqData(length = 5000000, moltype = MolType.PROTEIN)
-    assert get_mt_mode(program = 'tblastx', options = '', db_metadata = db_metadata, query = query) == MTMode.ZERO
+    assert get_mt_mode(program = 'tblastx', options = '', db_metadata = db_metadata, query = query) == MTMode.DB
 
 
 def test_MTMode():
     """Test MTMode conversions"""
-    assert MTMode(0) == MTMode.ZERO
-    assert MTMode(1) == MTMode.ONE
-    assert str(MTMode.ZERO) == ''
-    assert str(MTMode.ONE) == '-mt_mode 1'
+    assert MTMode(2) == MTMode.DB
+    assert MTMode(1) == MTMode.QUERY
+    assert str(MTMode.DB) == '-mt_mode 2'
+    assert str(MTMode.QUERY) == '-mt_mode 1'
 
 
 def test_get_num_cpus():
     """Test computing number of cpus for a BLAST search"""
     query = SeqData(length = 85000, moltype = MolType.PROTEIN)
-    assert get_num_cpus(cloud_provider = CSP.AWS, program = 'blastp', mt_mode = MTMode.ZERO, query = query) == MAX_NUM_THREADS_AWS
-    assert get_num_cpus(cloud_provider = CSP.GCP, program = 'blastp', mt_mode = MTMode.ZERO, query = query) == MAX_NUM_THREADS_GCP
-    assert get_num_cpus(cloud_provider = CSP.AWS, program = 'blastx', mt_mode = MTMode.ONE, query = query) == 9
+    assert get_num_cpus(cloud_provider = CSP.AWS, program = 'blastp', mt_mode = MTMode.DB, query = query) == MAX_NUM_THREADS_AWS
+    assert get_num_cpus(cloud_provider = CSP.GCP, program = 'blastp', mt_mode = MTMode.DB, query = query) == MAX_NUM_THREADS_GCP
+    assert get_num_cpus(cloud_provider = CSP.AWS, program = 'blastx', mt_mode = MTMode.QUERY, query = query) == 9
     query = SeqData(length = 50000000, moltype = MolType.NUCLEOTIDE)
-    assert get_num_cpus(cloud_provider = CSP.AWS, program = 'tblastn', mt_mode = MTMode.ONE, query = query) == MAX_NUM_THREADS_AWS
-    assert get_num_cpus(cloud_provider = CSP.GCP, program = 'tblastn', mt_mode = MTMode.ONE, query = query) == MAX_NUM_THREADS_GCP
+    assert get_num_cpus(cloud_provider = CSP.AWS, program = 'tblastn', mt_mode = MTMode.QUERY, query = query) == MAX_NUM_THREADS_AWS
+    assert get_num_cpus(cloud_provider = CSP.GCP, program = 'tblastn', mt_mode = MTMode.QUERY, query = query) == MAX_NUM_THREADS_GCP
 
 
 def test_get_batch_length():
@@ -138,48 +138,48 @@ def test_get_batch_length():
     PROGRAM = 'blastx'
     NUM_CPUS = 16
     assert get_batch_length(CSP.AWS, program = PROGRAM, task = None,
-                            mt_mode = MTMode.ZERO,
+                            mt_mode = MTMode.DB,
                             num_cpus = NUM_CPUS) == get_query_batch_size(PROGRAM)
 
     PROGRAM = 'blastp'
     assert get_batch_length(CSP.AWS, program = PROGRAM, task = None,
-                            mt_mode = MTMode.ONE,
+                            mt_mode = MTMode.QUERY,
                             num_cpus = NUM_CPUS) == get_query_batch_size(PROGRAM) * NUM_CPUS * 2
 
     PROGRAM = 'rpsblast'
     NUM_CPUS = 16
     assert get_batch_length(CSP.AWS, program = PROGRAM, task = None,
-                            mt_mode = MTMode.ONE,
+                            mt_mode = MTMode.QUERY,
                             num_cpus = NUM_CPUS) == get_query_batch_size(PROGRAM) * NUM_CPUS * 2
 
     PROGRAM = 'rpsblast'
     NUM_CPUS = 100
     assert get_batch_length(CSP.GCP, program = PROGRAM, task = None,
-                            mt_mode = MTMode.ONE,
+                            mt_mode = MTMode.QUERY,
                             num_cpus = NUM_CPUS) == get_query_batch_size(PROGRAM) * MAX_NUM_THREADS_GCP * 2
 
     PROGRAM = 'blastn'
     NUM_CPUS = 100
     assert get_batch_length(CSP.GCP, program = PROGRAM, task = None,
-                            mt_mode = MTMode.ZERO,
+                            mt_mode = MTMode.DB,
                             num_cpus = NUM_CPUS) == get_query_batch_size(PROGRAM)
 
     PROGRAM = 'blastn'
     NUM_CPUS = 100
     assert get_batch_length(CSP.GCP, program = PROGRAM, task = 'megablast',
-                            mt_mode = MTMode.ZERO,
+                            mt_mode = MTMode.DB,
                             num_cpus = NUM_CPUS) == get_query_batch_size(PROGRAM)
 
     PROGRAM = 'blastn'
     NUM_CPUS = 100
     assert get_batch_length(CSP.GCP, program = PROGRAM, task = 'blastn',
-                            mt_mode = MTMode.ZERO,
+                            mt_mode = MTMode.DB,
                             num_cpus = NUM_CPUS) == 1000000
 
     PROGRAM = 'blastn'
     NUM_CPUS = 100
     assert get_batch_length(CSP.GCP, program = PROGRAM, task = 'dc-megablast',
-                            mt_mode = MTMode.ZERO,
+                            mt_mode = MTMode.DB,
                             num_cpus = NUM_CPUS) == 1000000
 
 
@@ -230,12 +230,12 @@ def test_get_mem_limit():
     # for GCP
     machine_type = 'n1-standard-32'
     props = gcp_get_machine_properties(machine_type)
-    assert get_mem_limit(CSP.GCP, machine_type, NUM_CPUS).asGB() == props.memory - SYSTEM_MEMORY_RESERVE
+    assert get_mem_limit(CSP.GCP, machine_type, NUM_CPUS).asGiB() == props.memory - SYSTEM_MEMORY_RESERVE
 
     #for AWS
     machine_type = 'm5.x8large'
     props = aws_get_machine_properties(machine_type)
-    assert abs(get_mem_limit(CSP.AWS, machine_type, NUM_CPUS).asGB() - \
+    assert abs(get_mem_limit(CSP.AWS, machine_type, NUM_CPUS).asGiB() - \
         (props.memory - SYSTEM_MEMORY_RESERVE) / math.floor(props.ncpus / NUM_CPUS)) < 0.1
 
 
@@ -296,20 +296,20 @@ def test_aws_get_machine_type():
 def test_gcp_get_machine_type():
     """Test selecting machine type for GCP"""
     NUM_CPUS = 14
-    result = gcp_get_machine_type(memory=MemoryStr('120G'), num_cpus=NUM_CPUS)
+    result = gcp_get_machine_type(memory=MemoryStr('120Gi'), num_cpus=NUM_CPUS)
     assert result == 'n1-standard-32'
 
     NUM_CPUS = 14
-    result = gcp_get_machine_type(memory=MemoryStr('42G'), num_cpus=NUM_CPUS)
+    result = gcp_get_machine_type(memory=MemoryStr('42Gi'), num_cpus=NUM_CPUS)
     assert result == 'e2-standard-16'
 
     NUM_CPUS = 256
     with pytest.raises(UserReportError):
-        gcp_get_machine_type(memory=MemoryStr('42G'), num_cpus=NUM_CPUS)
+        gcp_get_machine_type(memory=MemoryStr('42Gi'), num_cpus=NUM_CPUS)
 
     NUM_CPUS = 32
     with pytest.raises(UserReportError):
-        gcp_get_machine_type(memory=MemoryStr('1026G'), num_cpus=NUM_CPUS)
+        gcp_get_machine_type(memory=MemoryStr('1026Gi'), num_cpus=NUM_CPUS)
 
 
 @patch(target='boto3.client', new=MagicMock(return_value=MockedEc2Client))
@@ -333,7 +333,7 @@ def test_get_machine_type():
     result = get_machine_type(cloud_provider = CSP.AWS,
                               db = db_metadata,
                               num_cpus = ELB_DFLT_AWS_NUM_CPUS,
-                              mt_mode = MTMode.ZERO,
+                              mt_mode = MTMode.DB,
                               db_mem_margin = ELB_BLASTDB_MEMORY_MARGIN,
                               region = 'test-region')
     assert result == 'm5.4xlarge'
@@ -341,7 +341,7 @@ def test_get_machine_type():
     result = get_machine_type(cloud_provider = CSP.AWS,
                               db = db_metadata,
                               num_cpus = ELB_DFLT_AWS_NUM_CPUS,
-                              mt_mode = MTMode.ONE,
+                              mt_mode = MTMode.QUERY,
                               db_mem_margin = ELB_BLASTDB_MEMORY_MARGIN,
                               region = 'test-region')
     assert result == 'r5.4xlarge'
@@ -350,7 +350,7 @@ def test_get_machine_type():
     result = get_machine_type(cloud_provider = CSP.GCP,
                               db = db_metadata,
                               num_cpus = ELB_DFLT_GCP_NUM_CPUS,
-                              mt_mode = MTMode.ZERO,
+                              mt_mode = MTMode.DB,
                               db_mem_margin = ELB_BLASTDB_MEMORY_MARGIN,
                               region = 'test-region')
     assert result == 'e2-standard-16'
@@ -358,7 +358,7 @@ def test_get_machine_type():
     result = get_machine_type(cloud_provider = CSP.GCP,
                               db = db_metadata,
                               num_cpus = ELB_DFLT_AWS_NUM_CPUS,
-                              mt_mode = MTMode.ONE,
+                              mt_mode = MTMode.QUERY,
                               db_mem_margin = ELB_BLASTDB_MEMORY_MARGIN,
                               region = 'test-region')
     assert result == 'e2-standard-32'

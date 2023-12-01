@@ -75,8 +75,11 @@ def test_memorystr():
         with pytest.raises(ValueError):
             MemoryStr(val)
 
-    assert MemoryStr('1024m').asGB() == 1.0
+    assert MemoryStr('1024mi').asGiB() == 1.0
     assert MemoryStr('3G').asGB() == 3.0
+    assert MemoryStr('1G').asMB() == 1000.0
+    assert MemoryStr('1Gi').asMB() == 1074.0
+    assert MemoryStr('1Gi').asGB() == 1.074
     
 
 def test_configparsertodataclassmapper():

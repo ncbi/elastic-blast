@@ -126,6 +126,7 @@ def app_mocks(caplog, aws_credentials, gke_mock, mocker):
     mocker.patch('elastic_blast.commands.submit.harvest_query_splitting_results', new=MagicMock(return_value=QuerySplittingResults(query_length=5, query_batches=['batch_0.fa'])))
     mocker.patch('elastic_blast.commands.submit.get_blastdb_size', new=MagicMock(return_value=1.0))
     mocker.patch('elastic_blast.gcp.get_blastdb_info', new=MagicMock(return_value=('gs://test-bucket/testdb', 'gs://test-bucket/testdb.tar.gz', 'testdb')))
+    mocker.patch('elastic_blast.commands.submit.get_length', new=MagicMock(return_value=1))
 
     yield SetupObjects(caplog = caplog, gke_mock = gke_mock)
 

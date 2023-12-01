@@ -55,6 +55,7 @@ ELB_CLUSTER_NAME=test-cluster
 ELB_GCP_PROJECT=test-project
 ELB_GCP_ZONE=test-zone
 ELB_USE_LOCAL_SSD=false
+export USE_GKE_GCLOUD_AUTH_PLUGIN=True
 mkdir -p test/metadata
 cp ../src/elastic_blast/templates/blast-batch-job.yaml.template test/metadata/job.yaml.template
 for ((i=0; i<1020; i++)) do printf 'batch_%03d.fa\n' "$i" >> test/metadata/batch_list.txt; done

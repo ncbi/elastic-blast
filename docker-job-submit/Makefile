@@ -28,7 +28,7 @@ SHELL=/bin/bash
 .PHONY: all pre-check check clean build publish gcp-build gcp-check gcp-clean
 
 IMG?=ncbi/elasticblast-job-submit
-VERSION?=3.0.0
+VERSION?=4.0.2
 GCP_PROJECT?=$(shell gcloud config get-value project 2>/dev/null)
 GCP_TEST_BUCKET?=gs://elasticblast-test/cloud-job-submission
 AWS_REGION?=us-east-1

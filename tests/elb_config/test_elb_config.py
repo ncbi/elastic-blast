@@ -42,7 +42,7 @@ from elastic_blast.constants import CFG_BLAST, CFG_BLAST_PROGRAM, CFG_BLAST_DB
 from elastic_blast.constants import CFG_BLAST_DB_SRC, CFG_BLAST_RESULTS, CFG_BLAST_QUERY
 from elastic_blast.constants import CFG_BLAST_OPTIONS, CFG_BLAST_BATCH_LEN
 from elastic_blast.constants import CFG_BLAST_MEM_REQUEST, CFG_BLAST_MEM_LIMIT
-from elastic_blast.constants import CFG_BLAST_TAXIDLIST, CFG_BLAST_DB_MEM_MARGIN
+from elastic_blast.constants import CFG_BLAST_DB_MEM_MARGIN
 from elastic_blast.constants import ELB_BLASTDB_MEMORY_MARGIN
 from elastic_blast.constants import CFG_CLUSTER, CFG_CLUSTER_NAME, CFG_CLUSTER_MACHINE_TYPE
 from elastic_blast.constants import CFG_CLUSTER_NUM_NODES, CFG_CLUSTER_NUM_CPUS
@@ -657,7 +657,7 @@ def test_machine_type(gke_mock):
                             task = ElbCommand.SUBMIT)
     cfg.validate()
     assert cfg.cluster.machine_type == ELB_DFLT_AWS_MACHINE_TYPE
-    assert cfg.cluster.mem_limit.asGB() == 59
+    assert int(cfg.cluster.mem_limit.asGiB()) == 59
 
     # GCP default, no database metadata
     cfg = ElasticBlastConfig(gcp_project = 'test-project',
@@ -670,7 +670,7 @@ def test_machine_type(gke_mock):
                             task = ElbCommand.SUBMIT)
     cfg.validate()
     assert cfg.cluster.machine_type == ELB_DFLT_GCP_MACHINE_TYPE
-    assert cfg.cluster.mem_limit.asGB() == 206
+    assert cfg.cluster.mem_limit.asGiB() == 206
 
     # with database metadata
     cfg = ElasticBlastConfig(aws_region = 'test-region',
@@ -681,7 +681,7 @@ def test_machine_type(gke_mock):
                             task = ElbCommand.SUBMIT)
     cfg.validate()
     assert cfg.cluster.machine_type == TEST_MACHINE_TYPE
-    assert cfg.cluster.mem_limit.asGB() == 59
+    assert cfg.cluster.mem_limit.asGiB() == 59
 
     # with user-provided machine type
     USER_MACHINE_TYPE = 'a-machine-type'
@@ -768,8 +768,8 @@ def test_get_max_concurrent_blast_jobs_gcp(gke_mock):
     cfg.validate(ElbCommand.SUBMIT)
     n = cfg.get_max_number_of_concurrent_blast_jobs()
     assert n == 10
-    assert cfg.cluster.instance_memory.asGB() == 128
-    assert cfg.cluster.mem_limit.asGB() == 126
+    assert cfg.cluster.instance_memory.asGiB() == 128
+    assert cfg.cluster.mem_limit.asGiB() == 126
     assert cfg.cluster.mem_request.asGB() == 0.5
 
 
@@ -800,8 +800,8 @@ def test_get_max_concurrent_blast_jobs_aws(gke_mock):
     cfg.validate(ElbCommand.SUBMIT)
     n = cfg.get_max_number_of_concurrent_blast_jobs()
     assert n == 10
-    assert cfg.cluster.instance_memory.asGB() == 128
-    assert cfg.cluster.mem_limit.asGB() == 63
+    assert cfg.cluster.instance_memory.asGiB() == 128
+    assert cfg.cluster.mem_limit.asGiB() == 63
     assert cfg.cluster.mem_request.asGB() == 0.5
 
 
@@ -1090,7 +1090,7 @@ def test_mt_mode_and_batch_len_rpsblast(gke_mock):
                              gcp_zone = 'test-zone',
                              task = ElbCommand.SUBMIT)
     cfg.validate()
-    assert '-mt_mode 1' in cfg.blast.options
+    assert '-mt_mode' not in cfg.blast.options
     assert cfg.blast.batch_len == 3000000
 
     # AWS, with db metadata
@@ -1101,7 +1101,7 @@ def test_mt_mode_and_batch_len_rpsblast(gke_mock):
                              aws_region = 'test-region',
                              task = ElbCommand.SUBMIT)
     cfg.validate()
-    assert '-mt_mode 1' in cfg.blast.options
+    assert '-mt_mode' not in cfg.blast.options
     assert cfg.blast.batch_len == 3200000
 
     # GCP, no db metadata
@@ -1114,7 +1114,7 @@ def test_mt_mode_and_batch_len_rpsblast(gke_mock):
                              gcp_zone = 'test-zone',
                              task = ElbCommand.SUBMIT)
     cfg.validate()
-    assert '-mt_mode 1' in cfg.blast.options
+    assert '-mt_mode' not in cfg.blast.options
     assert cfg.blast.batch_len == 3000000
 
     # AWS, no db metadata
@@ -1125,7 +1125,7 @@ def test_mt_mode_and_batch_len_rpsblast(gke_mock):
                              aws_region = 'test-region',
                              task = ElbCommand.SUBMIT)
     cfg.validate()
-    assert '-mt_mode 1' in cfg.blast.options
+    assert '-mt_mode' not in cfg.blast.options
     assert cfg.blast.batch_len == 3200000
 
     # AWS, too many CPUs
@@ -1139,7 +1139,7 @@ def test_mt_mode_and_batch_len_rpsblast(gke_mock):
 
     cfg = ElasticBlastConfig(confpars, task = ElbCommand.SUBMIT)
     cfg.validate()
-    assert '-mt_mode 1' in cfg.blast.options
+    assert '-mt_mode' not in cfg.blast.options
     assert cfg.blast.batch_len == 3200000
 
 
@@ -1159,7 +1159,7 @@ def test_mt_mode_and_batch_len_rpstblastn(gke_mock):
                              gcp_zone = 'test-zone',
                              task = ElbCommand.SUBMIT)
     cfg.validate()
-    assert '-mt_mode 1' in cfg.blast.options
+    assert '-mt_mode' not in cfg.blast.options
     assert cfg.blast.batch_len == 1500000
 
     # AWS, with db metadata
@@ -1170,7 +1170,7 @@ def test_mt_mode_and_batch_len_rpstblastn(gke_mock):
                              aws_region = 'test-region',
                              task = ElbCommand.SUBMIT)
     cfg.validate()
-    assert '-mt_mode 1' in cfg.blast.options
+    assert '-mt_mode' not in cfg.blast.options
     assert cfg.blast.batch_len == 1600000
 
     # GCP, no db metadata
@@ -1183,7 +1183,7 @@ def test_mt_mode_and_batch_len_rpstblastn(gke_mock):
                              gcp_zone = 'test-zone',
                              task = ElbCommand.SUBMIT)
     cfg.validate()
-    assert '-mt_mode 1' in cfg.blast.options
+    assert '-mt_mode' not in cfg.blast.options
     assert cfg.blast.batch_len == 1500000
 
     # AWS, no db metadata
@@ -1194,7 +1194,7 @@ def test_mt_mode_and_batch_len_rpstblastn(gke_mock):
                              aws_region = 'test-region',
                              task = ElbCommand.SUBMIT)
     cfg.validate()
-    assert '-mt_mode 1' in cfg.blast.options
+    assert '-mt_mode' not in cfg.blast.options
     assert cfg.blast.batch_len == 1600000
 
 
@@ -1238,13 +1238,13 @@ def test_mt_mode_and_batch_len_blastp(gke_mock):
         # GCP
         cfg = ElasticBlastConfig(**GCP_KWARGS)
         cfg.validate()
-        assert '-mt_mode 1' in cfg.blast.options
+        assert '-mt_mode' not in cfg.blast.options
         assert cfg.blast.batch_len == 300000
 
         # AWS
         cfg = ElasticBlastConfig(**AWS_KWARGS)
         cfg.validate()
-        assert '-mt_mode 1' in cfg.blast.options
+        assert '-mt_mode' not in cfg.blast.options
         assert cfg.blast.batch_len == 320000
 
     # with db metadata, database size between 500M and 20B residues
@@ -1254,13 +1254,13 @@ def test_mt_mode_and_batch_len_blastp(gke_mock):
         # GCP
         cfg = ElasticBlastConfig(**GCP_KWARGS)
         cfg.validate()
-        assert '-mt_mode 1' not in cfg.blast.options
+        assert '-mt_mode' not in cfg.blast.options
         assert cfg.blast.batch_len == 40000
 
         # AWS
         cfg = ElasticBlastConfig(**AWS_KWARGS)
         cfg.validate()
-        assert '-mt_mode 1' not in cfg.blast.options
+        assert '-mt_mode' not in cfg.blast.options
         assert cfg.blast.batch_len == 40000
 
     # with db metadata, database size abobe 20B residues
@@ -1270,13 +1270,13 @@ def test_mt_mode_and_batch_len_blastp(gke_mock):
         # GCP
         cfg = ElasticBlastConfig(**GCP_KWARGS)
         cfg.validate()
-        assert '-mt_mode 1' not in cfg.blast.options
+        assert '-mt_mode' not in cfg.blast.options
         assert cfg.blast.batch_len == 20000
 
         # AWS
         cfg = ElasticBlastConfig(**AWS_KWARGS)
         cfg.validate()
-        assert '-mt_mode 1' not in cfg.blast.options
+        assert '-mt_mode' not in cfg.blast.options
         assert cfg.blast.batch_len == 20000
 
     # without db_metadata
@@ -1284,13 +1284,13 @@ def test_mt_mode_and_batch_len_blastp(gke_mock):
     # GCP
     cfg = ElasticBlastConfig(**GCP_KWARGS)
     cfg.validate()
-    assert '-mt_mode 1' not in cfg.blast.options
+    assert '-mt_mode' not in cfg.blast.options
     assert cfg.blast.batch_len == 10000
 
     # AWS
     cfg = ElasticBlastConfig(**AWS_KWARGS)
     cfg.validate()
-    assert '-mt_mode 1' not in cfg.blast.options
+    assert '-mt_mode' not in cfg.blast.options
     assert cfg.blast.batch_len == 10000
 
 
@@ -1328,19 +1328,19 @@ def test_mt_mode_and_batch_len_blastn(gke_mock):
                   'task': ElbCommand.SUBMIT}
 
     # with db metadata, database size below 14B bases
-    db_metadata.number_of_letters = int(14e9)
+    db_metadata.number_of_letters = int(1.5e6) - 1
 
     with patch(target='elastic_blast.elb_config.get_db_metadata', new=MagicMock(return_value=db_metadata)):
         # GCP
         cfg = ElasticBlastConfig(**GCP_KWARGS)
         cfg.validate()
-        assert '-mt_mode 1' in cfg.blast.options
+        assert '-mt_mode' not in cfg.blast.options
         assert cfg.blast.batch_len == 75e6
 
         # AWS
         cfg = ElasticBlastConfig(**AWS_KWARGS)
         cfg.validate()
-        assert '-mt_mode 1' in cfg.blast.options
+        assert '-mt_mode' not in cfg.blast.options
         assert cfg.blast.batch_len == 80e6
 
     # with db metadata, database size above 14B bases
@@ -1350,13 +1350,13 @@ def test_mt_mode_and_batch_len_blastn(gke_mock):
         # GCP
         cfg = ElasticBlastConfig(**GCP_KWARGS)
         cfg.validate()
-        assert '-mt_mode 1' not in cfg.blast.options
+        assert '-mt_mode' not in cfg.blast.options
         assert cfg.blast.batch_len == 5e6
 
         # AWS
         cfg = ElasticBlastConfig(**AWS_KWARGS)
         cfg.validate()
-        assert '-mt_mode 1' not in cfg.blast.options
+        assert '-mt_mode' not in cfg.blast.options
         assert cfg.blast.batch_len == 5e6
 
         # test batch-len for task blastn and dc-megablast
@@ -1372,7 +1372,7 @@ def test_mt_mode_and_batch_len_blastn(gke_mock):
 
         cfg = ElasticBlastConfig(**BLASTN_KWARGS)
         cfg.validate()
-        assert '-mt_mode 1' not in cfg.blast.options
+        assert '-mt_mode' not in cfg.blast.options
         assert cfg.blast.batch_len == 1e6
 
         DC_MEGABLAST_KWARGS = {'program': PROGRAM,
@@ -1438,20 +1438,20 @@ def test_mt_mode_and_batch_len_blastx(gke_mock):
                   'task': ElbCommand.SUBMIT}
 
     # with db metadata, database size below 2B residues
-    db_metadata.number_of_letters = int(2e9) - 1
+    db_metadata.number_of_letters = int(9e8) - 1
 
     with patch(target='elastic_blast.elb_config.get_db_metadata', new=MagicMock(return_value=db_metadata)):
         # GCP
         cfg = ElasticBlastConfig(**GCP_KWARGS)
         cfg.validate()
-        assert '-mt_mode 1' in cfg.blast.options
-        assert cfg.blast.batch_len == 300060
+        assert '-mt_mode' not in cfg.blast.options
+        assert cfg.blast.batch_len >= 1250000
 
         # AWS
         cfg = ElasticBlastConfig(**AWS_KWARGS)
         cfg.validate()
-        assert '-mt_mode 1' in cfg.blast.options
-        assert cfg.blast.batch_len == 320064
+        assert '-mt_mode' not in cfg.blast.options
+        assert cfg.blast.batch_len >= 1250000
 
     # with db metadata, database size between 2B and 20B residues
     db_metadata.number_of_letters = int(20e9) - 1
@@ -1460,13 +1460,13 @@ def test_mt_mode_and_batch_len_blastx(gke_mock):
         # GCP
         cfg = ElasticBlastConfig(**GCP_KWARGS)
         cfg.validate()
-        assert '-mt_mode 1' not in cfg.blast.options
+        assert '-mt_mode' not in cfg.blast.options
         assert cfg.blast.batch_len == 100000
 
         # AWS
         cfg = ElasticBlastConfig(**AWS_KWARGS)
         cfg.validate()
-        assert '-mt_mode 1' not in cfg.blast.options
+        assert '-mt_mode' not in cfg.blast.options
         assert cfg.blast.batch_len == 100000
 
     # with db metadata, database size abobe 20B residues
@@ -1476,13 +1476,13 @@ def test_mt_mode_and_batch_len_blastx(gke_mock):
         # GCP
         cfg = ElasticBlastConfig(**GCP_KWARGS)
         cfg.validate()
-        assert '-mt_mode 1' not in cfg.blast.options
+        assert '-mt_mode' not in cfg.blast.options
         assert cfg.blast.batch_len == 30000
 
         # AWS
         cfg = ElasticBlastConfig(**AWS_KWARGS)
         cfg.validate()
-        assert '-mt_mode 1' not in cfg.blast.options
+        assert '-mt_mode' not in cfg.blast.options
         assert cfg.blast.batch_len == 30000
 
 
@@ -1491,13 +1491,13 @@ def test_mt_mode_and_batch_len_blastx(gke_mock):
     # GCP
     cfg = ElasticBlastConfig(**GCP_KWARGS)
     cfg.validate()
-    assert '-mt_mode 1' not in cfg.blast.options
+    assert '-mt_mode' not in cfg.blast.options
     assert cfg.blast.batch_len == 20004
 
     # AWS
     cfg = ElasticBlastConfig(**AWS_KWARGS)
     cfg.validate()
-    assert '-mt_mode 1' not in cfg.blast.options
+    assert '-mt_mode' not in cfg.blast.options
     assert cfg.blast.batch_len == 20004
 
 
@@ -1541,13 +1541,13 @@ def test_mt_mode_and_batch_len_tblastn(gke_mock):
         # GCP
         cfg = ElasticBlastConfig(**GCP_KWARGS)
         cfg.validate()
-        assert '-mt_mode 1' not in cfg.blast.options
-        assert cfg.blast.batch_len == 320000
+        assert '-mt_mode' not in cfg.blast.options
+        assert cfg.blast.batch_len == 300000
 
         # AWS
         cfg = ElasticBlastConfig(**AWS_KWARGS)
         cfg.validate()
-        assert '-mt_mode 1' not in cfg.blast.options
+        assert '-mt_mode' not in cfg.blast.options
         assert cfg.blast.batch_len == 320000
 
     # with db metadata, database size between 100M and 20B bases

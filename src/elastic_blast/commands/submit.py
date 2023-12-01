@@ -47,6 +47,8 @@ from elastic_blast.constants import ELB_AWS_JOB_IDS, ELB_METADATA_DIR, ELB_STATE
 from elastic_blast.constants import ELB_QUERY_BATCH_DIR, BLASTDB_ERROR, INPUT_ERROR
 from elastic_blast.constants import PERMISSIONS_ERROR, CLUSTER_ERROR, CSP, QUERY_LIST_EXT
 from elastic_blast.constants import ElbCommand, ELB_META_CONFIG_FILE
+from elastic_blast.constants import ELB_DFLT_MIN_QUERY_FILESIZE_TO_SPLIT_ON_CLIENT_COMPRESSED
+from elastic_blast.constants import ELB_DFLT_MIN_QUERY_FILESIZE_TO_SPLIT_ON_CLIENT_UNCOMPRESSED
 from elastic_blast.constants import ELB_S3_PREFIX, ELB_GCS_PREFIX
 from elastic_blast.taxonomy import setup_taxid_filtering
 from elastic_blast.config import validate_cloud_storage_object_uri
@@ -66,6 +68,16 @@ def get_query_split_mode(cfg: ElasticBlastConfig, query_files):
         if cfg.cloud_provider.cloud == CSP.AWS and \
            'ELB_USE_1_STAGE_CLOUD_SPLIT' in os.environ:
             return QuerySplitMode.CLOUD_ONE_STAGE
+
+        gcp_prj = None if cfg.cloud_provider.cloud == CSP.AWS else cfg.gcp.get_project_for_gcs_downloads()
+        fsize : int = get_length(query_files[0], cfg.cluster.dry_run, gcp_prj)
+        is_compressed : bool = query_files[0].endswith('.gz')
+        min_fsize_to_split_on_client: int = \
+                cfg.blast.min_qsize_to_split_on_client_compressed if is_compressed else \
+                cfg.blast.min_qsize_to_split_on_client_uncompressed
+        logging.debug(f"get_query_mode: fsize={fsize} min_fsize_to_split_on_client={min_fsize_to_split_on_client}")
+        if fsize < min_fsize_to_split_on_client:
+            return QuerySplitMode.CLIENT
         else:
             return QuerySplitMode.CLOUD_TWO_STAGE
 

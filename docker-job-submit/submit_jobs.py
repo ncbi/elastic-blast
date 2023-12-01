@@ -37,7 +37,7 @@ from elastic_blast.util import config_logging
 from elastic_blast.base import MemoryStr
 from elastic_blast import VERSION
 
-DESC = 'Helper script to submit ElasticBLAST jobs remotely'
+DESC = f'Helper script to submit ElasticBLAST (version {VERSION}) jobs remotely'
 
 @handle_aws_error
 def main():
@@ -73,6 +73,7 @@ def create_arg_parser():
     parser.add_argument("--loglevel", default='DEBUG',
                         help=f"Default: DEBUG",
                         choices=["DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"])
+    parser.add_argument('--version', action='version', version='%(prog)s ' + VERSION)
 
 
     return parser

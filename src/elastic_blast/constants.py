@@ -111,7 +111,13 @@ ELB_DFLT_AWS_NUM_CPUS = 16
 ELB_DFLT_NUM_NODES = 1
 ELB_DFLT_MIN_NUM_NODES = 1
 
+# Configurable via CFG_BLAST_MIN_QSIZE_TO_SPLIT_ON_CLIENT_COMPRESSED
+ELB_DFLT_MIN_QUERY_FILESIZE_TO_SPLIT_ON_CLIENT_COMPRESSED = 5*10**6
+# Configurable via CFG_BLAST_MIN_QSIZE_TO_SPLIT_ON_CLIENT_UNCOMPRESSED
+ELB_DFLT_MIN_QUERY_FILESIZE_TO_SPLIT_ON_CLIENT_UNCOMPRESSED = 20*10**6
+
 ELB_S3_PREFIX = 's3://'
+ELB_PUBLIC_S3_BLASTDB = 'ncbi-blast-databases'
 ELB_GCS_PREFIX = 'gs://'
 ELB_HTTP_PREFIX = 'http'
 ELB_FTP_PREFIX = 'ftp://'
@@ -204,10 +210,10 @@ ELB_DFLT_GCP_ZONE = 'us-east4-b'
 ELB_DFLT_AWS_REGION = 'us-east-1'
 ELB_UNKNOWN_GCP_PROJECT = 'elb-unknown-gcp-project'
 
-ELB_DOCKER_VERSION = '1.2.0'    # ElasticBLAST 1.1.0 uses BLAST+ 2.14.0
+ELB_DOCKER_VERSION = '1.3.1'    # ElasticBLAST 1.2.0 uses BLAST+ 2.15.0
 ELB_QS_DOCKER_VERSION = '0.1.4'
-ELB_JANITOR_DOCKER_VERSION = '0.3.0'
-ELB_JOB_SUBMIT_DOCKER_VERSION = '3.0.0'
+ELB_JANITOR_DOCKER_VERSION = '0.3.1'
+ELB_JOB_SUBMIT_DOCKER_VERSION = '4.0.2'
 
 ELB_DOCKER_IMAGE_GCP = f'gcr.io/ncbi-sandbox-blast/ncbi/elb:{ELB_DOCKER_VERSION}'
 ELB_DOCKER_IMAGE_AWS = f'public.ecr.aws/ncbi-elasticblast/elasticblast-elb:{ELB_DOCKER_VERSION}'
@@ -229,7 +235,7 @@ ELB_DFLT_AWS_SPOT_BID_PERCENTAGE = '100'
 # This value is assigned to gke_version. It should be set to None to use the
 # default k8s version in GKE, otherwise it should be set to a specific version
 # supported by GKE (e.g.: 1.25)
-ELB_DFLT_GCP_K8S_VERSION = '1.25'
+ELB_DFLT_GCP_K8S_VERSION = None
 
 # Config sections
 CFG_CLOUD_PROVIDER = 'cloud-provider'
@@ -255,6 +261,8 @@ CFG_CP_AWS_INSTANCE_ROLE = 'aws-instance-role'
 CFG_CP_AWS_BATCH_SERVICE_ROLE = 'aws-batch-service-role'
 CFG_CP_AWS_SPOT_FLEET_ROLE = 'aws-spot-fleet-role'
 CFG_CP_AWS_AUTO_SHUTDOWN_ROLE = 'aws-auto-shutdown-role'
+CFG_CP_AWS_JANITOR_EXECUTION_ROLE = 'aws-janitor-execution-role'
+CFG_CP_AWS_JANITOR_COPY_ZIPS_ROLE = 'aws-janitor-copy-zips-role'
 # Cluster
 CFG_CLUSTER_DRY_RUN = 'dry-run'
 CFG_CLUSTER_NAME = 'name'
@@ -281,6 +289,8 @@ CFG_BLAST_BATCH_LEN = 'batch-len'
 CFG_BLAST_MEM_REQUEST = 'mem-request'
 CFG_BLAST_MEM_LIMIT = 'mem-limit'
 CFG_BLAST_TAXIDLIST = 'taxidlist'
+CFG_BLAST_MIN_QSIZE_TO_SPLIT_ON_CLIENT_COMPRESSED = 'min-qsize-for-client-split-compressed'
+CFG_BLAST_MIN_QSIZE_TO_SPLIT_ON_CLIENT_UNCOMPRESSED = 'min-qsize-for-client-split-uncompressed'
 # Timeouts
 CFG_TIMEOUT_INIT_PV = 'init-pv'
 CFG_TIMEOUT_BLAST_K8S_JOB = 'blast-k8s-job'
@@ -337,6 +347,8 @@ ELB_AWS_JANITOR_CFN_TEMPLATE = 'https://elb-camacho.s3.amazonaws.com/templates/e
 QUERY_LIST_EXT = '.query-list'
 
 ELB_DFLT_NUM_BATCHES_FOR_TESTING = 100
+# This value is returned from get_length when dry_run is True
+ELB_DFLT_FSIZE_FOR_TESTING = 10000
 ELB_DFLT_LOGLEVEL = 'DEBUG'
 ELB_DFLT_LOGFILE = 'elastic-blast.log'
 

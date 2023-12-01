@@ -1,8 +1,8 @@
 cff-version: "1.2.0"
 message: "If you use this software, please cite it using these metadata."
 title: ElasticBLAST
-version: "1.1.0"
-date-released: 2023-05-11
+version: "1.2.0"
+date-released: 2023-11-27
 license: "NCBI Public Domain"
 repository-code: "https://github.com/ncbi/elastic-blast/"
 url: "https://blast.ncbi.nlm.nih.gov/doc/elastic-blast/"

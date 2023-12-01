@@ -35,7 +35,7 @@ import json
 import inspect
 from functools import reduce
 from pkg_resources import resource_exists
-from typing import List, Union, Callable, Optional
+from typing import List, Union, Callable, Optional, Dict
 from .constants import MolType, GCS_DFLT_BUCKET
 from .constants import DEPENDENCY_ERROR, AWS_MAX_TAG_LENGTH, GCP_MAX_LABEL_LENGTH
 from .constants import AWS_MAX_JOBNAME_LENGTH, CSP, ELB_GCS_PREFIX
@@ -143,7 +143,12 @@ class ElbSupportedPrograms:
         inapropriate tasks."""
         m = re.search(r'-task ([\w-]+)', options)
         if not m:
-            return None
+            if program.lower() == 'blastn':
+                return 'megablast'
+            elif program.lower() in ['blastp', 'blastx', 'tblastn']:
+                return program.lower()
+            else:
+                return None
         task = m.group(1)
         if program.lower() not in self._tasks.keys():
             raise UserReportError(INPUT_ERROR, f'Incorrect -task option in "{options}". {program} does not support the task command line parameter.')
@@ -208,18 +213,30 @@ class SafeExecError(ElasticBlastBaseException):
     pass
 
 
-def safe_exec(cmd: Union[List[str], str]) -> subprocess.CompletedProcess:
+def safe_exec(cmd: Union[List[str], str], env: Optional[Dict[str, str]] = None) -> subprocess.CompletedProcess:
     """Wrapper around subprocess.run that raises SafeExecError on errors from
-    command line with error messages assembled from all available information"""
+    command line with error messages assembled from all available information
+
+    Arguments:
+        cmd: Command line
+        env: Environment variables to set. Current environment will also be
+        copied. Variables in env take priority if they appear in both
+        os.environ and env.
+    """
     if isinstance(cmd, str):
         cmd = cmd.split()
     if not isinstance(cmd, list):
         raise ValueError('safe_exec "cmd" argument must be a list or string')
 
+    run_env = None
+    if env:
+        run_env = os.environ | env
     try:
         logging.debug(' '.join(cmd))
+        if env:
+            logging.debug(env)
         p = subprocess.run(cmd, check=True, stdout=subprocess.PIPE,
-                           stderr=subprocess.PIPE)
+                           stderr=subprocess.PIPE, env=run_env)
     except subprocess.CalledProcessError as e:
         msg = f'The command "{" ".join(e.cmd)}" returned with exit code {e.returncode}\n{e.stderr.decode()}\n{e.stdout.decode()}'
         if e.output is not None:
@@ -444,41 +461,6 @@ def convert_labels_to_aws_tags(labels: str):
         if k == 'name': k ='Name'
         retval.append({'Key': k, 'Value': v})
     return retval
-
-
-def convert_memory_to_mb(size: str) -> int:
-    """ Convert memory to MB for usage in AWS::Batch::JobDefinition ContainerProperties.
-    Documentation:
-    https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-properties-batch-jobdefinition-containerproperties.html#cfn-batch-jobdefinition-containerproperties-memory
-    """
-    sz = size.lower()
-    if sz.endswith('g'):
-        return int(float(size[0:-1]) * 1000)
-    elif sz.endswith('m'):
-        return int(size[0:-1])
-    elif sz.endswith('t'):
-        return int(float(size[0:-1])*1000*1000)
-    else:  # Assume GB, per gcloud docs
-        return int(int(sz)*1000)
-
-
-def convert_disk_size_to_gb(size: str) -> int:
-    """ Convert disk size for usage in AWS Ebs::VolumeSize CloudFormation template
-    Relevant documentation:
-    https://cloud.google.com/sdk/gcloud/reference/container/clusters/create#--disk-size
-    https://docs.aws.amazon.com/AWSCloudFormation/latest/UserGuide/aws-properties-ec2-launchtemplate-blockdevicemapping-ebs.html#cfn-ec2-launchtemplate-blockdevicemapping-ebs-volumesize
-    """
-    sz = size.lower()
-    if sz.endswith('g'):
-        rv = float(size[0:-1])
-        return int(1 if rv < 1.0 else rv)
-    elif sz.endswith('m'):
-        rv = float(size[0:-1])/1000
-        return int(1 if rv < 1.0 else rv)
-    elif sz.endswith('t'):
-        return int(float(size[0:-1])*1000)
-    else:  # Assume GB, per gcloud docs
-        return int(sz)
 
 
 def validate_gke_cluster_name(val: str) -> None:

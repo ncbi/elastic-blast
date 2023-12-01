@@ -118,22 +118,40 @@ class MemoryStr(str):
 
 
     def asGB(self) -> float:
-        """Return the amount of memory in GB as float"""
+        """Return the amount of memory in GB (10 ** 9 bytes)  as float"""
         mult = 1.0
         unit_pos = -1;
         if self.endswith('i'):
             unit_pos = -2
-        if self[unit_pos].upper() == 'K':
-            mult /= 1024 ** 2
-        elif self[unit_pos].upper() == 'M':
-            mult /= 1024
-        elif self[unit_pos].upper() == 'T':
-            mult *= 1024
-        return float(self[:unit_pos]) * mult
+            mult *= (1024 ** 3) / (1000 ** 3)
+            if self[unit_pos].upper() == 'K':
+                mult /= 1024 ** 2
+            elif self[unit_pos].upper() == 'M':
+                mult /= 1024
+            elif self[unit_pos].upper() == 'T':
+                mult *= 1024
+        else:
+            if self[unit_pos].upper() == 'K':
+                mult /= 1000 ** 2
+            elif self[unit_pos].upper() == 'M':
+                mult /= 1000
+            elif self[unit_pos].upper() == 'T':
+                mult *= 1000
 
+        return round(float(self[:unit_pos]) * mult, 3)
+
+    def asGiB(self) -> float:
+        """Return the amount of memory in GiB (2 ** 30 bytes) as a float"""
+        return round(self.asGB() * (1000 ** 3) / (1024 ** 3), 3)
+        
     def asMB(self) -> float:
-        """Return the amount of memory in MB as float"""
-        return self.asGB() * 1024
+        """Return the amount of memory in MB (10 ** 6 bytes) as float"""
+        return round(self.asGB() * 1000, 3)
+
+    def asMiB(self) ->float:
+        """Return the amount of memory in MiB (2 ** 20 bytes) as float"""
+        return round(self.asMB() * (1000 ** 2) / (1024 ** 2), 3)
+
 
 class DBSource(Enum):
     """Sources of a BLAST database supported by update_blastdb.pl from BLAST+ package"""

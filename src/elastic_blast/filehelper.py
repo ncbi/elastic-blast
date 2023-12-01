@@ -46,11 +46,14 @@ import boto3  # type: ignore
 from botocore.exceptions import ClientError  # type: ignore
 from botocore.config import Config  # type: ignore
 from boto3.s3.transfer import TransferConfig # type: ignore
+from botocore import UNSIGNED # type: ignore
 from .base import QuerySplittingResults
 from .util import safe_exec, SafeExecError
-from .constants import ELB_GCP_BATCH_LIST, ELB_METADATA_DIR, ELB_QUERY_LENGTH, ELB_QUERY_BATCH_DIR
-from .constants import ELB_S3_PREFIX, ELB_GCS_PREFIX, ELB_FTP_PREFIX, ELB_HTTP_PREFIX
-from .constants import ELB_QUERY_BATCH_FILE_PREFIX
+from .constants import ELB_GCP_BATCH_LIST, ELB_METADATA_DIR, ELB_QUERY_LENGTH
+from .constants import ELB_PUBLIC_S3_BLASTDB, ELB_QUERY_BATCH_DIR
+from .constants import ELB_S3_PREFIX, ELB_GCS_PREFIX, ELB_FTP_PREFIX
+from .constants import ELB_QUERY_BATCH_FILE_PREFIX, ELB_HTTP_PREFIX
+from .constants import ELB_DFLT_FSIZE_FOR_TESTING
 
 
 def harvest_query_splitting_results(bucket_name: str, dry_run: bool = False, boto_cfg: Config = None, gcp_project: Optional[str] = None) -> QuerySplittingResults:
@@ -396,8 +399,11 @@ def check_for_read(fname: str, dry_run : bool = False, print_file_size: bool = F
         if dry_run:
             logging.info(f'Open S3 file {fname}')
             return
-        s3 = boto3.resource('s3')
         bucket, key = parse_bucket_name_key(fname)
+        boto_cfg = None
+        if bucket == ELB_PUBLIC_S3_BLASTDB:
+            boto_cfg = Config(signature_version=UNSIGNED)
+        s3 = boto3.resource('s3', config=boto_cfg)
         try:
             obj = s3.Object(bucket, key)
             obj.load()
@@ -437,7 +443,7 @@ def get_length(fname: str, dry_run: bool = False, gcp_prj: Optional[str] = None)
         cmd = f'gsutil {prj} stat {fname}'
         if dry_run:
             logging.info(cmd)
-            return 10000  # Arbitrary fake length
+            return ELB_DFLT_FSIZE_FOR_TESTING
         try:
             p = safe_exec(cmd)
             for line in p.stdout.decode().split('\n'):
@@ -450,7 +456,7 @@ def get_length(fname: str, dry_run: bool = False, gcp_prj: Optional[str] = None)
     if fname.startswith(ELB_S3_PREFIX):
         if dry_run:
             logging.info(f'Check length of S3 file {fname}')
-            return 10000
+            return ELB_DFLT_FSIZE_FOR_TESTING
         s3 = boto3.resource('s3')
         bucket, key = parse_bucket_name_key(fname)
         try:
@@ -462,7 +468,7 @@ def get_length(fname: str, dry_run: bool = False, gcp_prj: Optional[str] = None)
     if fname.startswith(ELB_HTTP_PREFIX) or fname.startswith(ELB_FTP_PREFIX):
         if dry_run:
             logging.info(f'Check length of URL {fname}')
-            return 10000
+            return ELB_DFLT_FSIZE_FOR_TESTING
         req = urllib.request.Request(fname, method='HEAD')
         try:
             obj = urllib.request.urlopen(req)
@@ -493,9 +499,12 @@ def open_for_read(fname: str, gcp_prj: Optional[str] = None):
         if proc.stderr:
             error_report_funcs[fileobj] = proc.stderr.read
         return fileobj
-    if fname.startswith('s3'):
-        s3 = boto3.client('s3')
+    if fname.startswith(ELB_S3_PREFIX):
         bucket, key = parse_bucket_name_key(fname)
+        boto_cfg = None
+        if bucket == ELB_PUBLIC_S3_BLASTDB:
+            boto_cfg = Config(signature_version=UNSIGNED)
+        s3 = boto3.client('s3', config=boto_cfg)
         resp = s3.get_object(Bucket=bucket, Key=key)
         body = resp['Body']
         body.readable = lambda: True

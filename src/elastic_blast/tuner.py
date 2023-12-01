@@ -71,30 +71,45 @@ class MTMode(Enum):
     """Values for BLAST MT mode option
 
     Str converter generates commad line option."""
-    ZERO = 0
-    ONE = 1
+    QUERY = 1 # split by query
+    DB = 2 # split by database
 
     def __str__(self):
         """Convert enum value to BLAST commad line options string"""
-        return '-mt_mode 1' if self.value == 1 else ''
+        return f'-mt_mode {self.value}'
 
 
 # MT mode 1 query length per thread
 RESIDUES_PER_THREAD = 10000
 BASES_PER_THREAD = 2500000
 
-# Minimum query length for MT mode 1
-MIN_MT_ONE_QUERY_LENGTH_BLASTN = 2500000
-MIN_MT_ONE_QUERY_LENGTH_BLASTP = 10000
-MIN_MT_ONE_QUERY_LENGTH_BLASTX = 20004
+# Minimum query length for MT mode ThreadByQuery
+MIN_MT_ONE_QUERY_SIZE = {'megablast': 10_000_000,
+                         'blastn':     1_500_000,
+                         'blastp-fast':  200_000,
+                         'blastp':       200_000,
+                         'blastx-fast':1_250_000,
+                         'blastx':     1_250_000,
+                         'tblastn-fast': 200_000,
+                         'tblastn':      200_000}
 
-# Maximum database length for MT mode 1
-MAX_MT_ONE_DB_LENGTH_PROT = int(2e9)
-MAX_MT_ONE_DB_LENGTH_NUCL = int(14e9)
 
-# Number of threads for MT mode 0
-NUM_THREADS_MT_ZERO_AWS = 16
-NUM_THREADS_MT_ZERO_GCP = 15
+# Maximum database length for MT mode ThreadByQuery https://www.ncbi.nlm.nih.gov/books/NBK571452/
+MAX_MT_ONE_DB_SIZE = {'megablast':   6_000_000_000,
+                      'blastn':        150_000_000,
+                      'blastp-fast': 2_500_000_000,
+                      'blastp':        740_000_000,
+                      'blastx-fast':   900_000_000,
+                      'blastx':        900_000_000,
+                      'tblastn-fast':  350_000_000,
+                      'tblastn':       280_000_000}
+
+# Special ElasticBLAST batch length per thread for MT mode ThreadByQuery for
+# some programs
+MT_ONE_BATCH_LENGTH_PER_THREAD = {'blastp':    20_000,
+                                  'blastx':    84_000,
+                                  'rpsblast': 200_000}
+
 
 # Maximum number of threads to use per BLAST job
 MAX_NUM_THREADS_AWS = 16
@@ -112,33 +127,31 @@ def get_mt_mode(program: str, options: str = '', db_metadata: Optional[DbMetadat
         db: Database metadata
         query: Queries information
     """
-    if query:
-        if (program.lower() == 'blastn' and query.length < MIN_MT_ONE_QUERY_LENGTH_BLASTN) or \
-            (program.lower() == 'blastp' and query.length < MIN_MT_ONE_QUERY_LENGTH_BLASTP) or \
-            (program.lower() == 'blastx' and query.length < MIN_MT_ONE_QUERY_LENGTH_BLASTX):
-            return MTMode.ZERO
-
     if program.lower() == 'rpsblast' or program.lower() == 'rpstblastn':
-        return MTMode.ONE
-    elif program.lower() in ['tblastn', 'tblastx', 'psiblast']:
-        return MTMode.ZERO
+        return MTMode.QUERY
+    elif program.lower() in ['tblastx', 'psiblast']:
+        return MTMode.DB
 
+    task = ElbSupportedPrograms().get_task(program, options)
+    if not task:
+        return MTMode.DB
+
+    if query and task in MIN_MT_ONE_QUERY_SIZE:
+        if query.length < MIN_MT_ONE_QUERY_SIZE[task]:
+            return MTMode.DB
+            
     if '-taxids' in options or '-taxidlist' in options:
-        return MTMode.ONE
+        return MTMode.QUERY
 
-    if db_metadata:
+    if db_metadata and task in MAX_MT_ONE_DB_SIZE:
         db = DbData.from_metadata(db_metadata)
-        if program.lower() == 'blastp':
-            if db_metadata.number_of_letters < 5e8:
-                return MTMode.ONE
-            else:
-                return MTMode.ZERO
 
-        if (db.moltype == MolType.PROTEIN and db.length <= MAX_MT_ONE_DB_LENGTH_PROT) or \
-           (db.moltype == MolType.NUCLEOTIDE and db.length <= MAX_MT_ONE_DB_LENGTH_NUCL):
-            return MTMode.ONE
+        if db_metadata.number_of_letters <= MAX_MT_ONE_DB_SIZE[task]:
+            return MTMode.QUERY
+        else:
+            return MTMode.DB
 
-    return MTMode.ZERO
+    return MTMode.DB
 
 
 def get_num_cpus(cloud_provider: CSP, program: str, mt_mode: MTMode,
@@ -149,11 +162,7 @@ def get_num_cpus(cloud_provider: CSP, program: str, mt_mode: MTMode,
         program: BLAST program
         mt_mode: BLAST MT mode
         query: Queries information"""
-    if mt_mode == MTMode.ZERO:
-        return NUM_THREADS_MT_ZERO_AWS if cloud_provider == CSP.AWS else NUM_THREADS_MT_ZERO_GCP
-    elif not query:
-        return ELB_DFLT_AWS_NUM_CPUS if cloud_provider == CSP.AWS else ELB_DFLT_GCP_NUM_CPUS
-    else:
+    if mt_mode == MTMode.QUERY and query:
         characters_per_thread = RESIDUES_PER_THREAD if query.moltype == MolType.PROTEIN else BASES_PER_THREAD
         num_cpus = query.length // characters_per_thread
         if query.length % characters_per_thread > 0:
@@ -162,13 +171,16 @@ def get_num_cpus(cloud_provider: CSP, program: str, mt_mode: MTMode,
             return min([num_cpus, MAX_NUM_THREADS_AWS])
         else:
             return min([num_cpus, MAX_NUM_THREADS_GCP])
+    else:
+        return ELB_DFLT_AWS_NUM_CPUS if cloud_provider == CSP.AWS else ELB_DFLT_GCP_NUM_CPUS
+
 
 
 def get_batch_length(cloud_provider: CSP, program: str, task: Optional[str],
                      mt_mode: MTMode, num_cpus: int,
                      db_metadata: Optional[DbMetadata] = None) -> int:
     """
-    Get batch length for BLAST batch search
+    Get ElasticBLAST batch length for BLAST batch search
 
     Arguments:
         cloud_provider: Cloud provider
@@ -183,17 +195,15 @@ def get_batch_length(cloud_provider: CSP, program: str, task: Optional[str],
         raise UserReportError(returncode=INPUT_ERROR,
                               message=f"Invalid BLAST program '{program}'")
 
-    if mt_mode  == MTMode.ONE:
-        moltype = ElbSupportedPrograms().get_query_mol_type(program)
-        if moltype == MolType.UNKNOWN:
-            raise UserReportError(returncode=INPUT_ERROR,
-                                  message=f"Invalid BLAST program '{program}'")
+    if mt_mode  == MTMode.QUERY:
+        # use special ElasticBLAST batch length for some programs when
+        # threading by query
+        if program.lower() in MT_ONE_BATCH_LENGTH_PER_THREAD:
+            batch_len = MT_ONE_BATCH_LENGTH_PER_THREAD[program.lower()]
         max_num_cpus = MAX_NUM_THREADS_AWS if cloud_provider == CSP.AWS else MAX_NUM_THREADS_GCP
         batch_len *= min((num_cpus, max_num_cpus))
-        if program.lower() == 'rpsblast' or program.lower() == 'blastp':
-            batch_len *= 2
     else:
-        # MTMode.ZERO
+        # MTMode.DB
         if program.lower() == 'blastn':
             if task and task in ['blastn', 'dc-megablast']:
                 batch_len = 1000000
@@ -306,7 +316,7 @@ def get_mem_limit(cloud_provider: CSP, machine_type: str, num_cpus: PositiveInte
         raise UserReportError(returncode=INPUT_ERROR,
                               message=f'The selected machine type {machine_type}: does not have enough memory to run the search. Please, select machine type with more memory.')
 
-    return MemoryStr(f'{mem_limit}G')
+    return MemoryStr(f'{mem_limit}Gi')
 
 
 def aws_get_machine_type(memory: MemoryStr, num_cpus: PositiveInteger, region: str) -> str:
@@ -337,7 +347,7 @@ def aws_get_machine_type(memory: MemoryStr, num_cpus: PositiveInteger, region: s
                                                  instance_types=supported_offerings)
     if not suitable_props:
         raise UserReportError(returncode = UNKNOWN_ERROR,
-                              message = f'An AWS machine type with memory {memory.asGB()}GB and {num_cpus} CPUs could not be found')
+                              message = f'An AWS machine type with memory {memory.asGiB()}GB and {num_cpus} CPUs could not be found')
 
     # sort first by number of CPUs, then by memory
     suitable_props = sorted(suitable_props, key=lambda x: x['VCpuInfo']['DefaultVCpus'])
@@ -372,14 +382,14 @@ def gcp_get_machine_type(memory: MemoryStr, num_cpus: PositiveInteger) -> str:
                               message=f'GCP machine type with {num_cpus} CPUs could not be found')
 
     # E2 machine types are usually the cheapest, but have at most 128GB memory
-    machine_type_families = FAMILIES_E2 if memory.asGB() < 120 and num_cpus <= 32 else FAMILIES_N1
+    machine_type_families = FAMILIES_E2 if memory.asGiB() < 120 and num_cpus <= 32 else FAMILIES_N1
 
     machine_cpus = CPUS[idx]
-    mem_cpu_ratio = memory.asGB() / machine_cpus
+    mem_cpu_ratio = memory.asGiB() / machine_cpus
     family = None
     while idx < len(CPUS) and not family:
         machine_cpus = CPUS[idx]
-        mem_cpu_ratio = memory.asGB() / machine_cpus
+        mem_cpu_ratio = memory.asGiB() / machine_cpus
         for fam in machine_type_families:
             if mem_cpu_ratio <= GCP_MACHINES[fam]:
                 family = fam
@@ -389,7 +399,7 @@ def gcp_get_machine_type(memory: MemoryStr, num_cpus: PositiveInteger) -> str:
 
     if not family:
         raise UserReportError(returncode=UNKNOWN_ERROR,
-                              message=f'GCP machine type with memory {memory.asGB()}GB and {num_cpus} CPUs could not be found')
+                              message=f'GCP machine type with memory {memory.asGiB()}GB and {num_cpus} CPUs could not be found')
 
     return f'{family}-{machine_cpus}'
 
@@ -414,10 +424,10 @@ def get_machine_type(cloud_provider: CSP, db: DbMetadata, num_cpus: PositiveInte
     MIN_OPS_MEMORY_GB = 10
     MAX_OPS_MEMORY_GB = 60
     ops_memory_gb = db_data.bytes_to_cache_gb * (db_mem_margin - 1)
-    if mt_mode == MTMode.ONE:
+    if mt_mode == MTMode.QUERY:
         ops_memory_gb *= num_cpus
     ops_memory_gb = min(MAX_OPS_MEMORY_GB, max(MIN_OPS_MEMORY_GB, ops_memory_gb))
-    memory = MemoryStr(f'{db_data.bytes_to_cache_gb + ops_memory_gb + SYSTEM_MEMORY_RESERVE}G')
+    memory = MemoryStr(f'{db_data.bytes_to_cache_gb + ops_memory_gb + SYSTEM_MEMORY_RESERVE}Gi')
 
     if cloud_provider == CSP.AWS:
         return aws_get_machine_type(memory, num_cpus, region)

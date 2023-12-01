@@ -32,6 +32,7 @@ from json.decoder import JSONDecodeError
 from marshmallow.exceptions import ValidationError
 from typing import List, Optional
 from .constants import MolType, ELB_S3_PREFIX, ELB_GCS_PREFIX, BLASTDB_ERROR
+from .constants import ELB_PUBLIC_S3_BLASTDB
 from .filehelper import open_for_read, check_for_read
 from .base import DBSource
 from .util import UserReportError
@@ -64,7 +65,7 @@ def get_db_metadata(db: str, dbtype: MolType, source: DBSource, dry_run: bool = 
         dbtype: Molecule type for BLASTDB
         source: Source for NCBI provided database, ignored for a user database
     """
-    DB_BUCKET_AWS = os.path.join(ELB_S3_PREFIX, 'ncbi-blast-databases')
+    DB_BUCKET_AWS = os.path.join(ELB_S3_PREFIX, ELB_PUBLIC_S3_BLASTDB)
     DB_BUCKET_GCP = os.path.join(ELB_GCS_PREFIX, 'blast-db')
     DB_BUCKET_NCBI = 'ftp://ftp.ncbi.nlm.nih.gov/blast/db'
 
@@ -109,8 +110,5 @@ def get_db_metadata(db: str, dbtype: MolType, source: DBSource, dry_run: bool = 
     except ValidationError as err:
         raise UserReportError(returncode=BLASTDB_ERROR,
                               message=f'Problem parsing BLAST database metadata file "{metadata_file}": {err}')
-    except KeyError as err:
-        raise UserReportError(returncode=BLASTDB_ERROR,
-                              message=f'Missing field {err} in BLAST database metadata file "{metadata_file}"')
     return db_metadata
 

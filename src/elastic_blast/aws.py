@@ -48,8 +48,8 @@ from dataclasses_json import dataclass_json
 from dataclasses import dataclass, field
 from copy import deepcopy
 
-from .util import convert_labels_to_aws_tags, convert_disk_size_to_gb
-from .util import convert_memory_to_mb, UserReportError
+from .util import convert_labels_to_aws_tags
+from .util import UserReportError
 from .util import ElbSupportedPrograms, get_usage_reporting, sanitize_aws_batch_job_name
 from .util import get_resubmission_error_msg, safe_exec
 from .constants import BLASTDB_ERROR, CLUSTER_ERROR, ELB_QUERY_LENGTH, PERMISSIONS_ERROR
@@ -67,7 +67,7 @@ from .constants import STATUS_MESSAGE_ERROR, STATUS_MESSAGE_VERBOSE
 from .filehelper import parse_bucket_name_key
 from .aws_traits import get_machine_properties, create_aws_config, get_availability_zones_for
 from .object_storage_utils import write_to_s3
-from .base import DBSource
+from .base import DBSource, MemoryStr
 from .elb_config import ElasticBlastConfig, sanitize_aws_tag
 from .elasticblast import ElasticBlast
 from . import VERSION
@@ -230,7 +230,7 @@ class ElasticBlastAws(ElasticBlast):
         if not initialized and create:
             use_ssd = False
             tags = convert_labels_to_aws_tags(self.cfg.cluster.labels)
-            disk_size = convert_disk_size_to_gb(self.cfg.cluster.pd_size)
+            disk_size = int(MemoryStr(self.cfg.cluster.pd_size).asGB())
             disk_type = self.cfg.cluster.disk_type
             instance_type = self.cfg.cluster.machine_type
             # FIXME: This is a shortcut, should be implemented in get_machine_properties
@@ -305,7 +305,7 @@ class ElasticBlastAws(ElasticBlast):
             spot_fleet_role = self._get_spot_fleet_role()
 
             if instance_role:
-                params.append({'ParameterKey': 'InstanceRole',
+                params.append({'ParameterKey': 'InstanceProfileArn',
                                'ParameterValue': instance_role})
 
             if batch_service_role:
@@ -328,6 +328,27 @@ class ElasticBlastAws(ElasticBlast):
 
             params.append({'ParameterKey': 'UseSSD',
                            'ParameterValue': str(use_ssd).lower()})
+
+
+            if 'ELB_DISABLE_AUTO_SHUTDOWN' not in os.environ:
+                if self.cfg.aws.janitor_execution_role:
+                    janitor_execution_role = self.cfg.aws.janitor_execution_role
+                    logging.debug(f'Using janitor lambda execution role provided in config: {janitor_execution_role}')
+                    params.append({'ParameterKey': 'JanitorLambdaExecutionRoleArn',
+                                   'ParameterValue': janitor_execution_role})
+                else:
+                    logging.debug('Janitor lambda execution role will be created by CloudFormation')
+
+                if self.cfg.aws.janitor_copy_zips_role:
+                    janitor_copy_zips_role = self.cfg.aws.janitor_copy_zips_role
+                    logging.debug(f'Using janitor copy zips role provided in config: {janitor_copy_zips_role}')
+                    params.append({'ParameterKey': 'JanitorCopyZipsRoleArn',
+                                   'ParameterValue': janitor_copy_zips_role})
+                else:
+                    logging.debug('Janitor copy zips role will be created by CloudFormation')
+
+
+
             capabilities = []
             if not (instance_role and batch_service_role and job_role and spot_fleet_role):
                 # this is needed if cloudformation template creates roles
@@ -672,7 +693,7 @@ class ElasticBlastAws(ElasticBlast):
         """
         overrides: Dict[str, Any] = {
             'vcpus': self.cfg.cluster.num_cpus,
-            'memory': int(convert_memory_to_mb(self.cfg.cluster.mem_limit))
+            'memory': int(self.cfg.cluster.mem_limit.asMiB())
         }
         # FIXME: handle multiple files by concatenating them?
         parameters = {'input': query_files[0],
@@ -759,19 +780,18 @@ class ElasticBlastAws(ElasticBlast):
             parameters['loglevel'] = 'DEBUG'
             parameters['logfile'] = 'stderr'
 
-        overrides = {'vcpus': self.cfg.cluster.num_cpus,
-                     'memory': int(convert_memory_to_mb(self.cfg.cluster.mem_limit)),
-                     'environment': [{'name': 'ELB_CLUSTER_NAME',
-                                      'value': self.cfg.cluster.name}]
-        }
-
         # FIXME: It may be better to make usage report part of config that
         # ElasticBlastConfig sets from environment
-        if 'BLAST_USAGE_REPORT' in os.environ:
-            ovr_env = overrides['environment']
-            assert isinstance(ovr_env, List)
-            ovr_env.append({'name': 'BLAST_USAGE_REPORT',
-                                             'value': os.environ['BLAST_USAGE_REPORT']})
+        usage_reporting = get_usage_reporting()
+        overrides = {
+            'vcpus': self.cfg.cluster.num_cpus,
+            'memory': int(self.cfg.cluster.mem_limit.asMiB()),
+            'environment': [
+                {'name': 'ELB_CLUSTER_NAME', 'value': self.cfg.cluster.name},
+                {'name': 'BLAST_USAGE_REPORT', 'value': str(usage_reporting).lower()},
+                {'name': 'BLAST_ELB_VERSION', 'value': VERSION}
+            ]
+        }
 
         logging.debug(f'Job submission in the cloud parameters: {parameters}')
         logging.debug(f'Job submission in the cloud overrides: {overrides}')
@@ -807,7 +827,7 @@ class ElasticBlastAws(ElasticBlast):
 
         overrides: Dict[str, Any] = {
             'vcpus': self.cfg.cluster.num_cpus,
-            'memory': int(convert_memory_to_mb(self.cfg.cluster.mem_limit))
+            'memory': int(self.cfg.cluster.mem_limit.asMiB())
         }
         usage_reporting = get_usage_reporting()
         elb_job_id = uuid.uuid4().hex
@@ -883,6 +903,7 @@ class ElasticBlastAws(ElasticBlast):
                 job = self.batch.submit_job(**submit_job_args)
                 self.job_ids.search.append(job['jobId'])
                 logging.debug(f"Job definition parameters for job {job['jobId']} {parameters}")
+                logging.debug(f"Job definition overrides for job {job['jobId']} {overrides}")
                 logging.info(f"Submitted AWS Batch job {job['jobId']} with query {q}")
             else:
                 logging.debug(f'dry-run: would have submitted {jname} with query {q}')

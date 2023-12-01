@@ -219,7 +219,9 @@ def test_missing_field(gke_mock):
     with pytest.raises(UserReportError) as err:
         db = get_db_metadata(DB, MolType.PROTEIN, DBSource.GCP, gcp_prj=GCP_PRJ)
     assert err.value.returncode == BLASTDB_ERROR
-    assert 'Missing field' in err.value.message
+    # last-updated is the missing field
+    assert 'last-updated' in err.value.message
+    assert 'required field' in err.value.message
 
 
 # number-of-letters is a string

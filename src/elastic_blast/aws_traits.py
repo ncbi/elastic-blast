@@ -142,6 +142,6 @@ def get_suitable_instance_types(min_memory: MemoryStr,
     else:
         inst_types = ec2.describe_instance_types(InstanceTypes=[], Filters=filters)['InstanceTypes']
 
-    suitable_types = [it for it in inst_types if it['MemoryInfo']['SizeInMiB'] > min_memory.asMB() and it['VCpuInfo']['DefaultVCpus'] >= min_cpus]
+    suitable_types = [it for it in inst_types if it['MemoryInfo']['SizeInMiB'] > min_memory.asMiB() and it['VCpuInfo']['DefaultVCpus'] >= min_cpus]
 
     return suitable_types

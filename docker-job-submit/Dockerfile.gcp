@@ -35,9 +35,8 @@ COPY templates/pvc-rom.yaml.template /templates/
 RUN chmod +x /usr/bin/cloud-job-submit.sh && \
     apk -U upgrade && \
     apk add --no-cache bash gettext curl jq && \
-	curl -LO https://storage.googleapis.com/kubernetes-release/release/`curl -s https://storage.googleapis.com/kubernetes-release/release/stable.txt`/bin/linux/amd64/kubectl && \
-	chmod +x ./kubectl && \
-	mv kubectl /usr/bin/ && \
     rm -rf /var/cache/apk/*
+
+RUN gcloud -q components install kubectl
 
 CMD ["/usr/bin/cloud-job-submit.sh"]

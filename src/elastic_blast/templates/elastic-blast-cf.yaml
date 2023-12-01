@@ -39,6 +39,16 @@ Parameters:
     Description: Key within the bucket where the janitor lambda function deployment resides.
     Type: String
 
+  JanitorLambdaExecutionRoleArn:
+    Description: ARN of preexisting Janitor Lambda Execution Role.
+    Type: String
+    Default: ''
+
+  JanitorCopyZipsRoleArn:
+    Description: ARN of preexisting Janitor CopyZips Role.
+    Type: String
+    Default: ''
+
   MaxCpus:
     Description: Maximum number of vCPUs in the cluster
     Type: Number
@@ -96,8 +106,8 @@ Parameters:
     Type: String
     Default: ''
 
-  InstanceRole:
-    Description: Instance role for batch compute environment
+  InstanceProfileArn:
+    Description: Arn of preexisting instance profile with role for batch compute environment
     Type: String
     Default: ''
 
@@ -154,7 +164,7 @@ Conditions:
     - !Ref VPC
     - 'none'
   ProvisionedIopsRequested: !Equals [!Ref DiskType, io2]
-  CreateEcsInstanceRole: !Equals [!Ref InstanceRole, '']
+  CreateEcsInstanceRole: !Equals [!Ref InstanceProfileArn, '']
   CreateBatchServiceRole: !Equals [!Ref BatchServiceRole, '']
   CreateJobRole: !Equals [!Ref JobRole, '']
   CreateSpotFleetRole: !Equals [!Ref SpotFleetRole, '']
@@ -529,7 +539,7 @@ Resources:
         InstanceRole: !If
           - CreateEcsInstanceRole
           - !Ref EcsInstanceProfile
-          - !Ref InstanceRole
+          - !Ref InstanceProfileArn
         LaunchTemplate:
           LaunchTemplateId: !Ref Ec2LaunchTemplate
         Tags:
@@ -910,6 +920,8 @@ Resources:
         S3Bucket: !Ref JanitorLambdaDeploymentS3Bucket
         S3Key: !Ref JanitorLambdaDeploymentS3Key
         ElbResults: !Ref ElbResults
+        LambdaExecutionRoleArn: !Ref JanitorLambdaExecutionRoleArn
+        CopyZipsRoleArn: !Ref JanitorCopyZipsRoleArn
       Tags:
         - Key: Name
           Value: !Join [-, [elasticblast, !Ref Owner, !Ref RandomToken, 'janitor']]

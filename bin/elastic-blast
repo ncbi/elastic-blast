@@ -45,7 +45,7 @@ from elastic_blast.config import configure
 from elastic_blast.elb_config import ElasticBlastConfig
 from elastic_blast.constants import ElbCommand
 from elastic_blast.constants import ELB_DFLT_LOGLEVEL, ELB_DFLT_LOGFILE
-from elastic_blast.constants import CFG_CLOUD_PROVIDER, CFG_CP_GCP_PROJECT
+from elastic_blast.constants import CFG_BLAST_RESULTS, CFG_BLAST, ELB_GCS_PREFIX
 
 DESC = r"""This application facilitates running BLAST on large amounts of query sequence data
 on the cloud"""
@@ -75,7 +75,8 @@ def main():
         cfg = configure(args)
         logging.info(f"ElasticBLAST {args.subcommand} {VERSION}")
         logging.info(f'python version: {":".join(sys.version.split())}')
-        if CFG_CP_GCP_PROJECT in cfg[CFG_CLOUD_PROVIDER]:
+        if CFG_BLAST_RESULTS in cfg[CFG_BLAST] and \
+                cfg[CFG_BLAST][CFG_BLAST_RESULTS].startswith(ELB_GCS_PREFIX):
             check_prerequisites()
         else:
             check_auxiliary_versions()
@@ -113,8 +114,8 @@ def reject_string_with_unicode(content: str) -> None:
 
 
 def reject_cli_args_with_unicode(args: List[str]) -> None:
-        for arg in args:
-            reject_string_with_unicode(arg)
+    for arg in args:
+        reject_string_with_unicode(arg)
 
 
 def file_must_exist(path: str) -> str:

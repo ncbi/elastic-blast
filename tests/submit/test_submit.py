@@ -36,6 +36,7 @@ from elastic_blast import constants
 from elastic_blast import gcp
 from elastic_blast.config import configure
 from elastic_blast.constants import QUERY_LIST_EXT, ElbCommand, QuerySplitMode
+from elastic_blast.constants import ELB_DFLT_FSIZE_FOR_TESTING
 from elastic_blast.elb_config import ElasticBlastConfig
 from elastic_blast.base import InstanceProperties
 
@@ -50,9 +51,16 @@ INI_CLOUD_SPLIT = os.path.join(DATA_DIR, 'elb-blastn-neg-taxidfiltering.ini')
 def test_get_query_split_mode(gke_mock):
     args = Namespace(cfg=INI_CLOUD_SPLIT)
     cfg = ElasticBlastConfig(configure(args), task = ElbCommand.SUBMIT)
+    cfg.cluster.dry_run = True
     query_files = assemble_query_file_list(cfg)
     print(f'Cloud provider {cfg.cloud_provider.cloud}')
     print(f'Query files {query_files}')
+    split_mode = get_query_split_mode(cfg, query_files)
+    print(f'Query split mode {split_mode.name}')
+    assert(split_mode == QuerySplitMode.CLIENT)
+
+    cfg.blast.min_qsize_to_split_on_client_uncompressed = ELB_DFLT_FSIZE_FOR_TESTING - 1
+    cfg.blast.min_qsize_to_split_on_client_compressed = ELB_DFLT_FSIZE_FOR_TESTING - 1
     split_mode = get_query_split_mode(cfg, query_files)
     print(f'Query split mode {split_mode.name}')
     assert(split_mode == QuerySplitMode.CLOUD_TWO_STAGE)

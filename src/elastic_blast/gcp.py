@@ -771,7 +771,10 @@ def get_gke_credentials(cfg: ElasticBlastConfig) -> str:
     if cfg.cluster.dry_run:
         logging.info(cmd)
     else:
-        p = safe_exec(cmd)
+        # USE_GKE_GCLOUD_AUTH_PLUGIN must be set so that kubectl 1.26 and later
+        # versions can be used to communicate with the cluster. It does not
+        # affect older kubectl versions.
+        p = safe_exec(cmd, {'USE_GKE_GCLOUD_AUTH_PLUGIN': 'True'})
         retval = p.stdout.decode().strip()
     return retval
 

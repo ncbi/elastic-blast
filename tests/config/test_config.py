@@ -243,7 +243,7 @@ class ElbConfigLibTester(unittest.TestCase):
         self.assertEqual(cfg.cluster.mem_request, '0.5G')
 
         self.assertTrue(cfg.cluster.mem_limit)
-        expected_mem_limit = f'{get_machine_properties(cfg.cluster.machine_type).memory - SYSTEM_MEMORY_RESERVE}G'
+        expected_mem_limit = f'{get_machine_properties(cfg.cluster.machine_type).memory - SYSTEM_MEMORY_RESERVE}Gi'
         self.assertEqual(cfg.cluster.mem_limit, expected_mem_limit)
 
         self.assertTrue(cfg.timeouts.init_pv > 0)

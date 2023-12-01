@@ -7,15 +7,15 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        python-version: [3.7]
+        python-version: ["3.8"]
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
         with:
           fetch-depth: 0
       - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v2
+        uses: actions/setup-python@v4
         with:
           python-version: ${{ matrix.python-version }}
       - name: Build PEX file
@@ -28,7 +28,7 @@ jobs:
       - name: Create tarball
         run: tar -czvf elastic-blast-no-suffix.tar.gz elastic-blast elastic-blast.md5
       - name: Produce downloadable artifact
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@v3
         with:
           name: elastic-blast-no-suffix
           path: elastic-blast-no-suffix.tar.gz
@@ -38,16 +38,16 @@ jobs:
     runs-on: ubuntu-latest
     strategy:
       matrix:
-        python-version: [3.7, 3.8, 3.9]
+        python-version: ["3.8", "3.9", "3.10"]
 
     steps:
 
       - name: Checkout
-        uses: actions/checkout@v2
+        uses: actions/checkout@v3
         with:
           fetch-depth: 0
       - name: Set up Python ${{ matrix.python-version }}
-        uses: actions/setup-python@v2
+        uses: actions/setup-python@v4
         with:
           python-version: ${{ matrix.python-version }}
       - name: Build PEX file
@@ -60,7 +60,7 @@ jobs:
       - name: Create tarball
         run: tar -czvf elastic-blast${{ matrix.python-version }}.tar.gz elastic-blast${{ matrix.python-version }} elastic-blast${{ matrix.python-version }}.md5
       - name: Produce downloadable artifact
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@v3
         with:
           name: elastic-blast-${{ matrix.python-version }}
           path: elastic-blast${{ matrix.python-version }}.tar.gz
@@ -70,21 +70,21 @@ jobs:
     needs: [build-single, build-multiple]
     runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@v2
+      - uses: actions/checkout@v3
       - name: Download artifacts
-        uses: actions/download-artifact@v2
+        uses: actions/download-artifact@v3
       - name: Display structure of downloaded files
         run: ls -lR
       - name: Create tarball
         run: |
           tar axvf elastic-blast-no-suffix/elastic-blast-no-suffix.tar.gz
-          tar axvf elastic-blast-3.7/elastic-blast3.7.tar.gz
           tar axvf elastic-blast-3.8/elastic-blast3.8.tar.gz
           tar axvf elastic-blast-3.9/elastic-blast3.9.tar.gz
+          tar axvf elastic-blast-3.10/elastic-blast3.10.tar.gz
           rm -fvr elastic-blast-*.tar.gz
-          tar -czvf ~/elastic-blast.tar.gz elastic-blast elastic-blast*md5 elastic-blast3.[789]
+          tar -czvf ~/elastic-blast.tar.gz elastic-blast elastic-blast*md5 elastic-blast3.*
       - name: 'Upload Artifact'
-        uses: actions/upload-artifact@v2
+        uses: actions/upload-artifact@v3
         with:
           name: elastic-blast
           path: ~/elastic-blast.tar.gz

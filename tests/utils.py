@@ -41,7 +41,7 @@ from botocore.exceptions import ClientError
 from elastic_blast.util import SafeExecError
 from elastic_blast import config
 from elastic_blast.elb_config import ElasticBlastConfig
-from elastic_blast.constants import ElbCommand
+from elastic_blast.constants import ElbCommand, ELB_DFLT_FSIZE_FOR_TESTING
 from elastic_blast.constants import ELB_DFLT_AWS_REGION, CLUSTER_ERROR
 from typing import Optional, List, Union, Dict
 import pytest
@@ -236,7 +236,7 @@ def get_mocked_config() -> ElasticBlastConfig:
 @dataclass
 class CloudResources:
     """Class to simulate created cloud resources"""
-    # dictionary of cloud storage objects, where key is object keya and value is
+    # dictionary of cloud storage objects, where key is object key and value is
     # object content, any object is readable and writable
     storage: Dict[str, str] = field(default_factory=dict)
 
@@ -244,7 +244,7 @@ class CloudResources:
     conf: Dict[str, str] = field(default_factory=dict)
 
 
-def mocked_safe_exec(cmd: Union[List[str], str], cloud_state: CloudResources = None) -> MockedCompletedProcess:
+def mocked_safe_exec(cmd: Union[List[str], str], env: Optional[Dict[str, str]] = None, cloud_state: CloudResources = None) -> MockedCompletedProcess:
     """Substitute for util.safe_exec function that calls command line gcloud
     or kubectl. It emulates gcloud or kubectl stdout for recognized parameters.
 
@@ -416,6 +416,10 @@ def mocked_safe_exec(cmd: Union[List[str], str], cloud_state: CloudResources = N
     elif ' '.join(cmd).startswith('gsutil') and  'cp' in cmd:
         return MockedCompletedProcess()
 
+    # Get file length on GCS
+    elif  ' '.join(cmd).startswith('gsutil') and 'ls' in cmd:
+        return MockedCompletedProcess(stdout=str(ELB_DFLT_FSIZE_FOR_TESTING))
+
     # remove a file from GCS
     elif ' '.join(cmd).startswith('gsutil') and 'rm' in cmd:
         return MockedCompletedProcess(stdout='',stderr='',returncode=0)
@@ -459,7 +463,7 @@ class GKEMock:
             if opt not in GKEMock.allowed_options:
                 raise ValueError(f'Unsupported GKEMock option: {opt}')
 
-    def mocked_safe_exec(self, cmd):
+    def mocked_safe_exec(self, cmd, env = None):
         """Mocked util.safe_exec function"""
 
         if isinstance(cmd, list):
@@ -497,7 +501,7 @@ class GKEMock:
                 return MockedCompletedProcess(self.cloud.conf['project'])
             return MockedCompletedProcess('(unset)')
 
-        return mocked_safe_exec(cmd, self.cloud)
+        return mocked_safe_exec(cmd, env=env, cloud_state=self.cloud)
 
 
     def mocked_popen(self, cmd, stderr, stdin=None, stdout=None, universal_newlines=True):

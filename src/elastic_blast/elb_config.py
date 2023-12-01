@@ -62,11 +62,15 @@ from .constants import CFG_CP_AWS_REGION, CFG_CP_AWS_VPC, CFG_CP_AWS_SUBNET
 from .constants import CFG_CP_AWS_JOB_ROLE, CFG_CP_AWS_BATCH_SERVICE_ROLE
 from .constants import CFG_CP_AWS_INSTANCE_ROLE, CFG_CP_AWS_SPOT_FLEET_ROLE
 from .constants import CFG_CP_AWS_SECURITY_GROUP, CFG_CP_AWS_KEY_PAIR
+from .constants import CFG_CP_AWS_JANITOR_EXECUTION_ROLE
+from .constants import CFG_CP_AWS_JANITOR_COPY_ZIPS_ROLE
 from .constants import CFG_BLAST, CFG_BLAST_PROGRAM, CFG_BLAST_DB
 from .constants import CFG_BLAST_DB_SRC, CFG_BLAST_RESULTS, CFG_BLAST_QUERY
 from .constants import CFG_BLAST_OPTIONS, CFG_BLAST_BATCH_LEN
 from .constants import CFG_BLAST_MEM_REQUEST, CFG_BLAST_MEM_LIMIT
 from .constants import CFG_BLAST_DB_MEM_MARGIN
+from .constants import CFG_BLAST_MIN_QSIZE_TO_SPLIT_ON_CLIENT_COMPRESSED
+from .constants import CFG_BLAST_MIN_QSIZE_TO_SPLIT_ON_CLIENT_UNCOMPRESSED
 from .constants import CFG_CLUSTER, CFG_CLUSTER_NAME, CFG_CLUSTER_MACHINE_TYPE
 from .constants import CFG_CLUSTER_NUM_NODES, CFG_CLUSTER_NUM_CPUS
 from .constants import CFG_CLUSTER_PD_SIZE, CFG_CLUSTER_USE_PREEMPTIBLE
@@ -87,6 +91,8 @@ from .constants import BLASTDB_ERROR, ELB_UNKNOWN, ELB_JANITOR_SCHEDULE
 from .constants import ELB_DFLT_GCP_REGION, ELB_DFLT_GCP_ZONE
 from .constants import ELB_DFLT_AWS_REGION, ELB_UNKNOWN_GCP_PROJECT
 from .constants import ELB_DFLT_GCP_K8S_VERSION
+from .constants import ELB_DFLT_MIN_QUERY_FILESIZE_TO_SPLIT_ON_CLIENT_COMPRESSED
+from .constants import ELB_DFLT_MIN_QUERY_FILESIZE_TO_SPLIT_ON_CLIENT_UNCOMPRESSED
 from .util import validate_gcp_string, check_aws_region_for_invalid_characters
 from .util import validate_gke_cluster_name, ElbSupportedPrograms
 from .util import get_query_batch_size, get_gcp_project
@@ -285,6 +291,8 @@ class AWSConfig(CloudProviderBaseConfig, ConfigParserToDataclassMapper):
     batch_service_role: Optional[str] = None
     spot_fleet_role: Optional[str] = None
     auto_shutdown_role: Optional[str] = None
+    janitor_execution_role: Optional[str] = None
+    janitor_copy_zips_role: Optional[str] = None
     user : Optional[str] = None
 
     mapping = {'region': ParamInfo(CFG_CLOUD_PROVIDER, CFG_CP_AWS_REGION),
@@ -297,6 +305,8 @@ class AWSConfig(CloudProviderBaseConfig, ConfigParserToDataclassMapper):
                'batch_service_role': ParamInfo(CFG_CLOUD_PROVIDER, CFG_CP_AWS_BATCH_SERVICE_ROLE),
                'spot_fleet_role': ParamInfo(CFG_CLOUD_PROVIDER, CFG_CP_AWS_SPOT_FLEET_ROLE),
                'auto_shutdown_role': ParamInfo(CFG_CLOUD_PROVIDER, CFG_CP_AWS_AUTO_SHUTDOWN_ROLE),
+               'janitor_execution_role': ParamInfo(CFG_CLOUD_PROVIDER, CFG_CP_AWS_JANITOR_EXECUTION_ROLE),
+               'janitor_copy_zips_role': ParamInfo(CFG_CLOUD_PROVIDER, CFG_CP_AWS_JANITOR_COPY_ZIPS_ROLE),
                'cloud': None,
                'user': None}
 
@@ -316,6 +326,11 @@ class AWSConfig(CloudProviderBaseConfig, ConfigParserToDataclassMapper):
             errors.append(f'{CFG_CLOUD_PROVIDER}.{CFG_CP_AWS_SPOT_FLEET_ROLE} must start with {AWS_ROLE_PREFIX}')
         if self.auto_shutdown_role and not str(self.auto_shutdown_role).startswith(AWS_ROLE_PREFIX):
             errors.append(f'{CFG_CLOUD_PROVIDER}.{CFG_CP_AWS_AUTO_SHUTDOWN_ROLE} must start with {AWS_ROLE_PREFIX}')
+        if self.janitor_execution_role and not str(self.janitor_execution_role).startswith(AWS_ROLE_PREFIX):
+            errors.append(f'{CFG_CLOUD_PROVIDER}.{CFG_CP_AWS_JANITOR_EXECUTION_ROLE} must start with {AWS_ROLE_PREFIX}')
+        if self.janitor_copy_zips_role and not str(self.janitor_copy_zips_role).startswith(AWS_ROLE_PREFIX):
+            errors.append(f'{CFG_CLOUD_PROVIDER}.{CFG_CP_AWS_JANITOR_COPY_ZIPS_ROLE} must start with {AWS_ROLE_PREFIX}')
+
 
 
 @dataclass_json(letter_case=LetterCase.KEBAB)
@@ -331,6 +346,8 @@ class BlastConfig(ConfigParserToDataclassMapper):
     taxidlist: Optional[str] = None
     db_mem_margin: float = ELB_BLASTDB_MEMORY_MARGIN
     user_provided_batch_len: bool = False
+    min_qsize_to_split_on_client_compressed: PositiveInteger = PositiveInteger(ELB_DFLT_MIN_QUERY_FILESIZE_TO_SPLIT_ON_CLIENT_COMPRESSED)
+    min_qsize_to_split_on_client_uncompressed: PositiveInteger = PositiveInteger(ELB_DFLT_MIN_QUERY_FILESIZE_TO_SPLIT_ON_CLIENT_UNCOMPRESSED)
 
     # database metadata, not part of config
     db_metadata: Optional[DbMetadata] = None
@@ -345,7 +362,9 @@ class BlastConfig(ConfigParserToDataclassMapper):
                'taxidlist': None,
                'db_mem_margin': ParamInfo(CFG_BLAST, CFG_BLAST_DB_MEM_MARGIN),
                'db_metadata': None,
-               'user_provided_batch_len': None}
+               'user_provided_batch_len': None,
+               'min_qsize_to_split_on_client_compressed': ParamInfo(CFG_BLAST, CFG_BLAST_MIN_QSIZE_TO_SPLIT_ON_CLIENT_COMPRESSED),
+               'min_qsize_to_split_on_client_uncompressed': ParamInfo(CFG_BLAST, CFG_BLAST_MIN_QSIZE_TO_SPLIT_ON_CLIENT_UNCOMPRESSED)}
                
 
     def __post_init__(self):
@@ -368,6 +387,7 @@ class BlastConfig(ConfigParserToDataclassMapper):
             '-use_index',
             '-index_name',
             '-in_pssm',
+            '-entrez_query',
             '-in_msa'
         ])
         for query_file in self.queries_arg.split():
@@ -666,21 +686,23 @@ class ElasticBlastConfig:
 
         # set mt_mode
         if self.blast:
-            mt_mode = MTMode.ZERO
+            mt_mode = MTMode.DB
             if '-mt_mode' in self.blast.options:
                 mode = re.findall(r'-mt_mode\s+(\d)', self.blast.options)
                 if not mode or int(mode[0]) > 1:
                     raise UserReportError(returncode=INPUT_ERROR,
                                           message=f'Incorrect -mt_mode parameter value "{mode[0]}" in blast.options: "{self.blast.options}". -mt_mode must be either 0 or 1, please see https://www.ncbi.nlm.nih.gov/books/NBK571452/ for details.')
                 mt_mode = MTMode(int(mode[0]))
-                if self.blast.program in ['tblastx', 'psiblast'] and mt_mode == MTMode.ZERO:
+                if self.blast.program in ['tblastx', 'psiblast'] and mt_mode == MTMode.DB:
                     raise UserReportError(returncode=INPUT_ERROR,
                                           message=f'{self.blast.program} does not support "-mt_mode" option')
             else:
+                # BLAST+ decides on which MT mode to use, but we need to
+                # assume/guess MT mode to inform selection of ElasticBLAST batch length,
+                # memory size, and machine type. This mt_mode value is not
+                # passed to BLAST+.
                 mt_mode = get_mt_mode(self.blast.program, self.blast.options,
                                       self.blast.db_metadata)
-                if mt_mode == MTMode.ONE:
-                    self.blast.options += f' {mt_mode}'
 
         # select machine type
         if not self.cluster.machine_type:
@@ -703,7 +725,7 @@ class ElasticBlastConfig:
                                                 self.cloud_provider.region,
                                                 self.cluster.machine_type)
             self.cluster.num_cores_per_instance = instance_props.ncpus
-            self.cluster.instance_memory = MemoryStr(f'{instance_props.memory}G')
+            self.cluster.instance_memory = MemoryStr(f'{instance_props.memory}Gi')
             if self.cluster.num_cores_per_instance < self.cluster.num_cpus:
                 self.cluster.num_cpus = PositiveInteger(self.cluster.num_cores_per_instance)
                 if self.cloud_provider.cloud == CSP.GCP:
@@ -915,7 +937,7 @@ class ElasticBlastConfig:
                                                     self.cluster.machine_type)
                 self._validate_num_cpus(instance_props, errors)
 
-                if instance_props.memory - SYSTEM_MEMORY_RESERVE < self.cluster.mem_limit.asGB():
+                if instance_props.memory - SYSTEM_MEMORY_RESERVE < self.cluster.mem_limit.asGiB():
                     errors.append(f'Memory limit "{self.cluster.mem_limit}" exceeds memory available on the selected machine type {self.cluster.machine_type}: {instance_props.memory - SYSTEM_MEMORY_RESERVE}GB. Please, select machine type with more memory or lower memory limit')
 
                 if self.blast.db_metadata:
@@ -1058,9 +1080,9 @@ class ElasticBlastConfig:
         # Catch the event that ELB_NOT_INITIALIZED_NUM is changed to a constant with a small value
         assert mem_num_concurrent_jobs >= 2**32
         if self.cloud_provider.cloud == CSP.AWS:
-            mem_num_concurrent_jobs = int(self.cluster.instance_memory.asGB() / self.cluster.mem_limit.asGB()) * self.cluster.num_nodes
+            mem_num_concurrent_jobs = int(self.cluster.instance_memory.asGiB() / self.cluster.mem_limit.asGiB()) * self.cluster.num_nodes
         elif self.cluster.mem_request: # to pacify mypy
-            mem_num_concurrent_jobs = int(self.cluster.instance_memory.asGB() / self.cluster.mem_request.asGB()) * self.cluster.num_nodes
+            mem_num_concurrent_jobs = int(self.cluster.instance_memory.asGiB() / self.cluster.mem_request.asGiB()) * self.cluster.num_nodes
         return min((cpu_num_concurrent_jobs, mem_num_concurrent_jobs))
 
 
