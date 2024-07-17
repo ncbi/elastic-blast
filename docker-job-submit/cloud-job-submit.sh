@@ -201,7 +201,10 @@ done
 
 # label the new persistent disk
 export pv=$(${KUBECTL} get -f pvc-rom.yaml -o jsonpath='{.spec.volumeName}')
-jq -n --arg dd $pv '[$dd]' | gsutil cp - ${ELB_RESULTS}/${ELB_METADATA_DIR}/$ELB_DISK_ID_FILE
+export vs=snapshot-$(${KUBECTL} get -f /templates/volume-snapshot.yaml -o jsonpath='{.metadata.uid}')
+echo "PV: $pv"
+echo "Volume snapshot: $vs"
+jq -n --arg dd $pv --arg ss $vs '{"disks": [$dd], "snapshots": [$ss]}' | gsutil -qm cp - ${ELB_RESULTS}/${ELB_METADATA_DIR}/$ELB_DISK_ID_FILE
 gcloud compute disks update $pv --update-labels ${ELB_LABELS} --zone ${ELB_GCP_ZONE} --project ${ELB_GCP_PROJECT}
 
 # delete snapshot
@@ -214,6 +217,6 @@ if gcloud compute disks describe $pv_rwo --zone $ELB_GCP_ZONE ; then
     sleep 10
 
     if gcloud compute disks describe $pv_rwo --zone $ELB_GCP_ZONE ; then
-        jq -n --arg d1 $pv_rwo --arg d2 $pv '[d1, d2]' | gsutil cp - ${ELB_RESULTS}/${ELB_METADATA_DIR}/$ELB_DISK_ID_FILE
+        jq -n --arg d1 $pv_rwo --arg d2 $pv --arg ss $vs '{"disks": [$d1, $d2], "snapshots": [$ss]}' | gsutil -qm cp - ${ELB_RESULTS}/${ELB_METADATA_DIR}/$ELB_DISK_ID_FILE
     fi
 fi

@@ -33,14 +33,16 @@ import subprocess
 import datetime
 import json
 import inspect
+from itertools import zip_longest
 from functools import reduce
-from pkg_resources import resource_exists
+from importlib_resources import files
 from typing import List, Union, Callable, Optional, Dict
 from .constants import MolType, GCS_DFLT_BUCKET
 from .constants import DEPENDENCY_ERROR, AWS_MAX_TAG_LENGTH, GCP_MAX_LABEL_LENGTH
 from .constants import AWS_MAX_JOBNAME_LENGTH, CSP, ELB_GCS_PREFIX
 from .constants import ELB_DFLT_LOGLEVEL, ELB_DFLT_LOGFILE
 from .constants import INPUT_ERROR
+from .constants import ELB_S3_PREFIX
 from .base import DBSource
 
 RESOURCES = [
@@ -61,13 +63,14 @@ RESOURCES = [
 # Not used by elastic-blast tool:
 # storage-gcp.yaml
 # cloudformation-admin-iam.yaml
-# Used directly (without pkg_resources) in aws.py
+# Used directly (without importlib_resources) in aws.py
 # elastic-blast-cf.yaml
 # Used from bucket resource
 # elastic-blast-janitor-cf.yaml
 def validate_installation():
     for r in RESOURCES:
-        if not resource_exists('elastic_blast', os.path.join('templates', r)):
+        ref = files('elastic_blast') / 'templates' / r
+        if not ref:
             raise UserReportError(DEPENDENCY_ERROR,
                 f'Resource {r} is missing from the package. Please re-install ElasticBLAST')
 
@@ -282,27 +285,23 @@ def get_blastdb_info(blastdb: str, gcp_prj: Optional[str] = None):
     return db, db_path, sanitize_for_k8s(db)
 
 
-def get_blastdb_size(db: str, db_source: DBSource, gcp_prj: Optional[str] = None) -> float:
-    """Request blast database size from GCP using gcp module
+def check_user_provided_blastdb_exists(db: str, mol_type: MolType, db_source: DBSource, gcp_prj: Optional[str] = None) -> None:
+    """Request blast database size from cloud service provider object storage
     If applied to custom db, just check the presence
     Returns the size in GB, if not found raises ValueError exception
 
     cfg: application configuration object
     """
-    if db.startswith(ELB_GCS_PREFIX):
-        # Custom database, just check the presence
-        try:
+    try:
+        if db.startswith(ELB_GCS_PREFIX):
+            # Custom database, just check the presence
             prj = f'-u {gcp_prj}' if gcp_prj else ''
-            safe_exec(f'gsutil {prj} ls {db}.*')
-        except SafeExecError:
-            raise ValueError(f'BLAST database {db} was not found')
-        # TODO: find a way to check custom DB size w/o transferring it to user machine
-        return 1000000
-    if db_source == DBSource.GCP:
-        return gcp_get_blastdb_size(db, gcp_prj)
-    elif db_source == DBSource.AWS:
-        return 1000000   # FIXME
-    raise NotImplementedError("Not implemented for sources other than GCP")
+            safe_exec(f'gsutil {prj} stat {db}.*')
+        elif db.startswith(ELB_S3_PREFIX):
+            cmd = f'aws s3 ls {db}'
+            safe_exec(cmd)
+    except SafeExecError:
+        raise ValueError(f'BLAST database {db} was not found')
 
 
 def gcp_get_blastdb_latest_path(gcp_prj: Optional[str]) -> str:
@@ -311,22 +310,6 @@ def gcp_get_blastdb_latest_path(gcp_prj: Optional[str]) -> str:
     cmd = f'gsutil {prj} cat {GCS_DFLT_BUCKET}/latest-dir'
     proc = safe_exec(cmd)
     return os.path.join(GCS_DFLT_BUCKET, proc.stdout.decode().rstrip())
-
-
-def gcp_get_blastdb_size(db: str, gcp_prj: Optional[str]) -> float:
-    """Request blast database size from GCP using gsutil
-    Returns the size in GB, if not found raises ValueError exception
-
-    db: database name
-    """
-    latest_path = gcp_get_blastdb_latest_path(gcp_prj)
-    prj = f'-u {gcp_prj}' if gcp_prj else ''
-    cmd = f'gsutil {prj} cat {latest_path}/blastdb-manifest.json'
-    proc = safe_exec(cmd)
-    blastdb_metadata = json.loads(proc.stdout.decode())
-    if not db in blastdb_metadata:
-        raise ValueError(f'BLAST database {db} was not found')
-    return blastdb_metadata[db]['size']
 
 
 def check_positive_int(val: str) -> int:
@@ -598,6 +581,32 @@ def get_gcp_project() -> Optional[str]:
     if not result:
         raise ValueError(f'GCP project is unset, please invoke gcloud config set project REPLACE_WITH_YOUR_PROJECT_NAME_HERE')
     return result
+
+
+def is_newer_version(version1: str, version2: str) -> bool:
+    """
+    Compare two version strings to determine if version1 is newer than version2.
+    
+    Args:
+    version1 (str): The first version string.
+    version2 (str): The second version string.
+    
+    Returns:
+    bool: True if version1 is newer than version2, False otherwise.
+    """
+    
+    # Split version strings into lists of integers
+    v1_parts = [int(part) for part in version1.split('.')]
+    v2_parts = [int(part) for part in version2.split('.')]
+    
+    # Compare each part of the version numbers
+    for v1, v2 in zip_longest(v1_parts, v2_parts, fillvalue=0):
+        if v1 > v2:
+            return True
+        elif v1 < v2:
+            return False
+    
+    return False
 
 
 class MetaFileName(type):

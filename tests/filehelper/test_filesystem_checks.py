@@ -29,35 +29,34 @@ import os
 from elastic_blast import filehelper
 from tempfile import TemporaryDirectory
 import pytest
+from tests.utils import gke_mock, NOT_WRITABLE_BUCKET
 
 TEST_DATA_DIR = os.path.join(os.path.dirname(__file__), 'data')
-WRITEABLE_BUCKET = 'gs://blast-test'
+WRITEABLE_BUCKET = 'gs://test-bucket'
 
-GCP_PRJ = "ncbi-sandbox-blast"
-
-def test_check_for_read_success():
-    filehelper.check_for_read('gs://blast-db/latest-dir', gcp_prj=GCP_PRJ)
-    #filehelper.check_for_read('s3://ncbi-blast-databases/latest-dir')
+def test_check_for_read_success(gke_mock):
+    filehelper.check_for_read('gs://blast-db/latest-dir')
+    filehelper.check_for_read('s3://ncbi-blast-databases/latest-dir')
     filehelper.check_for_read(os.path.join(TEST_DATA_DIR, 'test.tar'))
 
 
-def test_check_for_read_failure():
+def test_check_for_read_failure(gke_mock):
     with pytest.raises(FileNotFoundError):
-        filehelper.check_for_read('gs://blast-db/non-existent-file', gcp_prj=GCP_PRJ)
+        filehelper.check_for_read('gs://blast-db/non-existent-file')
     with pytest.raises(FileNotFoundError):
         filehelper.check_for_read(os.path.join(TEST_DATA_DIR, 'non-existent-file'))
     with pytest.raises(FileNotFoundError):
         filehelper.check_for_read('https://storage.googleapis.com/blast-db/invalid-file')
 
 
-def test_check_for_write_success():
+def test_check_for_write_success(gke_mock):
     filehelper.check_dir_for_write(WRITEABLE_BUCKET)
     with TemporaryDirectory() as d:
         filehelper.check_dir_for_write(d)
 
 
-def test_check_for_write_failure():
+def test_check_for_write_failure(gke_mock):
     with pytest.raises(PermissionError):
-        filehelper.check_dir_for_write('gs://arbitrary-non-existent-bucket-test')
+        filehelper.check_dir_for_write(f'gs://{NOT_WRITABLE_BUCKET}')
     with pytest.raises(PermissionError):
         filehelper.check_dir_for_write('/home/')

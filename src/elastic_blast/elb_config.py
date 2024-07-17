@@ -29,6 +29,7 @@ import os
 from dataclasses import dataclass
 from dataclasses import InitVar, field, fields, asdict
 from dataclasses_json import dataclass_json, LetterCase, config
+from dataclasses_json import DataClassJsonMixin
 import getpass
 from hashlib import md5
 import configparser
@@ -531,13 +532,25 @@ class TimeoutsConfig(ConfigParserToDataclassMapper):
                'blast_k8s': ParamInfo(CFG_TIMEOUTS, CFG_TIMEOUT_BLAST_K8S_JOB)}
 
 
+@dataclass
+class ResourceIds(DataClassJsonMixin):
+    """Cloud resource ids"""
+    # persistent disk ids
+    disks: List[str] = field(default_factory = list,
+                             metadata = config(letter_case=LetterCase.KEBAB))
+    # volume snapshot ids
+    snapshots: List[str] = field(default_factory = list,
+                                 metadata = config(letter_case=LetterCase.KEBAB))
+
+
 @dataclass_json(letter_case=LetterCase.KEBAB)
 @dataclass
 class AppState:
     """Application state values"""
 
-    # The GCP persistent disk ID
-    disk_ids: List[str] = field(default_factory=list)
+    # The GCP persistent disk and volume snapshot IDs
+    resources: ResourceIds = field(default_factory = lambda: ResourceIds())
+
     # The kubernetes context
     k8s_ctx: Optional[str] = None
 
@@ -682,7 +695,7 @@ class ElasticBlastConfig:
                     raise UserReportError(returncode=BLASTDB_ERROR,
                                           message=f'Metadata for BLAST database "{self.blast.db}" was not found. Please, make sure that the database exists and database molecular type corresponds to your blast program: "{self.blast.program}". To get a list of NCBI provided databases, please see https://github.com/ncbi/blast_plus_docs#blast-databases.')
                 else:
-                    logging.warning('Database metadata file was not provided. We recommend creating and providing a BLAST database metadata file. Benefits include better elastic-blast performance and error checking. Please, see https://blast.ncbi.nlm.nih.gov/doc/elastic-blast/tutorials/create-blastdb-metadata.html for more information and instructions.')
+                    logging.warning(f'The BLAST database at {self.blast.db} does not have a metadata file. We recommend creating and providing a BLAST database metadata file. Benefits include better elastic-blast performance and error checking. Please, see https://www.ncbi.nlm.nih.gov/books/NBK569839/#_usrman_BLAST_feat_BLAST_database_metadat_ and https://blast.ncbi.nlm.nih.gov/doc/elastic-blast/tutorials/create-blastdb-metadata.html for more information and instructions.')
 
         # set mt_mode
         if self.blast:

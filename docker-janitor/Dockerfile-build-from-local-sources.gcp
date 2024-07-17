@@ -32,12 +32,11 @@ COPY elastic-blast-janitor.sh /usr/bin/
 RUN chmod +x /usr/bin/elastic-blast-janitor.sh && \
     apk -U upgrade && \
     apk add --no-cache bash python3 py3-pip py3-wheel curl && \
-    pip3 install --no-cache-dir --upgrade pip && \
-	curl -LO https://storage.googleapis.com/kubernetes-release/release/`curl -s https://storage.googleapis.com/kubernetes-release/release/stable.txt`/bin/linux/amd64/kubectl && \
-	chmod +x ./kubectl && \
-	mv kubectl /usr/bin/ && \
+    pip3 install --no-cache-dir --upgrade --break-system-packages pip && \
     mkdir /var/elastic-blast && \
     rm -rf /var/cache/apk/*
+
+RUN gcloud -q components install kubectl
 
 COPY src/ /var/elastic-blast/src/
 COPY bin/ /var/elastic-blast/bin/
@@ -47,6 +46,6 @@ COPY setup.cfg_cloud /var/elastic-blast/setup.cfg
 
 WORKDIR /var/elastic-blast
 
-RUN pip3 install . -r requirements/test.txt
+RUN pip3 install . -r requirements/test.txt --break-system-packages
 
 CMD ["/usr/bin/elastic-blast-janitor.sh"]

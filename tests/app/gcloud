@@ -1,0 +1,6 @@
+#!/bin/bash
+
+# This is a fake gcloud that does nothing and always succeeds.
+# It is needed for test_dependency_error unit test.
+
+exit 0

@@ -28,8 +28,8 @@ COPY run.sh /usr/bin/
 RUN chmod +x /usr/bin/run.sh && \
     apk -U upgrade && \
     apk add --no-cache bash python3 py3-pip py3-wheel curl unzip && \
-    pip3 install --no-cache-dir --upgrade pip && \
-    pip3 install --no-cache-dir -r requirements.txt && rm -rf /var/cache/apk/* requirements.txt
+    pip3 install --no-cache-dir --upgrade pip --break-system-packages && \
+    pip3 install --no-cache-dir -r requirements.txt --break-system-packages && rm -rf /var/cache/apk/* requirements.txt
 
 LABEL Description="NCBI ElasticBLAST Query Splitting Module"
 LABEL Version=${version}

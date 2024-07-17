@@ -162,10 +162,12 @@ def gke_mock(mocker):
 
     mock.cloud.conf['project'] = GCP_PROJECT
 
+    mock.cloud.storage['gs://test-bucket'] = 0
     mock.cloud.storage['gs://test-bucket/test-query.fa'] = '>query\nACTGGAGATGAC'
     mock.cloud.storage['gs://test-results'] = ''
     mock.cloud.storage[f'gs://{NOT_WRITABLE_BUCKET}'] = ''
     mock.cloud.storage['s3://test-bucket/test-query.fa'] = '>query\nACTGGAGATGAC'
+    mock.cloud.storage['s3://test-bucket'] = 0
     mock.cloud.storage['s3://test-results'] = ''
     mock.cloud.storage[f's3://{NOT_WRITABLE_BUCKET}'] = ''
 
@@ -180,8 +182,10 @@ def gke_mock(mocker):
     # User database metadata
     mock.cloud.storage[f'gs://test-bucket/{DB_METADATA_PROT_FILE_NAME}'] = DB_METADATA_PROT
     mock.cloud.storage[f'gs://test-bucket/{DB_METADATA_NUCL_FILE_NAME}'] = DB_METADATA_NUCL
+    mock.cloud.storage['gs://test-bucket/testdb.pal'] = 'A fake user database'
     mock.cloud.storage[f's3://test-bucket/{DB_METADATA_PROT_FILE_NAME}'] = DB_METADATA_PROT
     mock.cloud.storage[f's3://test-bucket/{DB_METADATA_NUCL_FILE_NAME}'] = DB_METADATA_NUCL
+    mock.cloud.storage['s3://test-bucket/testdb.pal'] = 'A fake user database'
 
     # we need gcp.safe_exec instead of util.safe exec here, because
     # safe_exec is imported in gcp.py with 'from util import safe_exec'
@@ -199,6 +203,7 @@ def gke_mock(mocker):
     mocker.patch('boto3.client', side_effect=mock.mocked_client)
     mocker.patch('botocore.exceptions.ClientError.__init__', new=MagicMock(return_value=None))
     mocker.patch.dict(os.environ, {'ELB_PAUSE_AFTER_INIT_PV': '1'})
+    mocker.patch('shutil.which', side_effect=MagicMock(return_value='.'))
 
     yield mock
     del mock
@@ -290,6 +295,15 @@ def mocked_safe_exec(cmd: Union[List[str], str], env: Optional[Dict[str, str]] =
     elif ' '.join(cmd).startswith('gcloud compute disks delete'):
         return MockedCompletedProcess()
 
+    # get a list of volume snapshots
+    elif ' '.join(cmd).startswith('gcloud compute snapshots list --format json'):
+        result = [{'name': 'snapshot-12345'}]
+        return MockedCompletedProcess(json.dumps(result))
+
+    # delete a volume snapshot
+    elif ' '.join(cmd).startswith('gcloud compute snapshots delete'):
+        return MockedCompletedProcess()
+
     # GKE cluster status
     elif ' '.join(cmd).startswith('gcloud container clusters list --format=value(status) --filter name'):
         return MockedCompletedProcess('RUNNING\n')
@@ -322,6 +336,11 @@ def mocked_safe_exec(cmd: Union[List[str], str], env: Optional[Dict[str, str]] =
         result = {'items': []}  # type: ignore
         for i in GCP_DISKS:
             result['items'].append({'spec': {'csi': {'volumeHandle': f'/test-project/test-region/{i}'}}})  # type: ignore
+        return MockedCompletedProcess(json.dumps(result))
+
+    # get volume snapshots
+    elif cmd[0] == 'kubectl' and 'get volumesnapshot' in ' '.join(cmd):
+        result = {'items': [{'metadata': {'uid': '12345'}}]}
         return MockedCompletedProcess(json.dumps(result))
 
     # get kubernetes jobs
@@ -372,7 +391,7 @@ def mocked_safe_exec(cmd: Union[List[str], str], env: Optional[Dict[str, str]] =
 
     # check if kubernetes client is installed or cluster is alive
     elif ' '.join(cmd).startswith('kubectl') and 'version' in ' '.join(cmd):
-        return MockedCompletedProcess()
+        return MockedCompletedProcess('{ "clientVersion": { "major": "1", "minor": "27", "gitVersion": "v1.27.4", "gitCommit": "286cfa5f978c4a89c776347c82fa09a232eef144", "gitTreeState": "clean", "buildDate": "2024-03-06T00:56:29Z", "goVersion": "go1.20.12 X:strictfipsruntime", "compiler": "gc", "platform": "linux/amd64" }, "kustomizeVersion": "v5.0.1" }')
 
     # delete a kubernetes resopurce by file
     elif cmd[0] == 'kubectl' and 'delete -f' in ' '.join(cmd):
@@ -393,6 +412,14 @@ def mocked_safe_exec(cmd: Union[List[str], str], env: Optional[Dict[str, str]] =
     # Check whether a file exists in GCS
     elif ' '.join(cmd).startswith('gsutil') and 'stat' in cmd:
         if cloud_state:
+            # handle a wildcard '*'
+            if cmd[-1].rstrip().endswith('*'):
+                for key in cloud_state.storage:
+                    if key.startswith(cmd[-1][:-1]):
+                        return MockedCompletedProcess()
+                raise SafeExecError(returncode=1, message=f'File {cmd[-1]} was not found')
+
+            # handle an exact name
             if cmd[-1] in cloud_state.storage:
                 return MockedCompletedProcess()
             else:
@@ -406,7 +433,7 @@ def mocked_safe_exec(cmd: Union[List[str], str], env: Optional[Dict[str, str]] =
         # simulate reading NCBI database manifest
         if cmd.endswith('latest-dir'):
             return MockedCompletedProcess(stdout='xxxx')
-        elif cmd.endswith('blastdb-manifest.json'):
+        elif cmd.endswith('blastdb-metadata-1-1.json'):
             manifest = {'nr': {'size': 25}, 'nt': {'size': 25}, 'pdbnt': {'size': 25}, 'testdb': {'size': 25}}
             return MockedCompletedProcess(stdout=json.dumps(manifest))
         else:
@@ -548,29 +575,6 @@ class GKEMock:
         else:
             raise NotImplementedError(f'boto3 mock for {client} client is not implemented')
 
-
-@pytest.fixture()
-def gcp_env_vars():
-    env = { 'CLOUDSDK_CORE_PROJECT': 'ncbi-sandbox-blast' }
-    orig_env = {}
-
-    if 'TEAMCITY_VERSION' in os.environ:
-        for var_name in env:
-            if var_name in os.environ:
-                orig_env[var_name] = os.environ[var_name]
-            os.environ[var_name] = str(env[var_name])
-
-        yield env
-
-        # cleanup
-        for var_name in env:
-            if var_name in orig_env:
-                os.environ[var_name] = orig_env[var_name]
-            else:
-                # os.unsetenv does not work on every system
-                del os.environ[var_name]
-    else:
-        yield orig_env
 
 @pytest.fixture
 def aws_credentials():

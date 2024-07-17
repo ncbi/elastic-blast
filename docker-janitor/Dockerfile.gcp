@@ -33,8 +33,8 @@ COPY elastic-blast-janitor.sh /usr/bin/
 RUN chmod +x /usr/bin/elastic-blast-janitor.sh && \
     apk -U upgrade && \
     apk add --no-cache bash python3 py3-pip py3-wheel curl && \
-    pip3 install --no-cache-dir --upgrade pip && \
-    pip3 install --no-cache-dir -r requirements.txt && rm -rf /var/cache/apk/* requirements.txt
+    pip3 install --no-cache-dir --upgrade --break-system-packages pip && \
+    pip3 install --no-cache-dir -r requirements.txt --break-system-packages && rm -rf /var/cache/apk/* requirements.txt
 
 RUN gcloud -q components install kubectl
 

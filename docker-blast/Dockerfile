@@ -18,7 +18,7 @@
 #   
 # Please cite NCBI in any work or product based on this material.
 
-FROM ncbi/blast:2.15.0 as blast
+FROM ncbi/blast:2.16.0 as blast
 ARG version
 LABEL Description="NCBI BLAST" Vendor="NCBI/NLM/NIH" Version=${version} Maintainer=camacho@ncbi.nlm.nih.gov
 
@@ -29,6 +29,7 @@ COPY requirements.txt .
 
 RUN apt-get -y -m update && \
     apt-get install -y python3 python3-pip time parallel vmtouch curl wget unzip && \
+    pip3 --version && python3 -m pip --version && \
 	rm -rf /var/lib/apt/lists/*  
 
 RUN python3 -m pip install --no-cache-dir --upgrade pip && \

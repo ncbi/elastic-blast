@@ -124,7 +124,7 @@ def app_mocks(caplog, aws_credentials, gke_mock, mocker):
     mocker.patch('elastic_blast.elasticblast_factory.ElasticBlastAws', new=MagicMock(return_value=MagicMock()))
     mocker.patch(target='elastic_blast.tuner.aws_get_machine_properties', new=MagicMock(return_value=InstanceProperties(32, 120)))
     mocker.patch('elastic_blast.commands.submit.harvest_query_splitting_results', new=MagicMock(return_value=QuerySplittingResults(query_length=5, query_batches=['batch_0.fa'])))
-    mocker.patch('elastic_blast.commands.submit.get_blastdb_size', new=MagicMock(return_value=1.0))
+    mocker.patch('elastic_blast.commands.submit.check_user_provided_blastdb_exists', new=MagicMock(return_value=1.0))
     mocker.patch('elastic_blast.gcp.get_blastdb_info', new=MagicMock(return_value=('gs://test-bucket/testdb', 'gs://test-bucket/testdb.tar.gz', 'testdb')))
     mocker.patch('elastic_blast.commands.submit.get_length', new=MagicMock(return_value=1))
 
@@ -595,10 +595,8 @@ def test_dependency_error():
     print(msg)
     assert 'Traceback' not in msg
     assert "Required pre-requisite 'gcloud' doesn't work" in msg
-    # Eliminate gcloud, check kubectl missing
-    p = safe_exec('which gcloud')
-    exepath = p.stdout.decode()
-    newpath += ':' + os.path.dirname(exepath)
+    # Use fake gcloud, check kubectl missing
+    newpath += ':./tests/app'
     p = subprocess.run([ELB_EXENAME, 'submit', '--cfg', INI_VALID, '--dry-run'], env={'PATH': newpath}, stderr=subprocess.PIPE)
     assert p.returncode == constants.DEPENDENCY_ERROR
     msg = p.stderr.decode()

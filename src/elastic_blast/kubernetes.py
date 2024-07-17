@@ -30,7 +30,7 @@ import pathlib
 import time
 from tenacity import retry, stop_after_delay, stop_after_attempt, wait_random
 from timeit import default_timer as timer
-from pkg_resources import resource_string, resource_filename, set_extraction_path
+from importlib_resources import files, as_file
 from tempfile import TemporaryDirectory
 from typing import List, Optional
 
@@ -114,6 +114,24 @@ def get_persistent_disks(k8s_ctx: str, dry_run: bool = False) -> List[str]:
         if p.stdout:
             pds = json.loads(p.stdout.decode())
             return [i['spec']['csi']['volumeHandle'].split('/')[-1] for i in pds['items']]
+    return list()
+
+
+def get_volume_snapshots(k8s_ctx: str, dry_run: bool = False) -> List[str]:
+    """Return a list of volume snapshot ids for a kubernetes cluster.
+    Kubeconfig file determines the cluster that will be contacted.
+
+    Raises:
+        util.SafeExecError on problems communicating with the cluster
+        json.decoder.JSONDecodeError on problems with parsing kubectl json output"""
+    cmd = f'kubectl --context={k8s_ctx} get volumesnapshot -o json'
+    if dry_run:
+        logging.info(cmd)
+    else:
+        p = safe_exec(cmd)
+        if p.stdout:
+            pds = json.loads(p.stdout.decode())
+            return [f"snapshot-{i['metadata']['uid']}" for i in pds['items']]
     return list()
 
 
@@ -482,8 +500,8 @@ def initialize_local_ssd(cfg: ElasticBlastConfig, query_files: List[str] = [], w
             'TIMEOUT': str(init_blastdb_minutes_timeout*60)
         }
         with TemporaryDirectory() as d:
-            set_extraction_path(d)
-            job_cloud_split_local_ssd_tmpl = resource_string('elastic_blast', f'templates/{job_template}').decode()
+            ref = files('elastic_blast').joinpath(f'templates/{job_template}')
+            job_cloud_split_local_ssd_tmpl = ref.read_text()
             job_cloud_split_local_ssd = pathlib.Path(os.path.join(d, 'job-cloud-split-local-ssd.yaml'))
             with job_cloud_split_local_ssd.open(mode='wt') as f:
                 f.write(substitute_params(job_cloud_split_local_ssd_tmpl, subs))
@@ -521,10 +539,10 @@ def initialize_local_ssd(cfg: ElasticBlastConfig, query_files: List[str] = [], w
     }
     logging.debug(f"Initializing local SSD: {ELB_DOCKER_IMAGE_GCP}")
     with TemporaryDirectory() as d:
-        set_extraction_path(d)
 
         start = timer()
-        job_init_local_ssd_tmpl = resource_string('elastic_blast', f'templates/{job_init_template}').decode()
+        ref = files('elastic_blast').joinpath(f'templates/{job_init_template}')
+        job_init_local_ssd_tmpl = ref.read_text()
         for n in range(num_nodes):
             job_init_local_ssd = pathlib.Path(os.path.join(d, f'job-init-local-ssd-{n}.yaml'))
             subs['NODE_ORDINAL'] = str(n)
@@ -659,17 +677,18 @@ def initialize_persistent_disk(cfg: ElasticBlastConfig, query_files: List[str] =
 
     logging.debug(f"Initializing persistent volume: {ELB_DOCKER_IMAGE_GCP} {ELB_QS_DOCKER_IMAGE_GCP}")
     with TemporaryDirectory() as d:
-        set_extraction_path(d)
-        storage_gcp = resource_filename('elastic_blast', 'templates/storage-gcp-ssd.yaml')
-        cmd = f"kubectl --context={k8s_ctx} apply -f {storage_gcp}"
-        if dry_run:
-            logging.info(cmd)
-        else:
-            safe_exec(cmd)
+        ref = files('elastic_blast') / 'templates/storage-gcp-ssd.yaml'
+        with as_file(ref) as storage_gcp:
+            cmd = f"kubectl --context={k8s_ctx} apply -f {storage_gcp}"
+            if dry_run:
+                logging.info(cmd)
+            else:
+                safe_exec(cmd)
 
         pvc_yaml = os.path.join(d, 'pvc-rwo.yaml')
         with open(pvc_yaml, 'wt') as f:
-            f.write(substitute_params(resource_string('elastic_blast', 'templates/pvc-rwo.yaml.template').decode(), subs))
+            ref = files('elastic_blast').joinpath('templates/pvc-rwo.yaml.template')
+            f.write(substitute_params(ref.read_text(), subs))
         cmd = f"kubectl --context={k8s_ctx} apply -f {pvc_yaml}"
         if dry_run:
             logging.info(cmd)
@@ -679,7 +698,8 @@ def initialize_persistent_disk(cfg: ElasticBlastConfig, query_files: List[str] =
         start = timer()
         job_init_pv = pathlib.Path(os.path.join(d, 'job-init-pv.yaml'))
         with job_init_pv.open(mode='wt') as f:
-            f.write(substitute_params(resource_string('elastic_blast', f'templates/{job_init_pv_template}').decode(), subs))
+            ref = files('elastic_blast').joinpath(f'templates/{job_init_pv_template}')
+            f.write(substitute_params(ref.read_text(), subs))
         cmd = f"kubectl --context={k8s_ctx} apply -f {job_init_pv}"
         if dry_run:
             logging.info(cmd)
@@ -694,12 +714,13 @@ def initialize_persistent_disk(cfg: ElasticBlastConfig, query_files: List[str] =
         disks = get_persistent_disks(k8s_ctx, dry_run)
         if disks:
             logging.debug(f'GCP disk IDs {disks}')
-            cfg.appstate.disk_ids += disks
+            cfg.appstate.resources.disks += disks
             dest = os.path.join(cfg.cluster.results, ELB_METADATA_DIR, ELB_STATE_DISK_ID_FILE)
             with open_for_write_immediate(dest) as f:
-                f.write(json.dumps(cfg.appstate.disk_ids))
+                f.write(cfg.appstate.resources.to_json())
         elif not dry_run:
             logging.error('Failed to get disk ID')
+
 
         if wait != ElbExecutionMode.WAIT:
             return
@@ -730,24 +751,36 @@ def initialize_persistent_disk(cfg: ElasticBlastConfig, query_files: List[str] =
         # PVC snapshot
         logging.debug('Creating PVC snapshot')
         start = timer()
-        snapshot_class = resource_filename('elastic_blast', 'templates/volume-snapshot-class.yaml')
-        cmd = f"kubectl --context={k8s_ctx} apply -f {snapshot_class}"
-        if dry_run:
-            logging.info(cmd)
-        else:
-            safe_exec(cmd)
+        ref = files('elastic_blast') / 'templates/volume-snapshot-class.yaml'
+        with as_file(ref) as snapshot_class:
+            cmd = f"kubectl --context={k8s_ctx} apply -f {snapshot_class}"
+            if dry_run:
+                logging.info(cmd)
+            else:
+                safe_exec(cmd)
 
-        snapshot = resource_filename('elastic_blast', 'templates/volume-snapshot.yaml')
-        cmd = f"kubectl --context={k8s_ctx} apply -f {snapshot}"
-        if dry_run:
-            logging.info(cmd)
-        else:
-            safe_exec(cmd)
+        ref = files('elastic_blast') / 'templates/volume-snapshot.yaml'
+        with as_file(ref) as snapshot:
+            cmd = f"kubectl --context={k8s_ctx} apply -f {snapshot}"
+            if dry_run:
+                logging.info(cmd)
+            else:
+                safe_exec(cmd)
 
         # wair until snapshot is ready
         _wait_for_snapshot(k8s_ctx, pathlib.Path(snapshot), dry_run=dry_run)
         end = timer()
         logging.debug(f'PVC snapshot created and ready in {end - start:.2f} seconds')
+
+        snapshots = get_volume_snapshots(k8s_ctx, dry_run)
+        if snapshots:
+            logging.debug(f'GCP volume snapshot IDs {snapshots}')
+            cfg.appstate.resources.snapshots += snapshots
+            dest = os.path.join(cfg.cluster.results, ELB_METADATA_DIR, ELB_STATE_DISK_ID_FILE)
+            with open_for_write_immediate(dest) as f:
+                f.write(cfg.appstate.resources.to_json())
+        elif not dry_run:
+            logging.error('Failed to get snapshot ID')
 
         # delete the persistent disk
         logging.debug('Deleting writable persistent disk')
@@ -761,7 +794,8 @@ def initialize_persistent_disk(cfg: ElasticBlastConfig, query_files: List[str] =
         logging.debug('Creating ReadOnlyMany PVC from snapshot')
         cloned_pvc_yaml = os.path.join(d, 'pvc-rom.yaml')
         with open(cloned_pvc_yaml, 'wt') as f:
-            f.write(substitute_params(resource_string('elastic_blast', 'templates/pvc-rom.yaml.template').decode(), subs))
+            ref = files('elastic_blast').joinpath('templates/pvc-rom.yaml.template')
+            f.write(substitute_params(ref.read_text(), subs))
         cmd = f"kubectl --context={k8s_ctx} apply -f {cloned_pvc_yaml}"
         if dry_run:
             logging.info(cmd)
@@ -808,7 +842,7 @@ def label_persistent_disk(cfg: ElasticBlastConfig, pv_claim: str) -> None:
 
 def check_server(k8s_ctx: str, dry_run: bool = False):
     """Check that server set after gcp.get_gke_credentials is alive"""
-    cmd = f'kubectl --context={k8s_ctx} version --short'
+    cmd = f'kubectl --context={k8s_ctx} version'
     if dry_run:
         logging.info(cmd)
     else:
@@ -874,18 +908,18 @@ def enable_service_account(cfg: ElasticBlastConfig):
     dry_run = cfg.cluster.dry_run
     logging.debug(f"Enabling service account")
     with TemporaryDirectory() as d:
-        set_extraction_path(d)
-        rbac_yaml = resource_filename('elastic_blast', 'templates/elb-janitor-rbac.yaml')
-        cmd = f"kubectl --context={cfg.appstate.k8s_ctx} apply -f {rbac_yaml}"
-        if dry_run:
-            logging.info(cmd)
-        else:
-            try:
-                safe_exec(cmd)
-            except:
-                msg = 'ElasticBLAST is missing permissions for its auto-shutdown and cloud job submission feature. To provide these permissions, please run '
-                msg += f'gcloud projects add-iam-policy-binding {cfg.gcp.project} --member={cfg.gcp.user} --role=roles/container.admin'
-                raise UserReportError(returncode=PERMISSIONS_ERROR, message=msg)
+        ref = files('elastic_blast') / 'templates/elb-janitor-rbac.yaml'
+        with as_file(ref) as rbac_yaml:
+            cmd = f"kubectl --context={cfg.appstate.k8s_ctx} apply -f {rbac_yaml}"
+            if dry_run:
+                logging.info(cmd)
+            else:
+                try:
+                    safe_exec(cmd)
+                except:
+                    msg = 'ElasticBLAST is missing permissions for its auto-shutdown and cloud job submission feature. To provide these permissions, please run '
+                    msg += f'gcloud projects add-iam-policy-binding {cfg.gcp.project} --member={cfg.gcp.user} --role=roles/container.admin'
+                    raise UserReportError(returncode=PERMISSIONS_ERROR, message=msg)
 
 
 def submit_janitor_cronjob(cfg: ElasticBlastConfig):
@@ -908,10 +942,10 @@ def submit_janitor_cronjob(cfg: ElasticBlastConfig):
     }
     logging.debug(f"Submitting ElasticBLAST janitor cronjob: {ELB_JANITOR_DOCKER_IMAGE_GCP}")
     with TemporaryDirectory() as d:
-        set_extraction_path(d)
         cronjob_yaml = os.path.join(d, 'elb-cronjob.yaml')
         with open(cronjob_yaml, 'wt') as f:
-            f.write(substitute_params(resource_string('elastic_blast', 'templates/elb-janitor-cronjob.yaml.template').decode(), subs))
+            ref = files('elastic_blast').joinpath('templates/elb-janitor-cronjob.yaml.template')
+            f.write(substitute_params(ref.read_text(), subs))
         cmd = f"kubectl --context={cfg.appstate.k8s_ctx} apply -f {cronjob_yaml}"
         if dry_run:
             logging.info(cmd)
@@ -938,10 +972,10 @@ def submit_job_submission_job(cfg: ElasticBlastConfig):
     }
     logging.debug(f"Submitting job submission job: {ELB_CJS_DOCKER_IMAGE_GCP}")
     with TemporaryDirectory() as d:
-        set_extraction_path(d)
         job_yaml = os.path.join(d, 'job-submit-jobs.yaml')
         with open(job_yaml, 'wt') as f:
-            f.write(substitute_params(resource_string('elastic_blast', 'templates/job-submit-jobs.yaml.template').decode(), subs))
+            ref = files('elastic_blast').joinpath('templates/job-submit-jobs.yaml.template')
+            f.write(substitute_params(ref.read_text(), subs))
         cmd = f"kubectl --context={cfg.appstate.k8s_ctx} apply -f {job_yaml}"
         if dry_run:
             logging.info(cmd)

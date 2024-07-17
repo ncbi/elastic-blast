@@ -29,7 +29,7 @@ Author: Victor Joukov joukovv@ncbi.nlm.nih.gov
 import os
 import re
 from typing import List
-from pkg_resources import resource_string
+from importlib_resources import files
 from typing import Optional
 
 from .filehelper import open_for_read, open_for_write
@@ -50,7 +50,8 @@ def read_job_template(template_name=ELB_DFLT_BLAST_JOB_TEMPLATE, cfg: Optional[E
     resource_prefix_len = len(resource_prefix)
     if template_name[:resource_prefix_len] == resource_prefix:
         template_name = template_name[resource_prefix_len:]
-        return resource_string('elastic_blast', template_name).decode()
+        ref = files('elastic_blast').joinpath(template_name)
+        return ref.read_text()
     with open_for_read(template_name) as f:
         return f.read()
 

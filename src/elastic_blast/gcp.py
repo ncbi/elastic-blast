@@ -32,6 +32,7 @@ from tempfile import TemporaryDirectory
 import time
 import logging
 import json
+import shutil
 from timeit import default_timer as timer
 from typing import Any, DefaultDict, Dict, Optional, List, Tuple
 import uuid
@@ -46,6 +47,7 @@ from .filehelper import open_for_write_immediate
 from .jobs import read_job_template, write_job_files
 from .util import ElbSupportedPrograms, safe_exec, UserReportError, SafeExecError
 from .util import validate_gcp_disk_name, get_blastdb_info, get_usage_reporting
+from .util import is_newer_version
 
 from . import kubernetes
 from .constants import CLUSTER_ERROR, ELB_NUM_JOBS_SUBMITTED, ELB_METADATA_DIR, K8S_JOB_SUBMIT_JOBS
@@ -60,7 +62,7 @@ from .constants import GKE_CLUSTER_STATUS_PROVISIONING, GKE_CLUSTER_STATUS_RECON
 from .constants import GKE_CLUSTER_STATUS_RUNNING, GKE_CLUSTER_STATUS_RUNNING_WITH_ERROR
 from .constants import GKE_CLUSTER_STATUS_STOPPING, GKE_CLUSTER_STATUS_ERROR
 from .constants import STATUS_MESSAGE_ERROR
-from .elb_config import ElasticBlastConfig
+from .elb_config import ElasticBlastConfig, ResourceIds
 from .elasticblast import ElasticBlast
 from .gcp_traits import enable_gcp_api
 from . import VERSION
@@ -183,11 +185,11 @@ class ElasticBlastGcp(ElasticBlast):
                 # save persistent disk id
                 disk_ids = kubernetes.get_persistent_disks(self.cfg.appstate.k8s_ctx)
                 logging.debug(f'New persistent disk id: {disk_ids}')
-                self.cfg.appstate.disk_ids += disk_ids
+                self.cfg.appstate.resources.disks += disk_ids
                 dest = os.path.join(self.cfg.cluster.results, ELB_METADATA_DIR,
                                     ELB_STATE_DISK_ID_FILE)
                 with open_for_write_immediate(dest) as f:
-                    f.write(json.dumps(self.cfg.appstate.disk_ids))
+                    f.write(self.cfg.appstate.resources.to_json())
 
                 kubernetes.label_persistent_disk(self.cfg, 'blast-dbs-pvc')
                 kubernetes.delete_volume_snapshots(self.cfg.appstate.k8s_ctx)
@@ -531,6 +533,26 @@ def get_disks(cfg: ElasticBlastConfig, dry_run: bool = False) -> List[str]:
     return [i['name'] for i in disks]
 
 
+def get_snapshots(cfg: ElasticBlastConfig, dry_run: bool = False) -> List[str]:
+    """Return a list of volume snapshot names in the current GCP project.
+    Raises:
+        util.SafeExecError on problems with command line gcloud,
+        RuntimeError when gcloud results cannot be parsed"""
+    cmd = f'gcloud compute snapshots list --format json --project {cfg.gcp.project}'
+    if dry_run:
+        logging.info(cmd)
+        return list()
+
+    p = safe_exec(cmd)
+    try:
+        snapshots = json.loads(p.stdout.decode())
+    except Exception as err:
+        raise RuntimeError('Error when parsing listing of GCP snapshots' + str(err))
+    if snapshots is None:
+        raise RuntimeError('Improperly read gcloud disk listing')
+    return [i['name'] for i in snapshots]
+
+
 def delete_disk(name: str, cfg: ElasticBlastConfig) -> None:
     """Delete a persistent disk.
 
@@ -549,13 +571,32 @@ def delete_disk(name: str, cfg: ElasticBlastConfig) -> None:
     safe_exec(cmd)
 
 
+def delete_snapshot(name: str, cfg: ElasticBlastConfig) -> None:
+    """Delete a volume snapshot.
+
+    Arguments:
+        name: Volume snapshot name
+        cfg: Application config
+
+    Raises:
+        util.SafeExecError on problems with command line tools
+        ValueError if disk name is empty"""
+    if not name:
+        raise ValueError('No disk name provided')
+    if not cfg:
+        raise ValueError('No application config provided')
+    cmd = f'gcloud compute snaphots delete -q {name} --project {cfg.gcp.project}  --zone {cfg.gcp.zone}'
+    safe_exec(cmd)
+
+
 @retry(reraise=True, stop=stop_after_attempt(3), wait=wait_exponential(multiplier=1, min=2, max=10)) # type: ignore
-def _get_pd_id(cfg: ElasticBlastConfig) -> List[str]:
+def _get_resource_ids(cfg: ElasticBlastConfig) -> ResourceIds:
     """ Try to get the GCP persistent disk ID from elastic-blast records"""
-    retval = list()
-    if cfg.appstate.disk_ids:
-        retval = cfg.appstate.disk_ids
-        logging.debug(f'GCP disk ID {retval}')
+    retval = ResourceIds()
+    if cfg.appstate.resources.disks and cfg.appstate.resources.snapshots:
+        retval = cfg.appstate.resources
+        logging.debug(f'GCP disk ID {retval.disks}')
+        logging.debug(f'GCP volume snapshot ID {retval.snapshots}')
         # no need to get disk id from GS if we already have it
         return retval
 
@@ -570,25 +611,23 @@ def _get_pd_id(cfg: ElasticBlastConfig) -> List[str]:
     cmd = f'gsutil -q cat {disk_id_on_gcs}'
     try:
         p = safe_exec(cmd)
-        gcp_disk_ids = json.loads(p.stdout.decode())
+        retval = ResourceIds.from_json(p.stdout.decode())
+
         err = p.stderr.decode()
-        if gcp_disk_ids:
-            logging.debug(f"Retrieved GCP disk IDs {gcp_disk_ids} from {disk_id_on_gcs}")
+        if retval.disks or retval.snapshots:
+            logging.debug(f"Retrieved GCP resource IDs {retval} from {disk_id_on_gcs}")
             try:
-                for disk_id in gcp_disk_ids:
+                for disk_id in retval.disks:
                     validate_gcp_disk_name(disk_id)
             except ValueError:
                 logging.error(f'GCP disk ID "{disk_id}" retrieved from {disk_id_on_gcs} is invalid.')
-                gcp_disk_id = ''
-            else:
-                retval += gcp_disk_ids
         else:
             raise RuntimeError('Persistent disk id stored in GS is empty')
     except Exception as e:
         logging.error(f'Unable to read {disk_id_on_gcs}: {e}')
         raise
 
-    logging.debug(f'Fetched disk IDs {retval}')
+    logging.debug(f'Fetched resource IDs {retval}')
     return retval
 
 
@@ -601,12 +640,16 @@ def delete_cluster_with_cleanup(cfg: ElasticBlastConfig) -> None:
     dry_run = cfg.cluster.dry_run
     try_kubernetes = True
     pds = []
+    snapshots = []
     try:
-        pds = _get_pd_id(cfg) # type: ignore
+        resources = _get_resource_ids(cfg)
+        pds = resources.disks
+        snapshots = resources.snapshots
     except Exception as e:
         logging.error(f'Unable to read disk id from GS: {e}')
     else:
         logging.debug(f'PD id {" ".join(pds)}')
+        logging.debug(f'Snapshot id {" ".join(snapshots)}')
 
     # determine the course of action based on cluster status
     while True:
@@ -676,6 +719,12 @@ def delete_cluster_with_cleanup(cfg: ElasticBlastConfig) -> None:
             logging.warning(f'kubernetes.get_persistent_disks failed.\tDetails: {e}')
 
         try:
+            # get cluster's volume snapshots in case they leak
+            snapshots = kubernetes.get_volume_snapshots(k8s_ctx, dry_run)
+        except Exception as e:
+            logging.warning(f'kubernetes.get_volume_snapshots failed.\tDetails: {e}')
+
+        try:
             # delete all k8s jobs, persistent volumes and volume claims
             # this should delete persistent disks
             deleted = kubernetes.delete_all(k8s_ctx, dry_run)
@@ -686,6 +735,13 @@ def delete_cluster_with_cleanup(cfg: ElasticBlastConfig) -> None:
                     logging.debug(f'PD {i} still present after deleting k8s jobs and PVCs')
                 else:
                     logging.debug(f'PD {i} was deleted by deleting k8s PVC')
+
+            all_snapshots = get_snapshots(cfg, dry_run)
+            for i in snapshots:
+                if i in all_snapshots:
+                    logging.debug(f'Snapshot {i} still present after deleting k8s jobs and volume snapshots')
+                else:
+                    logging.debug(f'Snapshot {i} was deleted by deleting k8s volume snapshots')
         except Exception as e:
             # nothing to do the above fails, the code below will take care of
             # persistent disk leak
@@ -700,6 +756,11 @@ def delete_cluster_with_cleanup(cfg: ElasticBlastConfig) -> None:
                 if i in disks:
                     logging.debug(f'PD {i} still present after cluster deletion, deleting again')
                     delete_disk(i, cfg)
+            all_snapshots = get_snapshots(cfg, dry_run)
+            for i in snapshots:
+                if i in all_snapshots:
+                    logging.debug(f'Snapshot {i} still present after cluster deletion, deleting again')
+                    delete_snapshot(i, cfg)
         except Exception as e:
             logging.error(getattr(e, 'message', repr(e)))
             # if the above failed, try deleting each disk unconditionally to
@@ -707,6 +768,11 @@ def delete_cluster_with_cleanup(cfg: ElasticBlastConfig) -> None:
             for i in pds:
                 try:
                     delete_disk(i, cfg)
+                except Exception as e:
+                    logging.error(getattr(e, 'message', repr(e)))
+            for i in snapshots:
+                try:
+                    delete_snapshot(i, cfg)
                 except Exception as e:
                     logging.error(getattr(e, 'message', repr(e)))
         finally:
@@ -718,6 +784,16 @@ def delete_cluster_with_cleanup(cfg: ElasticBlastConfig) -> None:
                         'You can verify that the disk still exists using this command:\n' \
                         f'gcloud compute disks list --project {cfg.gcp.project} | grep {i}\n' \
                         f'and delete it with:\ngcloud compute disks delete {i} --project {cfg.gcp.project} --zone {cfg.gcp.zone}'
+                    logging.error(msg)
+
+            all_snapshots = get_snapshots(cfg, dry_run)
+            for i in snapshots:
+                if i in all_snapshots:
+                    msg = f'ElasticBLAST was not able to delete volume snapshot "{i}". ' \
+                        'Leaving it may cause additional charges from the cloud provider. ' \
+                        'You can verify that the disk still exists using this command:\n' \
+                        f'gcloud compute disks snapshots --project {cfg.gcp.project} | grep {i}\n' \
+                        f'and delete it with:\ngcloud compute snapshots delete {i} --project {cfg.gcp.project} --zone {cfg.gcp.zone}'
                     logging.error(msg)
                     # Remove the exception for now, as we want to delete the cluster always!
                     #raise UserReportError(returncode=CLUSTER_ERROR, msg)
@@ -915,7 +991,7 @@ def delete_cluster(cfg: ElasticBlastConfig):
 
 
 def check_prerequisites() -> None:
-    """ Check that necessary tools, gcloud, gsutil, and kubectl
+    """ Check that necessary tools, gcloud, gsutil, gke-gcloud-auth-plugin and kubectl
     are available if necessary.
     If execution of one of these tools is unsuccessful
     it will throw UserReportError exception."""
@@ -928,11 +1004,20 @@ def check_prerequisites() -> None:
 
     try:
         # client=true prevents kubectl from addressing server which can be down at the moment
-        p = safe_exec('kubectl version --client=true')
+        p = safe_exec('kubectl version --output=json --client=true')
     except SafeExecError as e:
         message = f"Required pre-requisite 'kubectl' doesn't work, check Kubernetes installation.\nDetails: {e.message}"
         raise UserReportError(DEPENDENCY_ERROR, message)
     logging.debug(f'{":".join(p.stdout.decode().split())}')
+
+    version_data = json.loads(p.stdout.decode())
+    kubectl_version = version_data["clientVersion"]["major"] + "."
+    kubectl_version += version_data["clientVersion"]["minor"]
+    if is_newer_version(kubectl_version, "1.25") and shutil.which("gke-gcloud-auth-plugin") is None:
+        message = f"Missing dependency 'gke-gcloud-auth-plugin', "
+        message += "for more information, please see "
+        message += "https://cloud.google.com/blog/products/containers-kubernetes/kubectl-auth-changes-in-gke"
+        raise UserReportError(DEPENDENCY_ERROR, message)
 
     # Check we have gsutil available
     try:

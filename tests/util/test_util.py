@@ -27,15 +27,15 @@ Created: Tue 07 Apr 2020 03:43:24 PM EDT
 import os
 import unittest
 from unittest.mock import patch, MagicMock
-import re
 
 from elastic_blast import util
 from elastic_blast.constants import ELB_DFLT_GCP_MACHINE_TYPE
 from elastic_blast.constants import ElbCommand, MolType
 from elastic_blast.util import get_query_batch_size
-from elastic_blast.util import get_blastdb_size, sanitize_aws_batch_job_name
+from elastic_blast.util import check_user_provided_blastdb_exists, sanitize_aws_batch_job_name
 from elastic_blast.util import safe_exec, SafeExecError
 from elastic_blast.util import sanitize_for_k8s
+from elastic_blast.util import is_newer_version
 from elastic_blast.util import validate_gcp_string, convert_labels_to_aws_tags
 from elastic_blast.util import validate_gcp_disk_name, gcp_get_regions
 from elastic_blast.util import ElbSupportedPrograms, UserReportError
@@ -44,7 +44,26 @@ from elastic_blast.elb_config import ElasticBlastConfig
 from elastic_blast.base import InstanceProperties
 from elastic_blast.db_metadata import DbMetadata
 import pytest
-from tests.utils import MockedCompletedProcess, gke_mock, GCP_REGIONS, gcp_env_vars
+from tests.utils import MockedCompletedProcess, gke_mock, GCP_REGIONS
+
+
+def test_is_newer_version():
+    assert is_newer_version("1.5", "1.0")
+    assert is_newer_version("1.0.1", "1.0")
+    assert is_newer_version("0.3", "1.0") is False
+    assert is_newer_version("1.5", "1.2.3") is True
+    assert is_newer_version("1.5", "1.7.3") is False
+
+    assert is_newer_version("1.0", "1.0") is False
+    assert is_newer_version("1.0", "1.0.0") is False
+    assert is_newer_version("1.0.0", "1.0") is False
+
+def test_get_db_moltype_for_program():
+    assert(ElbSupportedPrograms().get_db_mol_type('blastp') == MolType.PROTEIN)
+    assert(ElbSupportedPrograms().get_db_mol_type('blastx') == MolType.PROTEIN)
+    assert(ElbSupportedPrograms().get_db_mol_type('blastn') == MolType.NUCLEOTIDE)
+    assert(ElbSupportedPrograms().get_db_mol_type('tblastn') == MolType.NUCLEOTIDE)
+    assert(ElbSupportedPrograms().get_db_mol_type('tblastx') == MolType.NUCLEOTIDE)
 
 
 DB_METADATA = DbMetadata(version = '1',
@@ -162,20 +181,15 @@ class ElbLibTester(unittest.TestCase):
     def test_sanitize_aws_user_name(self):
         self.assertEqual('user-name', sanitize_aws_batch_job_name('user.name'))
 
-@patch(target='elastic_blast.elb_config.gcp_get_regions', new=MagicMock(return_value=GCP_REGIONS))
-def test_get_blastdb_size(gcp_env_vars):
-    cfg = create_config_for_db('nr')
-    gcp_prj = os.environ.get('CLOUDSDK_CORE_PROJECT', "ncbi-sandbox-blast")
-    dbsize = get_blastdb_size(cfg.blast.db, cfg.cluster.db_source, gcp_prj)
-    assert dbsize >= 227.4
+def test_check_user_provided_blastdb_exists(gke_mock):
+    cfg = create_config_for_db('gs://test-bucket/testdb')
+    check_user_provided_blastdb_exists(cfg.blast.db, MolType.PROTEIN, cfg.cluster.db_source)
 
-@patch(target='elastic_blast.elb_config.gcp_get_regions', new=MagicMock(return_value=GCP_REGIONS))
-def test_get_blastdb_size_invalid_database(gcp_env_vars):
-    cfg = create_config_for_db('non_existent_blast_database')
+def test_check_user_provided_blastdb_exists_invalid_database(gke_mock):
+    cfg = create_config_for_db('gs://test-bucket/non_existent_blast_database')
 
     with pytest.raises(ValueError):
-        gcp_prj = os.environ.get('CLOUDSDK_CORE_PROJECT', "ncbi-sandbox-blast")
-        get_blastdb_size(cfg.blast.db, cfg.cluster.db_source, gcp_prj)
+        check_user_provided_blastdb_exists(cfg.blast.db, MolType.PROTEIN, cfg.cluster.db_source)
 
 
 @patch(target='elastic_blast.elb_config.get_db_metadata', new=MagicMock(return_value=DB_METADATA))
@@ -349,24 +363,22 @@ def test_get_blastdb_info(mocker):
             return orig_safe_exec(cmd)
 
     mocker.patch('elastic_blast.util.safe_exec', side_effect=safe_exec_gsutil_ls)
-    gcp_prj = os.environ.get('CLOUDSDK_CORE_PROJECT', "ncbi-sandbox-blast")
-
     # tar.gz file, db_path should explicitely mention it
-    db, db_path, k8sdblabel = util.get_blastdb_info(DB, gcp_prj)
+    db, db_path, k8sdblabel = util.get_blastdb_info(DB)
     assert(db_path == DB+'.tar.gz')
     assert(k8sdblabel == DB_LABEL)
     print(db, db_path, k8sdblabel)
 
     # no tar.gz file, db_path should have .*
     response = DB_NAME+'tar.gz.md5'
-    db, db_path, k8sdblabel = util.get_blastdb_info(DB, gcp_prj)
+    db, db_path, k8sdblabel = util.get_blastdb_info(DB)
     assert(db_path == DB+'.*')
     assert(k8sdblabel == DB_LABEL)
     print(db, db_path, k8sdblabel)
 
     # tar.gz file, db_path should explicitely mention it
     response = DB_NAME+'tar.gz'+'\n'+DB_NAME+'.ndb'
-    db, db_path, k8sdblabel = util.get_blastdb_info(DB, gcp_prj)
+    db, db_path, k8sdblabel = util.get_blastdb_info(DB)
     assert(db_path == DB+'.tar.gz')
     assert(k8sdblabel == DB_LABEL)
     print(db, db_path, k8sdblabel)
@@ -374,7 +386,7 @@ def test_get_blastdb_info(mocker):
     # empty result, should throw an exception
     response = ''
     with pytest.raises(ValueError):
-        util.get_blastdb_info(DB, gcp_prj)
+        util.get_blastdb_info(DB)
 
     # error executing gsutil, should throw an exception
     def safe_exec_gsutil_ls_exception(cmd):
@@ -382,4 +394,4 @@ def test_get_blastdb_info(mocker):
         raise SafeExecError(1, 'CommandException: One or more URLs matched no objects.')
     mocker.patch('elastic_blast.util.safe_exec', side_effect=safe_exec_gsutil_ls_exception)
     with pytest.raises(ValueError):
-        util.get_blastdb_info(DB, gcp_prj)
+        util.get_blastdb_info(DB)

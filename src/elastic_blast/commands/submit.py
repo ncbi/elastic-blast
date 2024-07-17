@@ -41,8 +41,9 @@ from elastic_blast.filehelper import get_length, harvest_query_splitting_results
 from elastic_blast.split import FASTAReader
 from elastic_blast.gcp import check_cluster as gcp_check_cluster
 from elastic_blast.gcp_traits import get_machine_properties
-from elastic_blast.util import get_blastdb_size, UserReportError
+from elastic_blast.util import check_user_provided_blastdb_exists, UserReportError
 from elastic_blast.util import get_resubmission_error_msg
+from elastic_blast.util import ElbSupportedPrograms
 from elastic_blast.constants import ELB_AWS_JOB_IDS, ELB_METADATA_DIR, ELB_STATE_DISK_ID_FILE, QuerySplitMode
 from elastic_blast.constants import ELB_QUERY_BATCH_DIR, BLASTDB_ERROR, INPUT_ERROR
 from elastic_blast.constants import PERMISSIONS_ERROR, CLUSTER_ERROR, CSP, QUERY_LIST_EXT
@@ -118,7 +119,7 @@ def submit(args, cfg, clean_up_stack):
     cfg.validate(ElbCommand.SUBMIT, dry_run)
 
     # For now, checking resources is only implemented for AWS
-    if cfg.cloud_provider.cloud == CSP.AWS:
+    if cfg.cloud_provider.cloud == CSP.AWS and os.getenv('TEAMCITY_VERSION') is None:
         check_resource_quotas(cfg)
     
     if check_running_cluster(cfg):
@@ -151,7 +152,7 @@ def submit(args, cfg, clean_up_stack):
     # check database availability
     gcp_prj = None if cfg.cloud_provider.cloud == CSP.AWS else cfg.gcp.get_project_for_gcs_downloads()
     try:
-        get_blastdb_size(cfg.blast.db, cfg.cluster.db_source, gcp_prj)
+        check_user_provided_blastdb_exists(cfg.blast.db, ElbSupportedPrograms().get_db_mol_type(cfg.blast.program), cfg.cluster.db_source, gcp_prj)
     except ValueError as err:
         raise UserReportError(returncode=BLASTDB_ERROR, message=str(err))
 

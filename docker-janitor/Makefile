@@ -27,7 +27,8 @@ SHELL=/bin/bash
 .PHONY: all pre-check check clean build publish gcp-build gcp-check gcp-clean
 
 IMG?=ncbi/elasticblast-janitor
-VERSION?=0.3.1
+VERSION?=0.3.2
+ELB_VERSION?=$(shell git describe --tags --abbrev=0)
 GCP_PROJECT?=$(shell gcloud config get-value project 2>/dev/null)
 GCP_TEST_BUCKET?=gs://elasticblast-test/query-split-run-test
 
@@ -64,7 +65,7 @@ gcp-build:
 gcp-build-from-local-sources:
 	rsync -a ../setup.py ../setup.cfg_cloud ../src ../bin ../requirements ${PWD}/
 	sed -i~ -e '/^value = $${VERSION}/d;' setup.cfg_cloud
-	echo "value = ${VERSION}" >> setup.cfg_cloud
+	echo "value = ${ELB_VERSION}" >> setup.cfg_cloud
 	-gcloud builds submit --config cloudbuild.yaml --substitutions _VERSION=${VERSION},_IMG=${IMG},_DOCKERFILE='Dockerfile-build-from-local-sources.gcp'
 	rm -fr src bin requirements setup.cfg_cloud setup.py
 

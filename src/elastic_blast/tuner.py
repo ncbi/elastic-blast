@@ -344,7 +344,8 @@ def aws_get_machine_type(memory: MemoryStr, num_cpus: PositiveInteger, region: s
     # get properties of suitable instances
     suitable_props = get_suitable_instance_types(min_memory=memory,
                                                  min_cpus=num_cpus,
-                                                 instance_types=supported_offerings)
+                                                 instance_types=supported_offerings,
+                                                 region=region)
     if not suitable_props:
         raise UserReportError(returncode = UNKNOWN_ERROR,
                               message = f'An AWS machine type with memory {memory.asGiB()}GB and {num_cpus} CPUs could not be found')

@@ -34,8 +34,8 @@ COPY run.sh /usr/bin/
 RUN chmod +x /usr/bin/run.sh && \
     apk -U upgrade && \
     apk add --no-cache bash python3 py3-pip py3-wheel && \
-    pip3 install --no-cache-dir --upgrade pip && \
-    pip3 install --no-cache-dir -r requirements.txt && \
+    pip3 install --no-cache-dir --upgrade pip --break-system-packages && \
+    pip3 install --no-cache-dir -r requirements.txt --break-system-packages && \
     mkdir -p /var/elastic-blast && \
     rm -rf /var/cache/apk/* requirements.txt
 

@@ -12,7 +12,9 @@ steps:
 - name: '${_IMG}'
   args: ['aws', 's3', '--no-sign-request', 'ls', 's3://ncbi-blast-databases/latest-dir']
 - name: '${_IMG}'
-  args: ['gcloud', '--version']
+  args: ['gsutil', '--version']
+- name: '${_IMG}'
+  args: ['gsutil', 'ls', 'gs://blast-db']
 - name: '${_IMG}'
   args: ['printenv', 'BLASTDB', 'PATH']
 - name: '${_IMG}'

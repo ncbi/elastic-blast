@@ -31,7 +31,7 @@ from typing import Optional, List, Any
 from .util import UserReportError, check_aws_region_for_invalid_characters
 from .base import InstanceProperties, PositiveInteger, MemoryStr
 from .constants import ELB_DFLT_AWS_REGION, INPUT_ERROR, PERMISSIONS_ERROR
-from .constants import DEPENDENCY_ERROR
+from .constants import DEPENDENCY_ERROR, ELB_DFLT_AWS_REGION
 
 
 def create_aws_config(region: Optional[str] = None) -> Config:
@@ -114,7 +114,8 @@ def get_instance_type_offerings(region: str) -> List[str]:
 
 def get_suitable_instance_types(min_memory: MemoryStr,
                                 min_cpus: PositiveInteger,
-                                instance_types: Optional[List[str]] = None) -> List[Any]:
+                                instance_types: Optional[List[str]] = None,
+                                region: str = ELB_DFLT_AWS_REGION) -> List[Any]:
     """Get a list of instance type descriptions with at least min_memory and
     number of CPUs
 
@@ -126,7 +127,7 @@ def get_suitable_instance_types(min_memory: MemoryStr,
     Returns:
         A list of instance type descriptions for instance types that satisfy
         the above constraints"""
-    ec2 = boto3.client('ec2')
+    ec2 = boto3.client('ec2', region_name=region)
 
     # select only 64-bit CPUs
     filters = [{'Name': 'processor-info.supported-architecture',
