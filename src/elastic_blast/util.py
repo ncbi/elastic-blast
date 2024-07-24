@@ -593,11 +593,15 @@ def is_newer_version(version1: str, version2: str) -> bool:
     
     Returns:
     bool: True if version1 is newer than version2, False otherwise.
+
+    Throws: ValueError if any of the arguments cannot be parsed
     """
+    def parse_and_remove_trailing_plus(version_str: str) -> list[str]:
+        return [part[:-1] if re.search(r'\D$', part) else part for part in version_str.split('.')]
     
     # Split version strings into lists of integers
-    v1_parts = [int(part) for part in version1.split('.')]
-    v2_parts = [int(part) for part in version2.split('.')]
+    v1_parts = [int(part) for part in parse_and_remove_trailing_plus(version1)]
+    v2_parts = [int(part) for part in parse_and_remove_trailing_plus(version2)]
     
     # Compare each part of the version numbers
     for v1, v2 in zip_longest(v1_parts, v2_parts, fillvalue=0):

@@ -53,6 +53,25 @@ def test_is_newer_version():
     assert is_newer_version("0.3", "1.0") is False
     assert is_newer_version("1.5", "1.2.3") is True
     assert is_newer_version("1.5", "1.7.3") is False
+    assert is_newer_version("1.27+", "1.25") is True
+    assert is_newer_version("1.27-", "1.25") is True
+    assert is_newer_version("1.34a", "1.25") is True
+    assert is_newer_version("1a.34B", "1.25") is True
+
+    with pytest.raises(ValueError):
+        is_newer_version("1a.hello", "1.25")
+    with pytest.raises(ValueError):
+        is_newer_version("1a.3hello", "1.25")
+    with pytest.raises(ValueError):
+        is_newer_version("invalid_version_string", "1.25")
+    with pytest.raises(ValueError):
+        is_newer_version("1.1", "invalid_version_string")
+    with pytest.raises(ValueError):
+        is_newer_version("", "1.0")
+    with pytest.raises(ValueError):
+        is_newer_version("0.5", "")
+    with pytest.raises(ValueError):
+        is_newer_version("", "")
 
     assert is_newer_version("1.0", "1.0") is False
     assert is_newer_version("1.0", "1.0.0") is False

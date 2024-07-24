@@ -1013,7 +1013,10 @@ def check_prerequisites() -> None:
     version_data = json.loads(p.stdout.decode())
     kubectl_version = version_data["clientVersion"]["major"] + "."
     kubectl_version += version_data["clientVersion"]["minor"]
-    if is_newer_version(kubectl_version, "1.25") and shutil.which("gke-gcloud-auth-plugin") is None:
+    is_newer_than_1_25 = True
+    try : is_newer_than_1_25 = is_newer_version(kubectl_version, "1.25")
+    except ValueError: pass # ignore version parsing errors
+    if is_newer_than_1_25 and shutil.which("gke-gcloud-auth-plugin") is None:
         message = f"Missing dependency 'gke-gcloud-auth-plugin', "
         message += "for more information, please see "
         message += "https://cloud.google.com/blog/products/containers-kubernetes/kubectl-auth-changes-in-gke"

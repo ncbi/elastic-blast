@@ -88,6 +88,7 @@ class BlastDbMetadata:
 
     def to_json(self, pretty = False):
         """Serialize the object as JSON"""
+        self.files.sort()
         output = json.dumps(self, cls=BlastDbMetadataEncoder, sort_keys=False)
         #rename '_' to '-' in keys
         dict = json.loads(output)
