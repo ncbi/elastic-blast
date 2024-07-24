@@ -20,7 +20,7 @@ jobs:
           python-version: ${{ matrix.python-version }}
       - name: Build PEX file
         run: |
-            pip3 install wheel
+            pip3 install wheel glob2
             pip3 install -r requirements/test.txt
             pex --python-shebang='/usr/bin/env python3' --disable-cache . -r requirements/base.txt --python=python${{ matrix.python-version }} -c elastic-blast -o elastic-blast
             ./elastic-blast --version
@@ -53,7 +53,7 @@ jobs:
           python-version: ${{ matrix.python-version }}
       - name: Build PEX file
         run: |
-            pip3 install wheel
+            pip3 install wheel glob2
             pip3 install -r requirements/test.txt
             pex --python-shebang='/usr/bin/env python3' --disable-cache . -r requirements/base.txt --python=python${{ matrix.python-version }} -c elastic-blast -o elastic-blast${{ matrix.python-version }}
             ./elastic-blast${{ matrix.python-version }} --version
