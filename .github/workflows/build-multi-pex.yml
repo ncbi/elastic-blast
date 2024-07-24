@@ -80,9 +80,9 @@ jobs:
       - name: Create tarball
         run: |
           tar axvf elastic-blast-no-suffix/elastic-blast-no-suffix.tar.gz
-          tar axvf elastic-blast-3.8/elastic-blast3.8.tar.gz
           tar axvf elastic-blast-3.9/elastic-blast3.9.tar.gz
           tar axvf elastic-blast-3.10/elastic-blast3.10.tar.gz
+          tar axvf elastic-blast-3.11/elastic-blast3.11.tar.gz
           rm -fvr elastic-blast-*.tar.gz
           tar -czvf ~/elastic-blast.tar.gz elastic-blast elastic-blast*md5 elastic-blast3.*
       - name: 'Upload Artifact'
