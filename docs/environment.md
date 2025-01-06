@@ -11,7 +11,7 @@ add repository to download python 3.11
 sudo add-apt-repository ppa:deadsnakes/ppa
 ```
 
-update & upgrade apt
+update & upgrade apt (it takes 3~5 minutes.)
 ```bash
 sudo apt update
 sudo apt upgrade
@@ -39,6 +39,7 @@ sudo update-alternatives --config python3
 set python as python3
 ```bash
 sudo apt install python-is-python3
+python --version
 ```
 
 install pip
@@ -52,15 +53,37 @@ python --version
 pip --version
 ```
 
-you can set python3 as python using alias when python version is not 3.11
-```bash
-alias python=python3
-```
-
 install venv
 ```bash
 python -m pip install --user -U virtualenv
 ```
+
+# AWS cli install
+
+download AWS CLI Installer
+```bash
+curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
+```
+
+install unzip package & unzip
+```bash
+sudo apt install unzip
+unzip awscliv2.zip
+```
+
+run Installer
+```bash
+sudo ./aws/install
+```
+
+verify the installation
+```bash
+aws --version
+```
+
+Now You will need to configure aws configure until your project is fully Azure-enabled.
+
+
 
 
 
