@@ -469,6 +469,14 @@ def validate_gcp_disk_name(val: str) -> None:
     if re.fullmatch(r'(?:[a-z](?:[-a-z0-9]{0,61}[a-z0-9])?)', val) is None:
         raise ValueError(f'"{val}" is not a valid GCE disk name. The string must be less than 61 characters long and can only contain lowercase letters, digits, and dashes.')
 
+def validate_azure_region(val: str) -> None:
+    """Test whether a given string is a legal AZURE id: containes only lowercase,digits.
+
+    Raises:
+        ValueError if the string is not a legal AZURE id"""
+    if re.match(r'^[a-z0-9]+$', val) is None:
+        raise ValueError(f'"{val}" is not a legal AZURE id. The string can only contain lowercase letters and digits.')
+
 
 def validate_gcp_string(val: str) -> None:
     """Test whether a given string is a legal GCP id: containes only lowercase

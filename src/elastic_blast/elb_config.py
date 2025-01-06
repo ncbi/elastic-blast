@@ -58,6 +58,8 @@ from .constants import ELB_BLASTDB_MEMORY_MARGIN
 from .constants import CFG_CLOUD_PROVIDER
 from .constants import CFG_CP_GCP_PROJECT, CFG_CP_GCP_REGION, CFG_CP_GCP_ZONE
 from .constants import CFG_CP_GCP_NETWORK, CFG_CP_GCP_SUBNETWORK
+from .constants import CFG_CP_AZURE_RESOURCE_GROUP, CFG_CP_AZURE_REGION
+from .constants import CFG_CP_AZURE_K8S_VERSION
 from .constants import CFG_CP_GCP_K8S_VERSION
 from .constants import CFG_CP_AWS_REGION, CFG_CP_AWS_VPC, CFG_CP_AWS_SUBNET
 from .constants import CFG_CP_AWS_JOB_ROLE, CFG_CP_AWS_BATCH_SERVICE_ROLE
@@ -91,14 +93,15 @@ from .constants import AWS_ROLE_PREFIX, CFG_CP_AWS_AUTO_SHUTDOWN_ROLE
 from .constants import BLASTDB_ERROR, ELB_UNKNOWN, ELB_JANITOR_SCHEDULE
 from .constants import ELB_DFLT_GCP_REGION, ELB_DFLT_GCP_ZONE
 from .constants import ELB_DFLT_AWS_REGION, ELB_UNKNOWN_GCP_PROJECT
-from .constants import ELB_DFLT_GCP_K8S_VERSION
+from .constants import ELB_DFLT_AZURE_REGION, ELB_UNKNOWN_AZURE_RESOURCEGROUP
+from .constants import ELB_DFLT_GCP_K8S_VERSION, ELB_DFLT_AZURE_K8S_VERSION
 from .constants import ELB_DFLT_MIN_QUERY_FILESIZE_TO_SPLIT_ON_CLIENT_COMPRESSED
 from .constants import ELB_DFLT_MIN_QUERY_FILESIZE_TO_SPLIT_ON_CLIENT_UNCOMPRESSED
 from .util import validate_gcp_string, check_aws_region_for_invalid_characters
 from .util import validate_gke_cluster_name, ElbSupportedPrograms
 from .util import get_query_batch_size, get_gcp_project
 from .util import UserReportError, safe_exec
-from .util import gcp_get_regions, sanitize_for_k8s
+from .util import validate_azure_region, gcp_get_regions, sanitize_for_k8s
 from .gcp_traits import get_machine_properties as gcp_get_machine_properties
 from .gcp_traits import enable_gcp_api
 from .aws_traits import get_machine_properties as aws_get_machine_properties
@@ -149,6 +152,25 @@ class CloudURI(str):
             return CSP.GCP
         else:
             raise ValueError(f'Unrecognized cloud bucket prefix in: "{self}". Object URI must start with {ELB_GCS_PREFIX} or {ELB_S3_PREFIX}.')
+
+class AzureRegion(str):
+    """A subclass of str that only accepts valid Azure names. The value
+    is screend for invalid characters before object creation"""
+    def __new__(cls, value):
+        """Constructor, validates that argumant is a valid GCP name"""
+        validate_azure_region(str(value))
+        return super(cls, cls).__new__(cls, value)
+
+    def validate(self, dry_run: bool = False):
+        """ Validate the value of this object is one of the valid GCP
+        regions. """
+        if dry_run: return
+        regions = gcp_get_regions()
+        if not regions:
+            raise RuntimeError(f'Got no GCP regions')
+        if self not in regions:
+            msg = f'{self} is not a valid GCP region'
+            raise ValueError(msg)
 
 
 class GCPString(str):
@@ -221,6 +243,59 @@ class CloudProviderBaseConfig:
     # name of a cloud provider, must be initialized by a child class
     cloud: CSP = field(init=False)
     region: str
+
+@dataclass_json(letter_case=LetterCase.KEBAB)
+@dataclass
+class AZUREConfig(CloudProviderBaseConfig, ConfigParserToDataclassMapper):
+    """GCP config for ElasticBLAST"""
+    region: AzureRegion = AzureRegion(ELB_DFLT_AZURE_REGION)
+    resourcegroup: str = ELB_UNKNOWN_AZURE_RESOURCEGROUP    
+    network: Optional[str] = None
+    subnet: Optional[str] = None
+    user: Optional[str] = None
+    aks_version: Optional[str] = ELB_DFLT_AZURE_K8S_VERSION
+    # if True, Azure project will be passed to azcopy calls that download files
+    # from Azure Blob Storage and users will be charged for the downloads.
+    requester_pays: bool = False
+
+    # mapping to class attributes to ConfigParser parameters so that objects
+    # can be initialized from ConfigParser objects
+    mapping = {'resourcegroup': ParamInfo(CFG_CLOUD_PROVIDER, CFG_CP_AZURE_RESOURCE_GROUP),
+               'region': ParamInfo(CFG_CLOUD_PROVIDER, CFG_CP_AZURE_REGION),
+               'cloud': None,
+               'user': None,
+               'network': ParamInfo(CFG_CLOUD_PROVIDER, CFG_CP_GCP_NETWORK),
+               'subnet': ParamInfo(CFG_CLOUD_PROVIDER, CFG_CP_GCP_SUBNETWORK),
+               'aks_version': ParamInfo(CFG_CLOUD_PROVIDER, CFG_CP_AZURE_K8S_VERSION),
+               'requester_pays': None}
+ 
+    def __post_init__(self):
+        self.cloud = CSP.AZURE
+        self.user = ELB_UNKNOWN
+
+        # FIXME: need to pass dry-run to this method
+        p = safe_exec('gcloud config get-value account')
+        if p.stdout:
+            self.user = p.stdout.decode('utf-8').rstrip()
+            logging.debug(f'gcloud returned "{self.user}"')
+
+        if self.project == ELB_UNKNOWN_GCP_PROJECT:
+            proj = get_gcp_project()
+            self.project = GCPString(proj)
+        else:
+            self.requester_pays = True
+
+    def validate(self, errors: List[str], task: ElbCommand):
+        """Validate config"""
+        if bool(self.network) != bool(self.subnet):
+            errors.append('Both gcp-network and gcp-subnetwork need to be specified if one of them is specified')
+
+    def get_project_for_gcs_downloads(self) -> Optional[str]:
+        """Get GCP project for downloads from GCS buckets. Returns GCP project
+        if requester_pays is True, otherwise None. If GCP project is provided
+        to the gsutil call, then a user is paying for this download."""
+        return str(self.project) if self.requester_pays else None
+
 
 
 @dataclass_json(letter_case=LetterCase.KEBAB)

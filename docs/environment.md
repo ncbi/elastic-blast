@@ -81,6 +81,11 @@ verify the installation
 aws --version
 ```
 
+# AZ cli install
+```bash
+curl -sL https://aka.ms/InstallAzureCLIDeb | sudo bash
+```
+
 Now You will need to configure aws configure until your project is fully Azure-enabled.
 
 

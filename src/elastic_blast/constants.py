@@ -32,6 +32,7 @@ class CSP(Enum):
     """ Defines the supported Cloud Service Providers """
     GCP = auto()
     AWS = auto()
+    AZURE = auto()
     def __repr__(self):
         return f"'{self.name}'"
 
@@ -103,10 +104,12 @@ ELB_DFLT_GCP_PD_SIZE = '3000Gi'
 
 ELB_DFLT_GCP_MACHINE_TYPE = 'n1-highmem-32'
 ELB_DFLT_AWS_MACHINE_TYPE = 'm5.8xlarge'
+ELB_DFLT_AZURE_MACHINE_TYPE = 'Standard_E32s_v3'
 ELB_AWS_ARM_INSTANCE_TYPE_REGEX = r'^a1|^[a-z][1-9]g'
 
 ELB_DFLT_GCP_NUM_CPUS = 15
 ELB_DFLT_AWS_NUM_CPUS = 16
+ELB_DFLT_AZURE_NUM_CPUS = 16
 
 ELB_DFLT_NUM_NODES = 1
 ELB_DFLT_MIN_NUM_NODES = 1
@@ -119,6 +122,7 @@ ELB_DFLT_MIN_QUERY_FILESIZE_TO_SPLIT_ON_CLIENT_UNCOMPRESSED = 20*10**6
 ELB_S3_PREFIX = 's3://'
 ELB_PUBLIC_S3_BLASTDB = 'ncbi-blast-databases'
 ELB_GCS_PREFIX = 'gs://'
+ELB_AZURE_PREFIX = 'https://' # Azure blob storage URL prefix
 ELB_HTTP_PREFIX = 'http'
 ELB_FTP_PREFIX = 'ftp://'
 
@@ -139,6 +143,7 @@ ELB_META_CONFIG_FILE = 'elastic-blast-config.json'
 ELB_AWS_JOB_IDS = 'job-ids-v2.json'
 ELB_QUERY_LENGTH = 'query_length.txt'
 ELB_GCP_BATCH_LIST = 'batch_list.txt'
+ELB_AZURE_BATCH_LIST = 'batch_list.txt' # TODO: check if this is correct
 # this file contents should match the number of lines in ELB_GCP_BATCH_LIST 
 ELB_NUM_JOBS_SUBMITTED = 'num_jobs_submitted.txt'
 
@@ -155,6 +160,8 @@ ELB_DFLT_BLASTDB_SOURCE = 'gcp'
 ELB_DFLT_BLAST_JOB_TEMPLATE = 'resource:templates/blast-batch-job.yaml.template'
 ELB_LOCAL_SSD_BLAST_JOB_TEMPLATE = 'resource:templates/blast-batch-job-local-ssd.yaml.template'
 GCS_DFLT_BUCKET = 'gs://blast-db'
+
+# TODO: check if the azure reqiured.
 
 GCP_APIS = ['compute', 'serviceusage', 'container', 'storage-api', 'storage-component']
 # https://cloud.google.com/kubernetes-engine/docs/how-to/creating-managing-labels#requirements
@@ -208,7 +215,9 @@ class MolType(Enum):
 ELB_DFLT_GCP_REGION = 'us-east4'
 ELB_DFLT_GCP_ZONE = 'us-east4-b'
 ELB_DFLT_AWS_REGION = 'us-east-1'
+ELB_DFLT_AZURE_REGION = 'eastus'
 ELB_UNKNOWN_GCP_PROJECT = 'elb-unknown-gcp-project'
+ELB_UNKNOWN_AZURE_RESOURCEGROUP = 'elb-unknown-azure-resourcegroup'
 
 ELB_DOCKER_VERSION = '1.3.2'    # ElasticBLAST 1.3.0 uses BLAST+ 2.16.0
 ELB_QS_DOCKER_VERSION = '0.1.4'
@@ -217,14 +226,18 @@ ELB_JOB_SUBMIT_DOCKER_VERSION = '4.0.3'
 
 ELB_DOCKER_IMAGE_GCP = f'gcr.io/ncbi-sandbox-blast/ncbi/elb:{ELB_DOCKER_VERSION}'
 ELB_DOCKER_IMAGE_AWS = f'public.ecr.aws/ncbi-elasticblast/elasticblast-elb:{ELB_DOCKER_VERSION}'
+ELB_DOCKER_IMAGE_AZURE = '' # TODO: it will be replaced using ACR
 
 ELB_QS_DOCKER_IMAGE_GCP = f'gcr.io/ncbi-sandbox-blast/ncbi/elasticblast-query-split:{ELB_QS_DOCKER_VERSION}'
 ELB_QS_DOCKER_IMAGE_AWS = f'public.ecr.aws/ncbi-elasticblast/elasticblast-query-split:{ELB_QS_DOCKER_VERSION}'
+ELB_QS_DOCKER_IMAGE_AZURE = '' # TODO: it will be replaced using ACR
 
 ELB_JANITOR_DOCKER_IMAGE_GCP = f'gcr.io/ncbi-sandbox-blast/ncbi/elasticblast-janitor:{ELB_JANITOR_DOCKER_VERSION}'
+ELB_JANITOR_DOCKER_IMAGE_AZURE = '' # TODO: it will be replaced using ACR
 
 ELB_CJS_DOCKER_IMAGE_GCP = f'gcr.io/ncbi-sandbox-blast/ncbi/elasticblast-job-submit:{ELB_JOB_SUBMIT_DOCKER_VERSION}'
 ELB_CJS_DOCKER_IMAGE_AWS = f'public.ecr.aws/ncbi-elasticblast/elasticblast-job-submit:{ELB_JOB_SUBMIT_DOCKER_VERSION}'
+ELB_CJS_DOCKER_IMAGE_AWS = '' # TODO: it will be replaced using ACR
 
 ELB_DFLT_AWS_DISK_TYPE = 'gp3'
 ELB_DFLT_AWS_PD_SIZE = '1000G'
@@ -236,6 +249,7 @@ ELB_DFLT_AWS_SPOT_BID_PERCENTAGE = '100'
 # default k8s version in GKE, otherwise it should be set to a specific version
 # supported by GKE (e.g.: 1.25)
 ELB_DFLT_GCP_K8S_VERSION = None
+ELB_DFLT_AZURE_K8S_VERSION = None
 
 # Config sections
 CFG_CLOUD_PROVIDER = 'cloud-provider'
@@ -245,12 +259,14 @@ CFG_TIMEOUTS = 'timeouts'
 # Config keys
 # Cloud provider
 CFG_CP_NAME = 'name'
+
 CFG_CP_GCP_PROJECT = 'gcp-project'
 CFG_CP_GCP_REGION = 'gcp-region'
 CFG_CP_GCP_ZONE = 'gcp-zone'
 CFG_CP_GCP_NETWORK = 'gcp-network'
 CFG_CP_GCP_SUBNETWORK = 'gcp-subnetwork'
 CFG_CP_GCP_K8S_VERSION = 'gke-version'
+
 CFG_CP_AWS_REGION = 'aws-region'
 CFG_CP_AWS_KEY_PAIR = 'aws-key-pair'
 CFG_CP_AWS_VPC = 'aws-vpc'
@@ -263,6 +279,17 @@ CFG_CP_AWS_SPOT_FLEET_ROLE = 'aws-spot-fleet-role'
 CFG_CP_AWS_AUTO_SHUTDOWN_ROLE = 'aws-auto-shutdown-role'
 CFG_CP_AWS_JANITOR_EXECUTION_ROLE = 'aws-janitor-execution-role'
 CFG_CP_AWS_JANITOR_COPY_ZIPS_ROLE = 'aws-janitor-copy-zips-role'
+
+# Azure congiguration
+CFG_CP_AZURE_RESOURCE_GROUP = 'azure-resource-group'
+CFG_CP_AZURE_REGION = 'azure-region'
+CFG_CP_AZURE_VNET = 'azure-vnet'
+CFG_CP_AZURE_SUBNET = 'azure-subnet'
+CFG_CP_AZURE_K8S_VERSION = 'aks-version'
+
+# TODO: add Azure configuration
+
+
 # Cluster
 CFG_CLUSTER_DRY_RUN = 'dry-run'
 CFG_CLUSTER_NAME = 'name'
@@ -327,6 +354,14 @@ GKE_CLUSTER_STATUS_RUNNING = 'RUNNING'
 GKE_CLUSTER_STATUS_RUNNING_WITH_ERROR = 'RUNNING_WITH_ERROR'
 GKE_CLUSTER_STATUS_STOPPING = 'STOPPING'
 GKE_CLUSTER_STATUS_ERROR = 'ERROR'
+
+# AKS status names
+AKS_CLUSTER_STATUS_CREATING = 'Creating'
+AKS_CLUSTER_STATUS_UPDATING = 'Updating'
+AKS_CLUSTER_STATUS_SUCCEEDED = 'Succeeded'
+AKS_CLUSTER_STATUS_FAILED = 'Failed'
+AKS_CLUSTER_STATUS_DELETING = 'Deleting'
+AKS_CLUSTER_STATUS_RUNNING = 'Running'
 
 # File names of the sentinel files which indicate status reported by janitor
 ELB_STATUS_SUCCESS = "SUCCESS.txt"

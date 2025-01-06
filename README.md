@@ -1,3 +1,5 @@
+# Warning! This repository is still a work in progress, DO NOT USE IT.
+
 ElasticBLAST
 ============
 
