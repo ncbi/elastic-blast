@@ -7,7 +7,7 @@ teamcity-messages==1.32
 mypy==1.10.1
 pylint==2.7.4
 tox==4.4.12
-virtualenv==20.24.5
+virtualenv==20.26.6
 yamllint==1.35.1
 moto==4.2.14
 docker==7.1.0
