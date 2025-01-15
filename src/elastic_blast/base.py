@@ -155,6 +155,7 @@ class MemoryStr(str):
 
 class DBSource(Enum):
     """Sources of a BLAST database supported by update_blastdb.pl from BLAST+ package"""
+    AZURE = auto()
     GCP = auto()
     AWS = auto()
     NCBI = auto()
@@ -367,7 +368,7 @@ class ConfigParserToDataclassMapper:
             try:
                 value = ftype(parser[mapped.section][mapped.param_name])
             except ValueError as err:
-                errors.append(f'Parameter "{mapped.param_name}" has an invalid value: "{parser[mapped.section][mapped.param_name]}": {str(err)}')
+                errors.append(f'Parameter @ "{mapped.param_name}" has an invalid value: "{parser[mapped.section][mapped.param_name]}": {str(err)}')
                 if '$' in parser[mapped.section][mapped.param_name]:
                     errors.append('The character $ is not allowed, as ElasticBLAST configuration files do not support variable substitution.')
                 value = None

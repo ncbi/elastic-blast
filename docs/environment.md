@@ -81,14 +81,43 @@ verify the installation
 aws --version
 ```
 
+# GSUtil install
+```bash
+sudo snap install google-cloud-cli --classic
+```
+
 # AZ cli install
 ```bash
 curl -sL https://aka.ms/InstallAzureCLIDeb | sudo bash
 ```
 
+install kubectl using snap
+```bash
+sudo snap install kubectl --classic
+```
+
 Now You will need to configure aws configure until your project is fully Azure-enabled.
 
 
+## for debugging
+
+build package and install package
+```bash
+pip uninstall elastic-blast -y; python setup.py sdist bdist_wheel; pip install dist/elastic_blast-0.0-py3-none-any.whl;
+```
 
 
+# azcopy - https://gist.github.com/aessing/76f1200c9f5b2b9671937b3b0ed5fd6f
 
+# Download and extract
+wget https://aka.ms/downloadazcopy-v10-linux
+tar -xvf downloadazcopy-v10-linux
+
+# Move AzCopy
+sudo rm -f /usr/bin/azcopy
+sudo cp ./azcopy_linux_amd64_*/azcopy /usr/bin/
+sudo chmod 755 /usr/bin/azcopy
+
+# Clean the kitchen
+rm -f downloadazcopy-v10-linux
+rm -rf ./azcopy_linux_amd64_*/

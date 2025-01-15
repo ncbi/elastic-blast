@@ -487,7 +487,7 @@ class ElasticBlastAzure(ElasticBlast):
     def _get_gke_credentials(self) -> str:
         """ Memoized get_gke_credentials """
         if not self.cfg.appstate.k8s_ctx:
-            self.cfg.appstate.k8s_ctx = get_gke_credentials(self.cfg)
+            self.cfg.appstate.k8s_ctx = get_aks_credentials(self.cfg)
         return self.cfg.appstate.k8s_ctx
 
 
@@ -647,7 +647,7 @@ def delete_cluster_with_cleanup(cfg: ElasticBlastConfig) -> None:
             else:
                 # TODO: to avoid this hack make delete_cluster_with_cleanup
                 # a method of ElasticBlastGcp
-                elastic_blast = ElasticBlastGcp(cfg, False)
+                elastic_blast = ElasticBlastAzure(cfg, False)
                 status = elastic_blast._status_from_results()
                 if status == ElbStatus.UNKNOWN:
                     raise UserReportError(returncode=CLUSTER_ERROR, message=msg)
@@ -682,7 +682,7 @@ def delete_cluster_with_cleanup(cfg: ElasticBlastConfig) -> None:
 
     if try_kubernetes:
         try:
-            cfg.appstate.k8s_ctx = get_gke_credentials(cfg)
+            cfg.appstate.k8s_ctx = get_aks_credentials(cfg)
             kubernetes.check_server(cfg.appstate.k8s_ctx, dry_run)
         except Exception as e:
             logging.warning(f'Connection to Kubernetes cluster failed.\tDetails: {e}')
@@ -805,8 +805,8 @@ def get_gke_clusters(cfg: ElasticBlastConfig) -> List[str]:
     return [i['name'] for i in clusters]
 
 
-def get_gke_credentials(cfg: ElasticBlastConfig) -> str:
-    """Connect to a GKE cluster.
+def get_aks_credentials(cfg: ElasticBlastConfig) -> str:
+    """Connect to a AKS cluster.
 
     Arguments:
         cfg: configuration object
@@ -815,13 +815,13 @@ def get_gke_credentials(cfg: ElasticBlastConfig) -> str:
         The kubernetes current context
 
     Raises:
-        util.SafeExecError on problems with command line gcloud"""
-    cmd: List[str] = 'gcloud container clusters get-credentials'.split()
+        util.SafeExecError on problems with command line aks"""
+    cmd: List[str] = 'az aks get-credentials'.split()
     cmd.append(cfg.cluster.name)
-    cmd.append('--project')
-    cmd.append(f'{cfg.gcp.project}')
-    cmd.append('--zone')
-    cmd.append(f'{cfg.gcp.zone}')
+    cmd.append('--overwrite-existing')
+    cmd.append('--resource-group')
+    cmd.append(f'{cfg.azure.resourcegroup}')
+    
     if cfg.cluster.dry_run:
         logging.info(cmd)
     else:

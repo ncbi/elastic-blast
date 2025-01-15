@@ -1,27 +1,9 @@
-#                           PUBLIC DOMAIN NOTICE
-#              National Center for Biotechnology Information
-#  
-# This software is a "United States Government Work" under the
-# terms of the United States Copyright Act.  It was written as part of
-# the authors' official duties as United States Government employees and
-# thus cannot be copyrighted.  This software is freely available
-# to the public for use.  The National Library of Medicine and the U.S.
-# Government have not placed any restriction on its use or reproduction.
-#   
-# Although all reasonable efforts have been taken to ensure the accuracy
-# and reliability of the software and data, the NLM and the U.S.
-# Government do not and cannot warrant the performance or results that
-# may be obtained by using this software or data.  The NLM and the U.S.
-# Government disclaim all warranties, express or implied, including
-# warranties of performance, merchantability or fitness for any particular
-# purpose.
-#   
-# Please cite NCBI in any work or product based on this material.
+# 
 
 """
-Unit tests for gcp module
+Unit tests for azure module
 
-Author: Greg Boratyn boratyng@ncbi.nlm.nih.gov
+Author: Moon Hyuk Choi moonchoi@microsoft.com
 """
 
 import subprocess
@@ -30,6 +12,7 @@ from argparse import Namespace
 from unittest.mock import patch, MagicMock
 import pytest  # type: ignore
 from elastic_blast import gcp
+from elastic_blast import azure
 from elastic_blast import kubernetes
 from elastic_blast import config
 from elastic_blast import elb_config
@@ -523,7 +506,12 @@ def provide_cluster():
     data_dir = os.path.join(os.path.dirname(__file__), 'data')
     args = Namespace(cfg=os.path.join(data_dir, 'test-cfg-file.ini'))
     cfg = ElasticBlastConfig(config.configure(args), task = ElbCommand.SUBMIT)
-    cfg.cluster.name = cfg.cluster.name + f'-{os.environ["USER"]}'
+    
+    # The following values should be defined in .env.
+    cfg.cluster.name = cfg.cluster.name + f'-{os.environ["USER"]}'    
+    # cfg.azure.tenant_id = os.environ['AZURE_TENANT_ID']
+    # cfg.azure.client_id = os.environ['AZURE_CLIENT_ID']
+    # cfg.azure.client_secret = os.environ['AZURE_CLIENT_SECRET']
 
     cmd = f'gcloud container clusters create {cfg.cluster.name} --num-nodes 1 --machine-type n1-standard-1 --labels elb=test-suite'
     gcp.safe_exec(cmd.split())
@@ -537,11 +525,11 @@ def provide_cluster():
 
 
 @pytest.mark.skipif(False, reason='This test requires specific GCP credentials and may create GCP resources. It should be used with care.')
-def test_get_gke_credentials_real(provide_cluster):
+def test_get_aks_credentials_real(provide_cluster):
     """Test that gcp.get_gke_credentials does not raise exceptiions when a
     cluster is present"""
     cfg = provide_cluster
-    gcp.get_gke_credentials(cfg)
+    azure.get_aks_credentials(cfg)
 
 
 @pytest.mark.skipif(False, reason='This test requires specific GCP credentials and may create GCP resources. It should be used with care.')

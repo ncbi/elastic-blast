@@ -239,7 +239,7 @@ def safe_exec(cmd: Union[List[str], str], env: Optional[Dict[str, str]] = None) 
         if env:
             logging.debug(env)
         p = subprocess.run(cmd, check=True, stdout=subprocess.PIPE,
-                           stderr=subprocess.PIPE, env=run_env)
+                           stderr=subprocess.PIPE, env=run_env, universal_newlines=True)
     except subprocess.CalledProcessError as e:
         msg = f'The command "{" ".join(e.cmd)}" returned with exit code {e.returncode}\n{e.stderr.decode()}\n{e.stdout.decode()}'
         if e.output is not None:
@@ -477,6 +477,14 @@ def validate_azure_region(val: str) -> None:
     if re.match(r'^[a-z0-9]+$', val) is None:
         raise ValueError(f'"{val}" is not a legal AZURE id. The string can only contain lowercase letters and digits.')
 
+def validate_azure_resource_group(val: str) -> None:
+    """Test whether a given string is a legal AZURE id: containes only lowercase,digits.
+
+    Raises:
+        ValueError if the string is not a legal AZURE id"""
+    if re.match(r'^[a-zA-Z0-9_-]{1,90}$', val) is None:
+        raise ValueError(f'"{val}" is not a legal AZURE id. The string can only contain lowercase letters and digits.')
+
 
 def validate_gcp_string(val: str) -> None:
     """Test whether a given string is a legal GCP id: containes only lowercase
@@ -534,6 +542,18 @@ def get_usage_reporting() -> bool:
     return True
 
 
+def azure_get_regions() -> List[str]:
+    """ Retrieves a list of available Azure region names """
+    cmd = "az account list-locations -o json"
+    retval = []
+    try:
+        p = safe_exec(cmd)
+        region_info = json.loads(p.stdout.decode())
+        retval = [i['name'] for i in region_info]
+    except Exception as err:
+        logging.debug(err)
+    return retval
+
 def gcp_get_regions() -> List[str]:
     """ Retrieves a list of available GCP region names """
     cmd = "gcloud compute regions list --format json"
@@ -560,8 +580,11 @@ def get_resubmission_error_msg(results: str, cloud: CSP) -> str:
     retval += 'elastic-blast delete, or run the command '
     if cloud == CSP.AWS:
         retval += f'aws s3 rm --recursive --only-show-errors {results}'
-    else:
+    elif cloud == CSP.GCP:
         retval += f'gsutil -qm rm -r {results}'
+    else:
+        # TODO: add Azure
+        raise NotImplementedError(f'Cloud provider {cloud} is not implemented')
     return retval
 
 

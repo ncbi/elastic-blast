@@ -51,7 +51,7 @@ from .base import QuerySplittingResults
 from .util import safe_exec, SafeExecError
 from .constants import ELB_GCP_BATCH_LIST, ELB_METADATA_DIR, ELB_QUERY_LENGTH
 from .constants import ELB_PUBLIC_S3_BLASTDB, ELB_QUERY_BATCH_DIR
-from .constants import ELB_S3_PREFIX, ELB_GCS_PREFIX, ELB_FTP_PREFIX
+from .constants import ELB_S3_PREFIX, ELB_GCS_PREFIX, ELB_FTP_PREFIX, ELB_AZURE_PREFIX
 from .constants import ELB_QUERY_BATCH_FILE_PREFIX, ELB_HTTP_PREFIX
 from .constants import ELB_DFLT_FSIZE_FOR_TESTING
 
@@ -372,12 +372,30 @@ def unpack_stream(s:Optional[IO], gzipped:bool, tarred:bool) -> IO:
 
 
 def check_for_read(fname: str, dry_run : bool = False, print_file_size: bool = False,
-                   gcp_prj: Optional[str] = None) -> None:
+                   gcp_prj: Optional[str] = None, sas_token: Optional[str] = None) -> None:
     """ Check that path on local, GS, AWS S3 or URL-available filesystem can be read from.
     raises FileNotFoundError if there is no such file
     """
     if is_stdin(fname):
         return
+    if fname.startswith(ELB_AZURE_PREFIX):
+        
+        cmd = f'azcopy list {fname}?{sas_token}'
+        if dry_run:
+            logging.info(f'Open Azure file {cmd}')
+            return        
+        try:
+            p = safe_exec(cmd)
+            if print_file_size and p.stdout:
+                lines = p.stdout.decode('utf-8').splitlines()
+                content_length = filter(lambda l: 'Content Length' in l, lines) if 'Content Length' in lines else filter(lambda l: 'Content-Length' in l, lines)
+                if content_length:
+                    fsize = list(content_length).pop().split()[1]
+                    logging.debug(f'{fname} size {fsize}')
+        except SafeExecError as e:
+            raise FileNotFoundError(e.returncode, e.message)
+        return
+        
     if fname.startswith(ELB_GCS_PREFIX):
         prj = f'-u {gcp_prj}' if gcp_prj else ''
         cmd = f'gsutil {prj} stat {fname}' if print_file_size else f'gsutil {prj} -q stat {fname}'
@@ -479,7 +497,7 @@ def get_length(fname: str, dry_run: bool = False, gcp_prj: Optional[str] = None)
 
 error_report_funcs = {}
 
-def open_for_read(fname: str, gcp_prj: Optional[str] = None):
+def open_for_read(fname: str, gcp_prj: Optional[str] = None, sas_token: Optional[str] = None):
     """ Open path for read on local, GS, URL-available filesystem defined by prefix,
     or stdin. File can be gzipped, and archived with tar.
     """
@@ -488,6 +506,11 @@ def open_for_read(fname: str, gcp_prj: Optional[str] = None):
     tarred = re.match(r'^.*\.(tar(|\.gz|\.bz2)|tgz)$', fname) is not None
     binary = gzipped or tarred
     mode = 'rb' if binary else 'rt'
+    if fname.startswith(ELB_AZURE_PREFIX):
+        cmd = f''
+        response = urllib.request.urlopen(f'{fname}?{sas_token}')
+        return unpack_stream(response, gzipped, tarred)
+        
     if fname.startswith(ELB_GCS_PREFIX):
         prj = f'-u {gcp_prj}' if gcp_prj else ''
         cmd = f'gsutil {prj} cat ' + shlex.quote(fname)
@@ -561,6 +584,8 @@ def parse_bucket_name_key(fname: str) -> Tuple[str, str]:
     bare_name = fname
     if fname.startswith(ELB_S3_PREFIX) or fname.startswith(ELB_GCS_PREFIX):
         bare_name = fname[5:]
+    elif fname.startswith(ELB_AZURE_PREFIX):
+        bare_name = fname[8:]
     parts = bare_name.split('/')
     bucket = parts[0]
     key = '/'.join(parts[1:])

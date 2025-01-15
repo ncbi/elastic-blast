@@ -31,8 +31,9 @@ from dataclasses_json import dataclass_json, Undefined, LetterCase
 from json.decoder import JSONDecodeError
 from marshmallow.exceptions import ValidationError
 from typing import List, Optional
-from .constants import MolType, ELB_S3_PREFIX, ELB_GCS_PREFIX, BLASTDB_ERROR
+from .constants import MolType, ELB_S3_PREFIX, ELB_GCS_PREFIX, ELB_AZURE_PREFIX, BLASTDB_ERROR
 from .constants import ELB_PUBLIC_S3_BLASTDB
+from .constants import ELB_PRIVATE_AZURE_BLASTDB_ENDPOINT
 from .filehelper import open_for_read, check_for_read
 from .base import DBSource
 from .util import UserReportError
@@ -56,7 +57,7 @@ class DbMetadata:
     number_of_volumes: int
 
 
-def get_db_metadata(db: str, dbtype: MolType, source: DBSource, dry_run: bool = False, gcp_prj: Optional[str] = None) -> DbMetadata:
+def get_db_metadata(db: str, dbtype: MolType, source: DBSource, dry_run: bool = False, gcp_prj: Optional[str] = None, azure_storage_account_endpoint: Optional[str] = None, sas_token: Optional[str] = None) -> DbMetadata:
     """
     Read database metadata.
 
@@ -67,6 +68,10 @@ def get_db_metadata(db: str, dbtype: MolType, source: DBSource, dry_run: bool = 
     """
     DB_BUCKET_AWS = os.path.join(ELB_S3_PREFIX, ELB_PUBLIC_S3_BLASTDB)
     DB_BUCKET_GCP = os.path.join(ELB_GCS_PREFIX, 'blast-db')
+    # DB_BUCKET_AZURE = os.path.join(ELB_AZURE_PREFIX, 'public-blast-db.core.windows.net/blast-db')
+    
+    # Azure Blob Storage cannot support symbolic links, so we need to use the private endpoint with lastest-dir
+    DB_BUCKET_AZURE = os.path.join(ELB_AZURE_PREFIX, azure_storage_account_endpoint)
     DB_BUCKET_NCBI = 'ftp://ftp.ncbi.nlm.nih.gov/blast/db'
 
     # metadata file suffixes
@@ -76,12 +81,15 @@ def get_db_metadata(db: str, dbtype: MolType, source: DBSource, dry_run: bool = 
     db_path = db
 
     # if an NCBI-provided database
-    if not db.startswith(ELB_S3_PREFIX) and not db.startswith(ELB_GCS_PREFIX):
-        if source == DBSource.AWS or source == DBSource.GCP:
-            bucket = DB_BUCKET_AWS if source == DBSource.AWS else DB_BUCKET_GCP
+    if not db.startswith(ELB_S3_PREFIX) and not db.startswith(ELB_GCS_PREFIX) and not db.startswith(ELB_AZURE_PREFIX):
+        if source == DBSource.AWS or source == DBSource.GCP or source == DBSource.AZURE:
+            bucket = DB_BUCKET_AWS if source == DBSource.AWS else DB_BUCKET_GCP if source == DBSource.GCP else DB_BUCKET_AZURE
             try:
-                with open_for_read(f'{bucket}/latest-dir', gcp_prj) as f:
-                    db_path = os.path.join(f'{bucket}/{f.readline().rstrip()}', db)
+                if source == DBSource.AZURE:
+                    db_path = f'{bucket}/{db}'
+                else:
+                    with open_for_read(f'{bucket}/latest-dir', gcp_prj, sas_token) as f:
+                        db_path = os.path.join(f'{bucket}/{f.readline().rstrip()}', db)
             except:
                 msg = f'File "{bucket}/latest-dir" could not be read'
                 logging.error(msg)
@@ -92,14 +100,14 @@ def get_db_metadata(db: str, dbtype: MolType, source: DBSource, dry_run: bool = 
     try:
         metadata_file = f'{db_path}{metadata_suffix_v12}'
         logging.debug(f'BLASTDB metadata file: {metadata_file}')
-        check_for_read(metadata_file, dry_run, gcp_prj=gcp_prj)
+        check_for_read(metadata_file, dry_run, gcp_prj=gcp_prj, sas_token=sas_token)
     except FileNotFoundError:
         metadata_file = f'{db_path}{metadata_suffix_v11}'
         logging.debug(f'BLASTDB metadata file: {metadata_file}')
-        check_for_read(metadata_file, dry_run, gcp_prj=gcp_prj)
+        check_for_read(metadata_file, dry_run, gcp_prj=gcp_prj, sas_token=sas_token)
 
     try:
-        with open_for_read(metadata_file, gcp_prj) as f:
+        with open_for_read(metadata_file, gcp_prj, sas_token) as f:
             lines = f.readlines()
             if isinstance(lines[0], bytes):
                 lines = [s.decode() for s in lines]

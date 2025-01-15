@@ -22,7 +22,8 @@
 
 SHELL=/bin/bash
 
-VENV?=.env
+#VENV?=.env
+VENV?=venv
 
 PYTHON_SRC=$(shell find src/elastic_blast bin -type f -name "*.py" ! -path "*eggs*" ! -path "*${VENV}*" ! -name __init__.py ! -path "*.tox*" ! -path "*coverage*" ! -path "*cache*" ! -path "./build*")
 YAML_TEMPLATES=$(shell find src/elastic_blast/templates -type f)

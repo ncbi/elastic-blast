@@ -51,6 +51,7 @@ from .constants import ELB_DFLT_NUM_NODES
 from .constants import ELB_DFLT_USE_PREEMPTIBLE
 from .constants import ELB_DFLT_GCP_PD_SIZE, ELB_DFLT_AWS_PD_SIZE
 from .constants import ELB_DFLT_GCP_MACHINE_TYPE, ELB_DFLT_AWS_MACHINE_TYPE
+from .constants import ELB_DFLT_AZURE_MACHINE_TYPE
 from .constants import ELB_DFLT_INIT_PV_TIMEOUT, ELB_DFLT_BLAST_K8S_TIMEOUT
 from .constants import ELB_DFLT_AWS_SPOT_BID_PERCENTAGE
 from .constants import ELB_DFLT_AWS_DISK_TYPE, ELB_DFLT_OUTFMT
@@ -58,8 +59,12 @@ from .constants import ELB_BLASTDB_MEMORY_MARGIN
 from .constants import CFG_CLOUD_PROVIDER
 from .constants import CFG_CP_GCP_PROJECT, CFG_CP_GCP_REGION, CFG_CP_GCP_ZONE
 from .constants import CFG_CP_GCP_NETWORK, CFG_CP_GCP_SUBNETWORK
+from .constants import CFG_CP_AZURE_TENANT_ID, CFG_CP_AZURE_CLIENT_ID, CFG_CP_AZURE_CLIENT_SECRET
 from .constants import CFG_CP_AZURE_RESOURCE_GROUP, CFG_CP_AZURE_REGION
+from .constants import CFG_CP_AZURE_STORAGE_ACCOUNT, CFG_CP_AZURE_STORAGE_ACCOUNT_CONTAINER, CFG_CP_AZURE_STORAGE_ACCOUNT_KEY
+from .constants import CFG_CP_AZURE_VNET, CFG_CP_AZURE_SUBNET
 from .constants import CFG_CP_AZURE_K8S_VERSION
+from .constants import ELB_PRIVATE_AZURE_BLASTDB_ENDPOINT
 from .constants import CFG_CP_GCP_K8S_VERSION
 from .constants import CFG_CP_AWS_REGION, CFG_CP_AWS_VPC, CFG_CP_AWS_SUBNET
 from .constants import CFG_CP_AWS_JOB_ROLE, CFG_CP_AWS_BATCH_SERVICE_ROLE
@@ -89,11 +94,13 @@ from .constants import GCP_MAX_NUM_LABELS, AWS_MAX_NUM_LABELS
 from .constants import SYSTEM_MEMORY_RESERVE, ELB_AWS_ARM_INSTANCE_TYPE_REGEX
 from .constants import ELB_DFLT_AWS_NUM_CPUS, ELB_DFLT_GCP_NUM_CPUS
 from .constants import ELB_S3_PREFIX, ELB_GCS_PREFIX, ELB_UNKNOWN_MAX_NUMBER_OF_CONCURRENT_JOBS
+from .constants import ELB_AZURE_PREFIX
 from .constants import AWS_ROLE_PREFIX, CFG_CP_AWS_AUTO_SHUTDOWN_ROLE
 from .constants import BLASTDB_ERROR, ELB_UNKNOWN, ELB_JANITOR_SCHEDULE
 from .constants import ELB_DFLT_GCP_REGION, ELB_DFLT_GCP_ZONE
 from .constants import ELB_DFLT_AWS_REGION, ELB_UNKNOWN_GCP_PROJECT
-from .constants import ELB_DFLT_AZURE_REGION, ELB_UNKNOWN_AZURE_RESOURCEGROUP
+from .constants import ELB_DFLT_AZURE_REGION, ELB_UNKNOWN_AZURE_RESOURCEGROUP, ELB_UNKNOWN_AZURE_STORAGE_ACCOUNT
+from .constants import ELB_UNKNOWN_AZURE_STORAGE_ACCOUNT_CONTAINER, ELB_UNKNOWN_AZURE_STORAGE_ACCOUNT_KEY
 from .constants import ELB_DFLT_GCP_K8S_VERSION, ELB_DFLT_AZURE_K8S_VERSION
 from .constants import ELB_DFLT_MIN_QUERY_FILESIZE_TO_SPLIT_ON_CLIENT_COMPRESSED
 from .constants import ELB_DFLT_MIN_QUERY_FILESIZE_TO_SPLIT_ON_CLIENT_UNCOMPRESSED
@@ -101,12 +108,16 @@ from .util import validate_gcp_string, check_aws_region_for_invalid_characters
 from .util import validate_gke_cluster_name, ElbSupportedPrograms
 from .util import get_query_batch_size, get_gcp_project
 from .util import UserReportError, safe_exec
-from .util import validate_azure_region, gcp_get_regions, sanitize_for_k8s
+from .util import gcp_get_regions, sanitize_for_k8s
+from .util import validate_azure_region, validate_azure_resource_group
+from .util import azure_get_regions
 from .gcp_traits import get_machine_properties as gcp_get_machine_properties
 from .gcp_traits import enable_gcp_api
 from .aws_traits import get_machine_properties as aws_get_machine_properties
 from .aws_traits import get_regions as aws_get_regions
 from .aws_traits import create_aws_config
+from .azure_traits import get_machine_properties as azure_get_machine_properties
+from .azure_traits import get_sas_token, get_latest_dir
 from .base import InstanceProperties, PositiveInteger, Percentage
 from .base import ParamInfo, ConfigParserToDataclassMapper, DBSource, MemoryStr
 from .config import validate_cloud_storage_object_uri, _validate_csp
@@ -150,8 +161,10 @@ class CloudURI(str):
             return CSP.AWS
         elif self.startswith(ELB_GCS_PREFIX):
             return CSP.GCP
+        elif self.startswith(ELB_AZURE_PREFIX):
+            return CSP.AZURE
         else:
-            raise ValueError(f'Unrecognized cloud bucket prefix in: "{self}". Object URI must start with {ELB_GCS_PREFIX} or {ELB_S3_PREFIX}.')
+            raise ValueError(f'Unrecognized cloud bucket prefix in: "{self}". Object URI must start with {ELB_GCS_PREFIX} or {ELB_S3_PREFIX} or {ELB_AZURE_PREFIX}.')
 
 class AzureRegion(str):
     """A subclass of str that only accepts valid Azure names. The value
@@ -162,14 +175,35 @@ class AzureRegion(str):
         return super(cls, cls).__new__(cls, value)
 
     def validate(self, dry_run: bool = False):
-        """ Validate the value of this object is one of the valid GCP
+        """ Validate the value of this object is one of the valid Azure
         regions. """
         if dry_run: return
-        regions = gcp_get_regions()
+        regions = azure_get_regions()
         if not regions:
-            raise RuntimeError(f'Got no GCP regions')
+            raise RuntimeError(f'Got no Azure regions')
         if self not in regions:
-            msg = f'{self} is not a valid GCP region'
+            msg = f'{self} is not a valid Azure region'
+            raise ValueError(msg)
+        
+class AzureResourceGroup(str):
+    """A subclass of str that only accepts valid Azure names. The value
+    is screend for invalid characters before object creation"""
+    def __new__(cls, value):
+        """Constructor, validates that argumant is a valid GCP name"""
+        validate_azure_region(str(value))
+        return super(cls, cls).__new__(cls, value)
+
+    def validate(self, dry_run: bool = False):
+        """ Validate the value of this object is one of the valid Azure
+        regions. """
+        if dry_run: return
+        
+        return
+        regions = azure_get_regions()
+        if not regions:
+            raise RuntimeError(f'Got no Azure regions')
+        if self not in regions:
+            msg = f'{self} is not a valid Azure region'
             raise ValueError(msg)
 
 
@@ -247,9 +281,15 @@ class CloudProviderBaseConfig:
 @dataclass_json(letter_case=LetterCase.KEBAB)
 @dataclass
 class AZUREConfig(CloudProviderBaseConfig, ConfigParserToDataclassMapper):
-    """GCP config for ElasticBLAST"""
+    """AZURE config for ElasticBLAST"""
+    tenant_id: Optional[str] = None
+    client_id: Optional[str] = None # service principal
+    client_secret: Optional[str] = None
     region: AzureRegion = AzureRegion(ELB_DFLT_AZURE_REGION)
     resourcegroup: str = ELB_UNKNOWN_AZURE_RESOURCEGROUP    
+    storage_account: str = ELB_UNKNOWN_AZURE_STORAGE_ACCOUNT
+    storage_account_container: str = ELB_UNKNOWN_AZURE_STORAGE_ACCOUNT_CONTAINER
+    storage_account_key: str = ELB_UNKNOWN_AZURE_STORAGE_ACCOUNT_KEY
     network: Optional[str] = None
     subnet: Optional[str] = None
     user: Optional[str] = None
@@ -260,12 +300,18 @@ class AZUREConfig(CloudProviderBaseConfig, ConfigParserToDataclassMapper):
 
     # mapping to class attributes to ConfigParser parameters so that objects
     # can be initialized from ConfigParser objects
-    mapping = {'resourcegroup': ParamInfo(CFG_CLOUD_PROVIDER, CFG_CP_AZURE_RESOURCE_GROUP),
+    mapping = {'tenant_id': ParamInfo(CFG_CLOUD_PROVIDER, CFG_CP_AZURE_TENANT_ID),
+               'client_id': ParamInfo(CFG_CLOUD_PROVIDER, CFG_CP_AZURE_CLIENT_ID),
+               'client_secret': ParamInfo(CFG_CLOUD_PROVIDER, CFG_CP_AZURE_CLIENT_SECRET),
+               'resourcegroup': ParamInfo(CFG_CLOUD_PROVIDER, CFG_CP_AZURE_RESOURCE_GROUP),
                'region': ParamInfo(CFG_CLOUD_PROVIDER, CFG_CP_AZURE_REGION),
+               'storage_account': ParamInfo(CFG_CLOUD_PROVIDER, CFG_CP_AZURE_STORAGE_ACCOUNT),
+               'storage_account_container': ParamInfo(CFG_CLOUD_PROVIDER, CFG_CP_AZURE_STORAGE_ACCOUNT_CONTAINER),
+               'storage_account_key': ParamInfo(CFG_CLOUD_PROVIDER, CFG_CP_AZURE_STORAGE_ACCOUNT_KEY),
                'cloud': None,
                'user': None,
-               'network': ParamInfo(CFG_CLOUD_PROVIDER, CFG_CP_GCP_NETWORK),
-               'subnet': ParamInfo(CFG_CLOUD_PROVIDER, CFG_CP_GCP_SUBNETWORK),
+               'network': ParamInfo(CFG_CLOUD_PROVIDER, CFG_CP_AZURE_VNET),
+               'subnet': ParamInfo(CFG_CLOUD_PROVIDER, CFG_CP_AZURE_SUBNET),
                'aks_version': ParamInfo(CFG_CLOUD_PROVIDER, CFG_CP_AZURE_K8S_VERSION),
                'requester_pays': None}
  
@@ -274,16 +320,17 @@ class AZUREConfig(CloudProviderBaseConfig, ConfigParserToDataclassMapper):
         self.user = ELB_UNKNOWN
 
         # FIXME: need to pass dry-run to this method
-        p = safe_exec('gcloud config get-value account')
+        p = safe_exec('az account show --query user.name --output tsv')
         if p.stdout:
-            self.user = p.stdout.decode('utf-8').rstrip()
-            logging.debug(f'gcloud returned "{self.user}"')
+            self.user = p.stdout.rstrip()
+            logging.debug(f'azure returned "{self.user}"')
 
-        if self.project == ELB_UNKNOWN_GCP_PROJECT:
-            proj = get_gcp_project()
-            self.project = GCPString(proj)
-        else:
-            self.requester_pays = True
+        # TODO: check the azure subscription required
+        # if self.project == ELB_UNKNOWN_GCP_PROJECT:
+        #     proj = get_gcp_project()
+        #     self.project = GCPString(proj)
+        # else:
+        #     self.requester_pays = True
 
     def validate(self, errors: List[str], task: ElbCommand):
         """Validate config"""
@@ -295,6 +342,15 @@ class AZUREConfig(CloudProviderBaseConfig, ConfigParserToDataclassMapper):
         if requester_pays is True, otherwise None. If GCP project is provided
         to the gsutil call, then a user is paying for this download."""
         return str(self.project) if self.requester_pays else None
+    
+    def get_storage_account_endpoint(self) -> str:
+        """return without the protocol. e.g. myaccount.blob.core.windows.net"""
+        latest_dir = get_latest_dir(str(self.storage_account), str(self.storage_account_container), str(self.storage_account_key))
+        return f'{str(self.storage_account)}.blob.core.windows.net/{str(self.storage_account_container)}/{latest_dir}' 
+    
+    def get_sas_token(self) -> str:
+        """Get SAS token for Azure Blob Storage """
+        return get_sas_token(str(self.storage_account), str(self.storage_account_container), str(self.storage_account_key))
 
 
 
@@ -467,7 +523,7 @@ class BlastConfig(ConfigParserToDataclassMapper):
             '-in_msa'
         ])
         for query_file in self.queries_arg.split():
-            if query_file.startswith(ELB_S3_PREFIX) or query_file.startswith(ELB_GCS_PREFIX):
+            if query_file.startswith(ELB_S3_PREFIX) or query_file.startswith(ELB_GCS_PREFIX) or query_file.startswith(ELB_AZURE_PREFIX):
                 try:
                     validate_cloud_storage_object_uri(query_file)
                 except ValueError as err:
@@ -562,6 +618,7 @@ class ClusterConfig(ConfigParserToDataclassMapper):
         else:
             if not self.pd_size:
                 self.pd_size = ELB_DFLT_AWS_PD_SIZE
+        # TODO: add azure
 
         # default number of CPUs
         if self.num_cpus == ELB_NOT_INITIALIZED_NUM:
@@ -642,8 +699,9 @@ class ElasticBlastConfig:
         timeouts: timeouts parameters
     """
     cloud_provider: CloudProviderBaseConfig
+    azure: AZUREConfig
     gcp: GCPConfig
-    aws: AWSConfig
+    aws: AWSConfig    
     blast: BlastConfig
     cluster: ClusterConfig
     timeouts: TimeoutsConfig
@@ -739,11 +797,12 @@ class ElasticBlastConfig:
         if self.cloud_provider.cloud == CSP.GCP:
             enable_gcp_api(self.gcp.project, self.cluster.dry_run)
 
-        try:
-            if self.cloud_provider.region:
-                self.cloud_provider.region.validate(dry_run)
-        except ValueError as err:
-            raise UserReportError(returncode=INPUT_ERROR, message=str(err))
+        # TODO: comment out for now
+        # try:
+        #     if self.cloud_provider.region:
+        #         self.cloud_provider.region.validate(dry_run)
+        # except ValueError as err:
+        #     raise UserReportError(returncode=INPUT_ERROR, message=str(err))
 
         # For custom BLASTDBs, check that they reside in the appropriate cloud
         if self.blast and self.blast.db and '://' in self.blast.db:
@@ -755,18 +814,29 @@ class ElasticBlastConfig:
                  not self.blast.db.startswith(ELB_S3_PREFIX):
                 msg = f'User database {self.blast.db} must reside in AWS S3"'
                 raise UserReportError(returncode=BLASTDB_ERROR, message=msg)
+            elif self.cloud_provider.cloud == CSP.AZURE and \
+                 not self.blast.db.startswith(ELB_AZURE_PREFIX):
+                msg = f'User database {self.blast.db} must reside in Azure Storage Account"'
+                raise UserReportError(returncode=BLASTDB_ERROR, message=msg)
 
         # get database metadata
         if self.blast and not self.blast.db_metadata and not self.cluster.dry_run:
             try:
-                gcp_prj = None if self.cloud_provider.cloud == CSP.AWS else self.gcp.get_project_for_gcs_downloads()
+                gcp_prj = self.gcp.get_project_for_gcs_downloads() if self.cloud_provider.cloud == CSP.GCP else None 
+                
+                sas_token = self.azure.get_sas_token() if self.cloud_provider.cloud == CSP.AZURE else None
+                azure_storage_account_endpoint = self.azure.get_storage_account_endpoint() if self.cloud_provider.cloud == CSP.AZURE else None
+
+                    
                 self.blast.db_metadata = get_db_metadata(self.blast.db, ElbSupportedPrograms().get_db_mol_type(self.blast.program),
                                                          self.cluster.db_source,
-                                                         gcp_prj=gcp_prj)
+                                                         gcp_prj=gcp_prj,
+                                                         azure_storage_account_endpoint=azure_storage_account_endpoint,
+                                                         sas_token=sas_token)
             except FileNotFoundError:
                 # database metadata file is not mandatory for a user database (yet) EB-1308
                 logging.info('No database metadata')
-                if not self.blast.db.startswith(ELB_S3_PREFIX) and not self.blast.db.startswith(ELB_GCS_PREFIX):
+                if not self.blast.db.startswith(ELB_S3_PREFIX) and not self.blast.db.startswith(ELB_GCS_PREFIX) and not self.blast.db.startswith(ELB_AZURE_PREFIX):
                     raise UserReportError(returncode=BLASTDB_ERROR,
                                           message=f'Metadata for BLAST database "{self.blast.db}" was not found. Please, make sure that the database exists and database molecular type corresponds to your blast program: "{self.blast.program}". To get a list of NCBI provided databases, please see https://github.com/ncbi/blast_plus_docs#blast-databases.')
                 else:
@@ -804,8 +874,10 @@ class ElasticBlastConfig:
             else:
                 if self.cloud_provider.cloud == CSP.AWS:
                     self.cluster.machine_type = ELB_DFLT_AWS_MACHINE_TYPE
-                else:
+                elif self.cloud_provider.cloud == CSP.GCP:
                     self.cluster.machine_type = ELB_DFLT_GCP_MACHINE_TYPE
+                else:
+                    self.cluster.machine_type = ELB_DFLT_AZURE_MACHINE_TYPE
 
         # Sanity check for instance type and num CPUs
         if self.cluster.machine_type != 'optimal' and not self.cluster.dry_run:
@@ -890,6 +962,8 @@ class ElasticBlastConfig:
             cloud = CSP.AWS
         elif sum([i.startswith('gcp') for i in cfg[CFG_CLOUD_PROVIDER]]) > 0:
             cloud = CSP.GCP
+        elif sum([i.startswith('azure') for i in cfg[CFG_CLOUD_PROVIDER]]) > 0:
+            cloud = CSP.AZURE
         else:
             cloud = self.cluster.results.get_cloud_provider()
 
@@ -897,10 +971,13 @@ class ElasticBlastConfig:
             self.cloud_provider = AWSConfig.create_from_cfg(cfg)
             # for mypy
             self.aws = cast(AWSConfig, self.cloud_provider)
-        else:
+        elif cloud == CSP.GCP:
             self.cloud_provider = GCPConfig.create_from_cfg(cfg)
             # for mypy
             self.gcp = cast(GCPConfig, self.cloud_provider)
+        else:
+            self.cloud_provider = AZUREConfig.create_from_cfg(cfg)
+            self.azure = cast(AZUREConfig, self.cloud_provider)
 
         if task == ElbCommand.SUBMIT:
             self.blast = BlastConfig.create_from_cfg(cfg)
@@ -916,6 +993,7 @@ class ElasticBlastConfig:
                               gcp_project: Optional[str] = None,
                               gcp_region: Optional[str] = None,
                               gcp_zone: Optional[str] = None,
+                              azure_resource_group: Optional[str] = None,
                               program: Optional[str] = None,
                               db: Optional[str] = None,
                               queries: Optional[str] = None,
@@ -941,6 +1019,9 @@ class ElasticBlastConfig:
                                             region = GCPString(gcp_region),
                                             zone = GCPString(gcp_zone))
             self.gcp = cast(GCPConfig, self.cloud_provider)
+        elif azure_resource_group:
+            self.cloud_provider = AZUREConfig(resource_group = AzureResourceGroup(azure_resource_group))
+            self.azure = cast(AZUREConfig, self.cloud_provider)
 
         self.cluster = ClusterConfig(results = CloudURI(results),
                                      machine_type = machine_type)
@@ -1015,6 +1096,9 @@ class ElasticBlastConfig:
         elif self.cloud_provider.cloud == CSP.AWS and \
              not self.cluster.results.startswith(ELB_S3_PREFIX):
             errors.append(f'Results bucket must start with "{ELB_S3_PREFIX}"')
+        elif self.cloud_provider.cloud == CSP.AZURE and \
+             not self.cluster.results.startswith(ELB_AZURE_PREFIX):
+            errors.append(f'Results bucket must start with "{ELB_AZURE_PREFIX}"')
 
         if task == ElbCommand.SUBMIT:
             # validate number of CPUs and memory limit for searching a batch
@@ -1130,6 +1214,9 @@ class ElasticBlastConfig:
         elif 'gcp' in cfg_dict:
             cfg.gcp = GCPConfig.from_dict(cfg_dict['gcp']) # type: ignore
             cfg.cloud_provider = cfg.gcp
+        elif 'azure' in cfg_dict:
+            cfg.azure = AZUREConfig.from_dict(cfg_dict['azure']) # type: ignore
+            cfg.cloud_provider = cfg.azure
         cfg.blast = BlastConfig.from_dict(cfg_dict['blast']) # type: ignore
         cfg.cluster = ClusterConfig.from_dict(cfg_dict['cluster']) # type: ignore
         cfg.timeouts = TimeoutsConfig.from_dict(cfg_dict['timeouts']) # type: ignore
@@ -1285,7 +1372,10 @@ def sanitize_aws_tag(input_label: str) -> str:
 def get_instance_props(cloud_provider: CSP, region: str, machine_type: str) -> InstanceProperties:
     """Get properties of a cloud instance."""
     try:
-        if cloud_provider == CSP.GCP:
+        if cloud_provider == CSP.AZURE:
+            instance_props = azure_get_machine_properties(machine_type)
+            
+        elif cloud_provider == CSP.GCP:
             instance_props = gcp_get_machine_properties(machine_type)
         else:
             instance_props = aws_get_machine_properties(machine_type, create_aws_config(region))

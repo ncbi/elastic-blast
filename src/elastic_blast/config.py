@@ -38,6 +38,9 @@ from .util import check_positive_int, get_query_batch_size
 from .util import ElbSupportedPrograms
 from .util import validate_gcp_string, validate_gke_cluster_name
 from .constants import APP_STATE, CFG_BLAST, CFG_BLAST_BATCH_LEN, CFG_BLAST_DB, CFG_BLAST_DB_MEM_MARGIN, CFG_BLAST_DB_SRC, CFG_BLAST_MEM_LIMIT, CFG_BLAST_MEM_REQUEST, CFG_BLAST_OPTIONS, CFG_BLAST_PROGRAM, CFG_BLAST_QUERY, CFG_BLAST_RESULTS, CFG_CLOUD_PROVIDER, CFG_CLUSTER, CFG_CLUSTER_BID_PERCENTAGE, CFG_CLUSTER_DISK_TYPE, CFG_CLUSTER_DRY_RUN, CFG_CLUSTER_EXP_USE_LOCAL_SSD, CFG_CLUSTER_MACHINE_TYPE, CFG_CLUSTER_NAME, CFG_CLUSTER_NUM_CPUS, CFG_CLUSTER_NUM_NODES, CFG_CLUSTER_PD_SIZE, CFG_CLUSTER_PROVISIONED_IOPS, CFG_CLUSTER_USE_PREEMPTIBLE, CFG_CP_AWS_REGION, CFG_CP_GCP_NETWORK, CFG_CP_GCP_PROJECT, CFG_CP_GCP_REGION, CFG_CP_GCP_SUBNETWORK, CFG_CP_GCP_ZONE, CFG_CP_NAME, CFG_TIMEOUTS, CFG_TIMEOUT_BLAST_K8S_JOB, CFG_TIMEOUT_INIT_PV
+from .constants import CFG_CP_AZURE_TENANT_ID, CFG_CP_AZURE_CLIENT_ID, CFG_CP_AZURE_CLIENT_SECRET
+from .constants import CFG_CP_AZURE_RESOURCE_GROUP, CFG_CP_AZURE_REGION
+from .constants import CFG_CP_AZURE_STORAGE_ACCOUNT, CFG_CP_AZURE_STORAGE_ACCOUNT_CONTAINER, CFG_CP_AZURE_STORAGE_ACCOUNT_KEY
 from .constants import ELB_DFLT_OUTFMT, ELB_BLASTDB_MEMORY_MARGIN, ELB_DFLT_USE_PREEMPTIBLE
 from .constants import ELB_DFLT_GCP_PD_SIZE, ELB_DFLT_GCP_MACHINE_TYPE, ELB_DFLT_AWS_MACHINE_TYPE
 from .constants import ELB_DFLT_BLAST_K8S_TIMEOUT, ELB_DFLT_INIT_PV_TIMEOUT, ELB_DFLT_NUM_NODES
@@ -45,7 +48,7 @@ from .constants import ELB_DFLT_BLASTDB_SOURCE, INPUT_ERROR, CSP
 from .constants import ELB_DFLT_AWS_DISK_TYPE, ELB_DFLT_AWS_PD_SIZE, ELB_DFLT_AWS_PROVISIONED_IOPS
 from .constants import ELB_DFLT_AWS_SPOT_BID_PERCENTAGE
 from .constants import APP_STATE_RESULTS_MD5, SYSTEM_MEMORY_RESERVE
-from .constants import ELB_S3_PREFIX, ELB_GCS_PREFIX
+from .constants import ELB_S3_PREFIX, ELB_GCS_PREFIX, ELB_AZURE_PREFIX
 from .constants import ELB_DFLT_AWS_REGION, ELB_DFLT_GCP_REGION, ELB_DFLT_GCP_ZONE
 from .util import UserReportError
 from .filehelper import parse_bucket_name_key
@@ -87,6 +90,25 @@ def _load_config_from_environment(cfg: configparser.ConfigParser) -> None:
         cfg[CFG_CLUSTER][CFG_CLUSTER_USE_PREEMPTIBLE] = os.environ['ELB_USE_PREEMPTIBLE']
     if 'ELB_BID_PERCENTAGE' in os.environ:
         cfg[CFG_CLUSTER][CFG_CLUSTER_BID_PERCENTAGE] = os.environ['ELB_BID_PERCENTAGE']
+        
+    # AZURE specific environment variables
+    if 'ELB_AZURE_RESOURCE_GROUP' in os.environ:
+        cfg[CFG_CLOUD_PROVIDER][CFG_CP_AZURE_RESOURCE_GROUP] = os.environ['AZURE_RESOURCE_GROUP']
+    if 'ELB_AZURE_REGION' in os.environ:
+        cfg[CFG_CLOUD_PROVIDER][CFG_CP_AZURE_REGION] = os.environ['AZURE_REGION']
+    if 'AZURE_TENANT_ID' in os.environ:
+        cfg[CFG_CLOUD_PROVIDER][CFG_CP_AZURE_TENANT_ID] = os.environ['AZURE_TENANT_ID']
+    if 'AZURE_CLIENT_ID' in os.environ:
+        cfg[CFG_CLOUD_PROVIDER][CFG_CP_AZURE_CLIENT_ID] = os.environ['AZURE_CLIENT_ID']
+    if 'AZURE_CLIENT_SECRET' in os.environ:
+        cfg[CFG_CLOUD_PROVIDER][CFG_CP_AZURE_CLIENT_SECRET] = os.environ['AZURE_CLIENT_SECRET']
+    if 'AZURE_STORAGE_ACCOUNT' in os.environ:
+        cfg[CFG_CLOUD_PROVIDER][CFG_CP_AZURE_STORAGE_ACCOUNT] = os.environ['AZURE_STORAGE_ACCOUNT']
+    if 'AZURE_STORAGE_ACCOUNT_CONTAINER' in os.environ:
+        cfg[CFG_CLOUD_PROVIDER][CFG_CP_AZURE_STORAGE_ACCOUNT_CONTAINER] = os.environ['AZURE_STORAGE_ACCOUNT_CONTAINER']
+    if 'AZURE_STORAGE_ACCOUNT_KEY' in os.environ:
+        cfg[CFG_CLOUD_PROVIDER][CFG_CP_AZURE_STORAGE_ACCOUNT_KEY] = os.environ['AZURE_STORAGE_ACCOUNT_KEY']
+    
 
 
 def configure(args: argparse.Namespace) -> configparser.ConfigParser:
@@ -145,6 +167,8 @@ def configure(args: argparse.Namespace) -> configparser.ConfigParser:
         retval[CFG_CLOUD_PROVIDER][CFG_CP_GCP_REGION] = args.gcp_region
     if hasattr(args, 'gcp_zone') and args.gcp_zone:
         retval[CFG_CLOUD_PROVIDER][CFG_CP_GCP_ZONE] = args.gcp_zone
+    if hasattr(args, 'azure_resource_group') and args.azure_resource_group:
+        retval[CFG_CLOUD_PROVIDER][CFG_CP_AZURE_RESOURCE_GROUP] = args.azure_resource_group
     
     # Exception to prevent unnecessary API calls and ensure testability
     # of some functionality without credentials
@@ -166,13 +190,14 @@ def _validate_csp(cfg: configparser.ConfigParser) -> None:
         return
 
     # are gcp or aws entries present in cloud-provider config
+    azure = sum([i.startswith('azure') for i in cfg[CFG_CLOUD_PROVIDER]]) > 0
     gcp = sum([i.startswith('gcp') for i in cfg[CFG_CLOUD_PROVIDER]]) > 0
-    aws = sum([i.startswith('aws') for i in cfg[CFG_CLOUD_PROVIDER]]) > 0
+    aws = sum([i.startswith('aws') for i in cfg[CFG_CLOUD_PROVIDER]]) > 0    
 
     msg = []
 
     # both and none are forbidden
-    if gcp and aws:
+    if gcp and aws or gcp and azure or aws and azure or not gcp and not aws and not azure:
         msg.append('Cloud provider config contains entries for more than one cloud provider. Only one cloud provider can be used')
 
     if CFG_CP_NAME in cfg[CFG_CLOUD_PROVIDER]:
@@ -189,10 +214,11 @@ def report_config_error(msg: List[str]) -> None:
 
 
 def validate_cloud_storage_object_uri(uri: str) -> None:
-    """Validate cloud storage object uri for GS and S3.
+    """Validate cloud storage object uri for GS, S3 and Azure Storage Account.
     Only bucket name is checked, because object key can be almost anything."""
     # get bucket name
     bucket, _ = parse_bucket_name_key(uri)
+        
     if uri.startswith(ELB_S3_PREFIX):
         # S3 bucket name must contain only lowercase letters, numbers, dots,
         # and dashes, start and end with a letter or a number, and be between
@@ -208,5 +234,9 @@ def validate_cloud_storage_object_uri(uri: str) -> None:
         # https://cloud.google.com/storage/docs/naming-buckets
         if re.fullmatch(r'^[a-z0-9][a-z0-9._-]+[a-z0-9]$', bucket) is None:
             raise ValueError('A GS bucket name must contain only lowercase letters, numbers, dashes (-), underscores (_), and dots (.)')
+    elif uri.startswith(ELB_AZURE_PREFIX):
+        # Azure Storage Account URL validation
+        if re.fullmatch(r'^(?!.{1025})/?[^/]*[^/.](?:/[^/]*[^/.]){0,253}$', bucket) is None:
+            raise ValueError(f'An Azure Storage Account name must contain only lowercase letters and numbers, and be between 3 and 24 characters long. bucket: {bucket}, uri: {uri}')
     else:
-        raise ValueError(f'An object URI must start with {ELB_GCS_PREFIX} or {ELB_S3_PREFIX}')
+        raise ValueError(f'An object URI must start with {ELB_GCS_PREFIX} , {ELB_S3_PREFIX} or {ELB_AZURE_PREFIX}. uri: {uri}')

@@ -123,6 +123,7 @@ ELB_S3_PREFIX = 's3://'
 ELB_PUBLIC_S3_BLASTDB = 'ncbi-blast-databases'
 ELB_GCS_PREFIX = 'gs://'
 ELB_AZURE_PREFIX = 'https://' # Azure blob storage URL prefix
+ELB_PRIVATE_AZURE_BLASTDB_ENDPOINT = 'elasticblast-blastdb' # this variable will be replaced with the actual name of the storage endpoint
 ELB_HTTP_PREFIX = 'http'
 ELB_FTP_PREFIX = 'ftp://'
 
@@ -218,6 +219,9 @@ ELB_DFLT_AWS_REGION = 'us-east-1'
 ELB_DFLT_AZURE_REGION = 'eastus'
 ELB_UNKNOWN_GCP_PROJECT = 'elb-unknown-gcp-project'
 ELB_UNKNOWN_AZURE_RESOURCEGROUP = 'elb-unknown-azure-resourcegroup'
+ELB_UNKNOWN_AZURE_STORAGE_ACCOUNT = 'elb-unknown-azure-storage-account'
+ELB_UNKNOWN_AZURE_STORAGE_ACCOUNT_CONTAINER = 'elb-unknown-azure-storage-account-container'
+ELB_UNKNOWN_AZURE_STORAGE_ACCOUNT_KEY = 'elb-unknown-azure-storage-account-key'
 
 ELB_DOCKER_VERSION = '1.3.2'    # ElasticBLAST 1.3.0 uses BLAST+ 2.16.0
 ELB_QS_DOCKER_VERSION = '0.1.4'
@@ -281,8 +285,14 @@ CFG_CP_AWS_JANITOR_EXECUTION_ROLE = 'aws-janitor-execution-role'
 CFG_CP_AWS_JANITOR_COPY_ZIPS_ROLE = 'aws-janitor-copy-zips-role'
 
 # Azure congiguration
+CFG_CP_AZURE_TENANT_ID = 'azure-tenant-id'
+CFG_CP_AZURE_CLIENT_ID = 'azure-client-id'
+CFG_CP_AZURE_CLIENT_SECRET = 'azure-client-secret'
 CFG_CP_AZURE_RESOURCE_GROUP = 'azure-resource-group'
 CFG_CP_AZURE_REGION = 'azure-region'
+CFG_CP_AZURE_STORAGE_ACCOUNT = 'azure-storage-account'
+CFG_CP_AZURE_STORAGE_ACCOUNT_CONTAINER = 'azure-storage-account-container'
+CFG_CP_AZURE_STORAGE_ACCOUNT_KEY = 'azure-storage-account-key'
 CFG_CP_AZURE_VNET = 'azure-vnet'
 CFG_CP_AZURE_SUBNET = 'azure-subnet'
 CFG_CP_AZURE_K8S_VERSION = 'aks-version'
