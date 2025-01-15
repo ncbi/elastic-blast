@@ -23,7 +23,7 @@ Test for elastic_blast.gcp_traits
 
 Author: Victor Joukov joukovv@ncbi.nlm.nih.gov
 """
-from elastic_blast.azure_traits import get_machine_properties, get_sas_token
+from elastic_blast.azure_traits import get_machine_properties, get_sas_token, get_instance_type_offerings
 from elastic_blast.base import InstanceProperties
 import os
 import pytest
@@ -43,3 +43,18 @@ def test_get_sas_token():
     # account_key = os.environ['AZURE-STORAGE-ACCOUNT-KEY'] if os.environ['AZURE-STORAGE-ACCOUNT-KEY'] else '' # from .env file
     result = get_sas_token('saelb01', 'blast-db', 'account_key')
     assert result != None
+    
+def test_get_instance_type_offerings():
+    result = get_instance_type_offerings('eastus')
+    assert result != None
+    assert len(result) > 0
+    assert 'Standard_HB120rs_v3' in [item['name'] for item in result]
+    assert 'Standard_HC44rs' in [item['name'] for item in result]
+    assert 'Standard_HB60rs' in [item['name'] for item in result]
+    assert 'Standard_D16s_v3' in [item['name'] for item in result]
+    assert 'Standard_D32s_v3' in [item['name'] for item in result]
+    assert 'Standard_D64s_v3' in [item['name'] for item in result]
+    assert 'Standard_E16s_v3' in [item['name'] for item in result]
+    assert 'Standard_E32s_v3' in [item['name'] for item in result]
+    assert 'Standard_E64s_v3' in [item['name'] for item in result]
+    assert 'Standard_E64is_v3' in [item['name'] for item in result]

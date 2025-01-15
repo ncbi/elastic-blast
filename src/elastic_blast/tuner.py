@@ -43,6 +43,8 @@ from .aws_traits import get_machine_properties as aws_get_machine_properties
 from .aws_traits import create_aws_config
 from .gcp_traits import GCP_MACHINES
 from .gcp_traits import get_machine_properties as gcp_get_machine_properties
+from .azure_traits import get_machine_properties as azure_get_machine_properties
+from .azure_traits import get_instance_type_offerings as azure_get_instance_type_offerings
 from .db_metadata import DbMetadata
 
 
@@ -288,6 +290,25 @@ def gcp_get_mem_limit(machine_type: str) -> float:
     mem_limit = props.memory - SYSTEM_MEMORY_RESERVE
     return mem_limit
 
+def azure_get_mem_limit(machine_type: str) -> float:
+    """Get memory limit for searching a single query batch for GCP. Kubernetes
+    schedules jobs based on CPU and memory request, so memory limit for each
+    job can be as high as instance RAM.
+
+    Arguments:
+        machine_type: Machine type
+
+    Returns:
+        A search job memory limit int GB as float"""
+    try:
+        props = azure_get_machine_properties(machine_type)
+    except NotImplementedError as err:
+        raise UserReportError(returncode=INPUT_ERROR,
+                              message=f'Invalid machine type. Machine type name "{machine_type}" is incorrect or not supported by ElasticBLAST: {str(err)}')
+
+    mem_limit = props.memory - SYSTEM_MEMORY_RESERVE
+    return mem_limit
+
 
 def get_mem_limit(cloud_provider: CSP, machine_type: str, num_cpus: PositiveInteger,
         db: Optional[DbData] = None, db_factor: float = 0.0, cloud_region: str = ELB_DFLT_AWS_REGION) -> MemoryStr:
@@ -309,8 +330,10 @@ def get_mem_limit(cloud_provider: CSP, machine_type: str, num_cpus: PositiveInte
     region = cloud_region
     if cloud_provider == CSP.AWS:
         mem_limit = aws_get_mem_limit(num_cpus, machine_type, db, db_factor, cloud_region)
-    else:
+    elif cloud_provider == CSP.GCP:
         mem_limit = gcp_get_mem_limit(machine_type)
+    else:
+        mem_limit = azure_get_mem_limit(machine_type)
 
     if mem_limit <= 0:
         raise UserReportError(returncode=INPUT_ERROR,
@@ -318,6 +341,25 @@ def get_mem_limit(cloud_provider: CSP, machine_type: str, num_cpus: PositiveInte
 
     return MemoryStr(f'{mem_limit}Gi')
 
+# TODO: consider memory and CPU requirements for Azure
+def azure_get_machine_type(memory: MemoryStr, num_cpus: PositiveInteger, region: str) -> str:
+    # get suitable vm list
+    suitable_props = azure_get_instance_type_offerings(region)
+    
+    """ example data
+      {
+        "maxDataDiskCount": 64,
+        "memoryInMB": 524288,
+        "name": "Standard_E64pds_v6",
+        "numberOfCores": 64,
+        "osDiskSizeInMB": 1047552,
+        "resourceDiskSizeInMB": 0
+    },
+    """
+    # sort first by number of CPUs, then by memory
+    suitable_props = sorted(suitable_props, key=lambda x: x['numberOfCores'])
+    return sorted(suitable_props, key=lambda x: x['memoryInMB'])
+    
 
 def aws_get_machine_type(memory: MemoryStr, num_cpus: PositiveInteger, region: str) -> str:
     """Select an AWS machine type that can accommodate the database and has
@@ -423,7 +465,7 @@ def get_machine_type(cloud_provider: CSP, db: DbMetadata, num_cpus: PositiveInte
 
     # find memory required for BLAST to work (excluding cached database)
     MIN_OPS_MEMORY_GB = 10
-    MAX_OPS_MEMORY_GB = 60
+    MAX_OPS_MEMORY_GB = 60 if cloud_provider != CSP.AZURE else 15200
     ops_memory_gb = db_data.bytes_to_cache_gb * (db_mem_margin - 1)
     if mt_mode == MTMode.QUERY:
         ops_memory_gb *= num_cpus
@@ -432,5 +474,7 @@ def get_machine_type(cloud_provider: CSP, db: DbMetadata, num_cpus: PositiveInte
 
     if cloud_provider == CSP.AWS:
         return aws_get_machine_type(memory, num_cpus, region)
-    else:
+    elif cloud_provider == CSP.GCP:
         return gcp_get_machine_type(memory, num_cpus)
+    else:
+        return azure_get_machine_type(memory, num_cpus, region)

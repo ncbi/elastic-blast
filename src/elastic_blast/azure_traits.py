@@ -7,9 +7,12 @@ Author: Victor Joukov joukovv@ncbi.nlm.nih.gov
 """
 
 import re, logging
+import subprocess
+import json
+from typing import List
 from .base import InstanceProperties
-from .util import safe_exec
-from .constants import GCP_APIS
+from .util import UserReportError, safe_exec
+from .constants import DEPENDENCY_ERROR, GCP_APIS
 from datetime import datetime, timedelta, timezone
 from azure.identity import ClientSecretCredential # type: ignore
 from azure.storage.blob import (BlobServiceClient, generate_container_sas, AccountSasPermissions)  # type: ignore
@@ -26,6 +29,9 @@ AZURE_HPC_MACHINES = {
     'Standard_E64s_v3': {'cpu': 64, 'memory': 432},  # 64 vCPU, 432 GB RAM
     'Standard_E64is_v3': {'cpu': 64, 'memory': 504},  # 64 vCPU, 504 GB RAM
 }
+
+MIN_PROCESSORS = 8
+MIN_MEMORY = 24 # GB
 
 def get_azure_blob_client(account_url: str, tenant_id:str, client_id: str, client_secret: str) -> BlobServiceClient:
     """ Create Azure Blob Service Client """
@@ -78,6 +84,26 @@ def get_machine_properties(machineType: str) -> InstanceProperties:
         raise NotImplementedError(err)
     
     return InstanceProperties(ncpu, nram)
+
+def get_instance_type_offerings(region: str) -> List[any]:
+    """Get a list of instance types offered in an Azure region"""
+    try:
+        cmd = f'az vm list-sizes --location {region} --query "[?numberOfCores >= \`{MIN_PROCESSORS}\` && memoryInMB >= \`{MIN_MEMORY*1024}\`]" -o json'
+        result = subprocess.run(cmd, shell=True, check=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        
+        vm_list = json.loads(result.stdout)
+        
+        if not vm_list:
+            raise ValueError(f"VM size '{vm_list}' not found in location '{region}'")
+        
+        # return [vm['name'] for vm in vm_list]
+        return vm_list
+        
+    except subprocess.CalledProcessError as e:
+        logging.error(f'Error getting instance types in region {region}: {e.stderr}')
+        raise UserReportError(returncode=DEPENDENCY_ERROR, message=f'Error getting instance types in region {region}')
+    
+    return
 
 
 def enable_azure_api(project: str, dry_run: bool):

@@ -1275,8 +1275,11 @@ def create_labels(cloud_provider: CSP,
     """Generate labels for cloud resources"""
     if cloud_provider == CSP.AWS:
         sanitize = sanitize_aws_tag
-    else:
+    elif cloud_provider == CSP.GCP:
         sanitize = sanitize_gcp_label
+    else:
+        sanitize = sanitize_azure_tag
+        
     username = sanitize(getpass.getuser())
     elastic_blast_version = sanitize(VERSION)
     if re.search(r'[A-Z]', cluster_name):
@@ -1356,6 +1359,20 @@ def create_labels(cloud_provider: CSP,
     return labels
 
 
+def sanitize_azure_tag(tag: str) -> str:
+    """Sanitize a string to be used as an Azure tag key or value."""
+    
+    # Azure tag keys and values can include alphanumeric characters, spaces, underscores (_), dashes (-), periods (.), and colons (:).
+    # Use a regular expression to remove any invalid characters.
+    sanitized_tag = re.sub(r'[^a-zA-Z0-9 _\-.]', '', tag)
+    
+    # Azure tag keys can be up to 512 characters, and values can be up to 256 characters.
+    # Here, we limit to 256 characters for general use.
+    max_length = 256
+    if len(sanitized_tag) > max_length:
+        sanitized_tag = sanitized_tag[:max_length]
+    
+    return sanitized_tag
 
 def sanitize_gcp_label(input_label: str) -> str:
     """ Changes the input_label so that it is composed of valid GCP label characters"""
