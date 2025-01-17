@@ -501,7 +501,7 @@ def test_get_delete_disk_real(provide_disk):
 
 @pytest.fixture
 def provide_cluster():
-    """Create a GCKE cluster before and delete it after a test"""
+    """Create a AKS cluster before and delete it after a test"""
     # setup
     data_dir = os.path.join(os.path.dirname(__file__), 'data')
     args = Namespace(cfg=os.path.join(data_dir, 'test-cfg-file.ini'))
@@ -512,16 +512,19 @@ def provide_cluster():
     # cfg.azure.tenant_id = os.environ['AZURE_TENANT_ID']
     # cfg.azure.client_id = os.environ['AZURE_CLIENT_ID']
     # cfg.azure.client_secret = os.environ['AZURE_CLIENT_SECRET']
+    
+    cmd = f'az group create --name {cfg.azure.resourcegroup} --location {cfg.azure.region}'
+    azure.safe_exec(cmd.split())
 
-    cmd = f'gcloud container clusters create {cfg.cluster.name} --num-nodes 1 --machine-type n1-standard-1 --labels elb=test-suite'
-    gcp.safe_exec(cmd.split())
+    cmd = f'az aks create --resource-group {cfg.azure.resourcegroup} --name {cfg.cluster.name} --node-count 1 --node-vm-size Standard_D2s_v3 --tags elb=test-suite --generate-ssh-keys'
+    azure.safe_exec(cmd.split())
     yield cfg
 
     # teardown
     name = cfg.cluster.name
-    if name in gcp.get_gke_clusters(cfg):
+    if name in azure.get_aks_clusters(cfg):
         cmd = f'gcloud container clusters delete {name} -q'
-        gcp.safe_exec(cmd.split())
+        azure.safe_exec(cmd.split())
 
 
 @pytest.mark.skipif(False, reason='This test requires specific GCP credentials and may create GCP resources. It should be used with care.')

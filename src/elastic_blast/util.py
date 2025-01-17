@@ -74,7 +74,12 @@ def validate_installation():
             raise UserReportError(DEPENDENCY_ERROR,
                 f'Resource {r} is missing from the package. Please re-install ElasticBLAST')
 
-
+def handle_error(exp_obj):
+    """Handle error and decode stderr if necessary."""
+    
+    if isinstance(exp_obj, bytes):
+        exp_obj = exp_obj.decode()
+    return exp_obj
 
 class ElbSupportedPrograms:
     """Auxiliary class to validate supported BLAST programs
@@ -241,9 +246,9 @@ def safe_exec(cmd: Union[List[str], str], env: Optional[Dict[str, str]] = None) 
         p = subprocess.run(cmd, check=True, stdout=subprocess.PIPE,
                            stderr=subprocess.PIPE, env=run_env, universal_newlines=True)
     except subprocess.CalledProcessError as e:
-        msg = f'The command "{" ".join(e.cmd)}" returned with exit code {e.returncode}\n{e.stderr.decode()}\n{e.stdout.decode()}'
+        msg = f'The command "{" ".join(e.cmd)}" returned with exit code {e.returncode}\n{handle_error(e.stderr)}\n{handle_error(e.stdout)}'
         if e.output is not None:
-            '\n'.join([msg, f'{e.output.decode()}'])
+            '\n'.join([msg, f'{handle_error(e.output)}'])
             raise SafeExecError(e.returncode, msg)
     except PermissionError as e:
         raise SafeExecError(e.errno, str(e))
@@ -309,7 +314,7 @@ def gcp_get_blastdb_latest_path(gcp_prj: Optional[str]) -> str:
     prj = f'-u {gcp_prj}' if gcp_prj else ''
     cmd = f'gsutil {prj} cat {GCS_DFLT_BUCKET}/latest-dir'
     proc = safe_exec(cmd)
-    return os.path.join(GCS_DFLT_BUCKET, proc.stdout.decode().rstrip())
+    return os.path.join(GCS_DFLT_BUCKET, handle_error(proc.stdout).rstrip())
 
 
 def check_positive_int(val: str) -> int:
@@ -548,7 +553,7 @@ def azure_get_regions() -> List[str]:
     retval = []
     try:
         p = safe_exec(cmd)
-        region_info = json.loads(p.stdout.decode())
+        region_info = json.loads(handle_error(p.stdout))
         retval = [i['name'] for i in region_info]
     except Exception as err:
         logging.debug(err)

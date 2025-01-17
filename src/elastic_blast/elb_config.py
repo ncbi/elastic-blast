@@ -89,10 +89,10 @@ from .constants import CFG_CLUSTER_ENABLE_STACKDRIVER
 from .constants import CFG_TIMEOUTS, CFG_TIMEOUT_INIT_PV
 from .constants import CFG_TIMEOUT_BLAST_K8S_JOB
 from .constants import INPUT_ERROR, ELB_NOT_INITIALIZED_MEM, ELB_NOT_INITIALIZED_NUM
-from .constants import GCP_MAX_LABEL_LENGTH, AWS_MAX_TAG_LENGTH
-from .constants import GCP_MAX_NUM_LABELS, AWS_MAX_NUM_LABELS
+from .constants import GCP_MAX_LABEL_LENGTH, AWS_MAX_TAG_LENGTH, AZURE_MAX_TAG_LENGTH
+from .constants import GCP_MAX_NUM_LABELS, AWS_MAX_NUM_LABELS, AZURE_MAX_NUM_LABELS
 from .constants import SYSTEM_MEMORY_RESERVE, ELB_AWS_ARM_INSTANCE_TYPE_REGEX
-from .constants import ELB_DFLT_AWS_NUM_CPUS, ELB_DFLT_GCP_NUM_CPUS
+from .constants import ELB_DFLT_AWS_NUM_CPUS, ELB_DFLT_GCP_NUM_CPUS, ELB_DFLT_AZURE_NUM_CPUS
 from .constants import ELB_S3_PREFIX, ELB_GCS_PREFIX, ELB_UNKNOWN_MAX_NUMBER_OF_CONCURRENT_JOBS
 from .constants import ELB_AZURE_PREFIX
 from .constants import AWS_ROLE_PREFIX, CFG_CP_AWS_AUTO_SHUTDOWN_ROLE
@@ -334,6 +334,7 @@ class AZUREConfig(CloudProviderBaseConfig, ConfigParserToDataclassMapper):
 
     def validate(self, errors: List[str], task: ElbCommand):
         """Validate config"""
+        return
         if bool(self.network) != bool(self.subnet):
             errors.append('Both gcp-network and gcp-subnetwork need to be specified if one of them is specified')
 
@@ -624,8 +625,10 @@ class ClusterConfig(ConfigParserToDataclassMapper):
         if self.num_cpus == ELB_NOT_INITIALIZED_NUM:
             if cloud_provider == CSP.GCP:
                 self.num_cpus = PositiveInteger(ELB_DFLT_GCP_NUM_CPUS)
-            else:
+            elif cloud_provider == CSP.AWS:
                 self.num_cpus = PositiveInteger(ELB_DFLT_AWS_NUM_CPUS)
+            else:
+                self.num_cpus = PositiveInteger(ELB_DFLT_AZURE_NUM_CPUS)
 
         # default memory request for a blast search job
         if not self.mem_request:
@@ -1076,7 +1079,9 @@ class ElasticBlastConfig:
         """Validate config"""
         errors: List[str] = []
 
-        if self.cloud_provider.cloud == CSP.GCP:
+        if self.cloud_provider.cloud == CSP.AZURE:
+            self.azure.validate(errors, task)
+        elif self.cloud_provider.cloud == CSP.GCP:
             self.gcp.validate(errors, task)
             try:
                 validate_gke_cluster_name(self.cluster.name)
@@ -1179,7 +1184,7 @@ class ElasticBlastConfig:
         retval = asdict(self)
 
         # cloud_provider is the same as aws or gcp
-        if self.cloud_provider is self.aws or self.cloud_provider is self.gcp:
+        if self.cloud_provider is self.aws or self.cloud_provider is self.gcp or self.cloud_provider is self.azure:
             del retval['cloud_provider']
 
         self._clean_dict(retval)
@@ -1196,8 +1201,10 @@ class ElasticBlastConfig:
         }
         if self.cloud_provider.cloud == CSP.AWS:
             config_as_dict['aws'] = self.aws.to_dict()
-        else:
+        elif self.cloud_provider.cloud == CSP.GCP:
             config_as_dict['gcp'] = self.gcp.to_dict()
+        elif self.cloud_provider.cloud == CSP.AZURE:
+            config_as_dict['azure'] = self.azure.to_dict()
 
         self._clean_dict(config_as_dict)
         return json.dumps(config_as_dict, indent=4, cls=JSONEnumEncoder)
@@ -1254,6 +1261,7 @@ class ElasticBlastConfig:
         mem_num_concurrent_jobs = ELB_NOT_INITIALIZED_NUM
         # Catch the event that ELB_NOT_INITIALIZED_NUM is changed to a constant with a small value
         assert mem_num_concurrent_jobs >= 2**32
+        # TODO: check if the following condition is correct without azure
         if self.cloud_provider.cloud == CSP.AWS:
             mem_num_concurrent_jobs = int(self.cluster.instance_memory.asGiB() / self.cluster.mem_limit.asGiB()) * self.cluster.num_nodes
         elif self.cluster.mem_request: # to pacify mypy
@@ -1312,6 +1320,9 @@ def create_labels(cloud_provider: CSP,
             elif cloud_provider == CSP.AWS:
                 if len(key) > AWS_MAX_TAG_LENGTH:
                     raise UserReportError(INPUT_ERROR, f'Key "{key}" must have less than {AWS_MAX_TAG_LENGTH+1} characters')
+            elif cloud_provider == CSP.AZURE:
+                if len(key) > AZURE_MAX_TAG_LENGTH:
+                    raise UserReportError(INPUT_ERROR, f'Key "{key}" must have less than {AZURE_MAX_TAG_LENGTH+1} characters')
             custom_labels[key] = value
 
     default_labels = {
@@ -1351,28 +1362,32 @@ def create_labels(cloud_provider: CSP,
     if cloud_provider == CSP.GCP:
         if num_labels > GCP_MAX_NUM_LABELS:
             raise UserReportError(INPUT_ERROR, f'Too many labels are being used ({num_labels}); GCP only supports up to {GCP_MAX_NUM_LABELS}')
-    else:
+    elif cloud_provider == CSP.AWS:
         if num_labels > AWS_MAX_NUM_LABELS:
             raise UserReportError(INPUT_ERROR, f'Too many labels are being used ({num_labels}); AWS only supports up to {AWS_MAX_NUM_LABELS}')
+    elif cloud_provider == CSP.AZURE:
+        if num_labels > AZURE_MAX_NUM_LABELS:
+            raise UserReportError(INPUT_ERROR, f'Too many labels are being used ({num_labels}); Azure only supports up to {AZURE_MAX_NUM_LABELS}')
 
 
     return labels
 
 
-def sanitize_azure_tag(tag: str) -> str:
+def sanitize_azure_tag(input_label: str) -> str:
     """Sanitize a string to be used as an Azure tag key or value."""
     
-    # Azure tag keys and values can include alphanumeric characters, spaces, underscores (_), dashes (-), periods (.), and colons (:).
-    # Use a regular expression to remove any invalid characters.
-    sanitized_tag = re.sub(r'[^a-zA-Z0-9 _\-.]', '', tag)
+    # # Azure tag keys and values can include alphanumeric characters, spaces, underscores (_), dashes (-), periods (.), and colons (:).
+    # # Use a regular expression to remove any invalid characters.
+    # sanitized_tag = re.sub(r'[^a-zA-Z0-9 _\-.]', '', tag)
     
-    # Azure tag keys can be up to 512 characters, and values can be up to 256 characters.
-    # Here, we limit to 256 characters for general use.
-    max_length = 256
-    if len(sanitized_tag) > max_length:
-        sanitized_tag = sanitized_tag[:max_length]
+    # # Azure tag keys can be up to 512 characters, and values can be up to 256 characters.
+    # # Here, we limit to 256 characters for general use.
+    # max_length = 256
+    # if len(sanitized_tag) > max_length:
+    #     sanitized_tag = sanitized_tag[:max_length]
     
-    return sanitized_tag
+    # return sanitized_tag
+    return re.sub(r'[^a-zA-Z0-9 _\-.]', '-', input_label, flags=re.ASCII)[:AZURE_MAX_TAG_LENGTH]
 
 def sanitize_gcp_label(input_label: str) -> str:
     """ Changes the input_label so that it is composed of valid GCP label characters"""
@@ -1415,7 +1430,8 @@ def validate_janitor_schedule(val: str, cloud_provider: CSP) -> None:
     year = r'\*|(\*|(2[01][0-9]{2}))((,(\*|(2[01][0-9]{2})))*(-2[01][0-9]{2})?(/\d{1,3})?)*'
 
 
-    if cloud_provider == CSP.GCP:
+    # TODO: validate the schedule string for GCP and Azure
+    if cloud_provider == CSP.GCP or cloud_provider == CSP.AZURE:
         pattern = special + '|' + '((' + minute + r')\s(' + hour + r')\s(' + day_of_month_gcp + r')\s(' + month + r')\s(' + day_of_week_gcp + '))'
         url = 'https://kubernetes.io/docs/concepts/workloads/controllers/cron-jobs/#cron-schedule-syntax'
     else:

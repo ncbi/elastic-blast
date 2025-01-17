@@ -30,6 +30,7 @@ from elastic_blast.constants import CSP
 from elastic_blast.elasticblast import ElasticBlast
 from elastic_blast.elb_config import ElasticBlastConfig
 from elastic_blast.gcp import ElasticBlastGcp
+from elastic_blast.azure import ElasticBlastAzure
 
 
 def ElasticBlastFactory(cfg: ElasticBlastConfig, create: bool, cleanup_stack):
@@ -37,6 +38,8 @@ def ElasticBlastFactory(cfg: ElasticBlastConfig, create: bool, cleanup_stack):
         elastic_blast: ElasticBlast = ElasticBlastAws(cfg, create, cleanup_stack)
     elif cfg.cloud_provider.cloud == CSP.GCP:
         elastic_blast = ElasticBlastGcp(cfg, create, cleanup_stack)
+    elif cfg.cloud_provider.cloud == CSP.AZURE:
+        elastic_blast = ElasticBlastAzure(cfg, create, cleanup_stack)
     else:
         raise NotImplementedError(f'Provider {cfg.cloud_provider.cloud} is not supported yet')
     return elastic_blast

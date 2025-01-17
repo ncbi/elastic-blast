@@ -28,7 +28,7 @@ from .filehelper import open_for_write_immediate
 from .jobs import read_job_template, write_job_files
 from .util import ElbSupportedPrograms, safe_exec, UserReportError, SafeExecError
 from .util import validate_gcp_disk_name, get_blastdb_info, get_usage_reporting
-from .util import is_newer_version
+from .util import is_newer_version, handle_error
 
 from . import kubernetes
 from .constants import CLUSTER_ERROR, ELB_NUM_JOBS_SUBMITTED, ELB_METADATA_DIR, K8S_JOB_SUBMIT_JOBS
@@ -79,7 +79,7 @@ class ElasticBlastAzure(ElasticBlast):
         if not self.query_files:
             # This is QuerySplitMode.CLIENT - no need to wait
             return
-        k8s_ctx = self._get_gke_credentials()
+        k8s_ctx = self._get_aks_credentials()
         kubectl = f'kubectl --context={k8s_ctx}'
         job_to_wait = K8S_JOB_CLOUD_SPLIT_SSD if self.cfg.cluster.use_local_ssd else K8S_JOB_INIT_PV
 
@@ -226,7 +226,7 @@ class ElasticBlastAzure(ElasticBlast):
                             message=f'Cluster "{self.cfg.cluster.name}" exists, but is not responding. '
                                 'It may be still initializing, please try checking status again in a few minutes.')
 
-        k8s_ctx = self._get_gke_credentials()
+        k8s_ctx = self._get_aks_credentials()
         selector = 'app=blast'
         kubectl = f'kubectl --context={k8s_ctx}'
 
@@ -253,7 +253,7 @@ class ElasticBlastAzure(ElasticBlast):
             logging.info(cmd)
         else:
             proc = safe_exec(cmd)
-            for line in proc.stdout.decode().split('\n'):
+            for line in handle_error(proc.stdout).split('\n'):
                 if line == 'Running':
                     counts['running'] += 1
 
@@ -286,7 +286,7 @@ class ElasticBlastAzure(ElasticBlast):
         succeeded = 0
         failed = 0
         selector = f'app={app}'
-        k8s_ctx = self._get_gke_credentials()
+        k8s_ctx = self._get_aks_credentials()
         kubectl = f'kubectl --context={k8s_ctx}'
         cmd = f'{kubectl} get jobs -o custom-columns=STATUS:.status.conditions[0].type -l {selector}'.split()
         if self.dry_run:
@@ -337,7 +337,7 @@ class ElasticBlastAzure(ElasticBlast):
         start_cluster(cfg)
         clean_up_stack.append(lambda: logging.debug('After creating cluster'))
 
-        self._get_gke_credentials()
+        self._get_aks_credentials()
 
         self._label_nodes()
 
@@ -366,7 +366,7 @@ class ElasticBlastAzure(ElasticBlast):
         """
         use_local_ssd = self.cfg.cluster.use_local_ssd
         dry_run = self.cfg.cluster.dry_run
-        k8s_ctx = self._get_gke_credentials()
+        k8s_ctx = self._get_aks_credentials()
         kubectl = f'kubectl --context={k8s_ctx}'
         if use_local_ssd:
             # Label nodes in the cluster for affinity
@@ -484,7 +484,7 @@ class ElasticBlastAzure(ElasticBlast):
             enable_gcp_api(self.cfg.gcp.project, self.cfg.cluster.dry_run)
             self.apis_enabled = True
 
-    def _get_gke_credentials(self) -> str:
+    def _get_aks_credentials(self) -> str:
         """ Memoized get_gke_credentials """
         if not self.cfg.appstate.k8s_ctx:
             self.cfg.appstate.k8s_ctx = get_aks_credentials(self.cfg)
@@ -787,7 +787,7 @@ def delete_cluster_with_cleanup(cfg: ElasticBlastConfig) -> None:
     delete_cluster(cfg)
 
 
-def get_gke_clusters(cfg: ElasticBlastConfig) -> List[str]:
+def get_aks_clusters(cfg: ElasticBlastConfig) -> List[str]:
     """Return a list of GKE cluster names.
 
     Arguments:
@@ -796,7 +796,8 @@ def get_gke_clusters(cfg: ElasticBlastConfig) -> List[str]:
     Raises:
         util.SafeExecError on problems with command line gcloud
         RuntimeError on problems parsing gcloud JSON output"""
-    cmd = f'gcloud container clusters list --format json --project {cfg.gcp.project}'
+    # cmd = f'gcloud container clusters list --format json --project {cfg.gcp.project}'
+    cmd = f'az aks list --query "[].name" -o json'
     p = safe_exec(cmd)
     try:
         clusters = json.loads(p.stdout.decode())
@@ -817,10 +818,11 @@ def get_aks_credentials(cfg: ElasticBlastConfig) -> str:
     Raises:
         util.SafeExecError on problems with command line aks"""
     cmd: List[str] = 'az aks get-credentials'.split()
-    cmd.append(cfg.cluster.name)
-    cmd.append('--overwrite-existing')
     cmd.append('--resource-group')
     cmd.append(f'{cfg.azure.resourcegroup}')
+    cmd.append('--name')
+    cmd.append(cfg.cluster.name)
+    cmd.append('--overwrite-existing')    
     
     if cfg.cluster.dry_run:
         logging.info(cmd)
@@ -832,32 +834,26 @@ def get_aks_credentials(cfg: ElasticBlastConfig) -> str:
     if cfg.cluster.dry_run:
         logging.info(cmd)
     else:
-        # USE_GKE_GCLOUD_AUTH_PLUGIN must be set so that kubectl 1.26 and later
-        # versions can be used to communicate with the cluster. It does not
-        # affect older kubectl versions.
-        p = safe_exec(cmd, {'USE_GKE_GCLOUD_AUTH_PLUGIN': 'True'})
-        retval = p.stdout.decode().strip()
+        p = safe_exec(cmd)
+        retval = handle_error(p.stdout).strip()
     return retval
 
 
 def check_cluster(cfg: ElasticBlastConfig):
     """ Check if cluster specified by configuration is running.
-    Returns cluster status - RUNNING, PROVISIONING, STOPPING, or ERROR -
+    Returns cluster status in AKS - Creating, Succeeded, Updating, Deleting, Failed, Canceled, Provisioning, Stopped, Stopping, Resuming -
     if there is such cluster, empty string otherwise.
     All possible exceptions will be passed to upper level.
     """
     cluster_name = cfg.cluster.name
-    # FIXME: Consider using
-    # gcloud container clusters describe CLUSTER_NAME --format value(status) --project=PROJECT --zone=ZONE
-    # The difference is that for non-existing name it will throw an exception, but for long cluster list
-    # can be faster (depends on gcloud implementation)
-    cmd = f'gcloud container clusters list --format=value(status) --filter name={cluster_name} --project {cfg.gcp.project}'
+   
+    cmd = f'az aks show --resource-group {cfg.azure.resourcegroup} -nname {cluster_name} --query "provisioningState" -o tsv'
     retval = ''
     if cfg.cluster.dry_run:
         logging.info(cmd)
     else:
         out = safe_exec(cmd)
-        retval = out.stdout.decode('utf-8').strip()
+        retval = out.stdout.strip()
     return retval
 
 

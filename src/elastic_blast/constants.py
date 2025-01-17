@@ -176,6 +176,10 @@ AWS_MAX_TAG_LENGTH = 255
 # https://docs.aws.amazon.com/batch/latest/APIReference/API_SubmitJob.html#API_SubmitJob_RequestSyntax
 AWS_MAX_JOBNAME_LENGTH = 128
 
+# https://learn.microsoft.com/en-us/azure/azure-resource-manager/management/tag-resources#limitations
+AZURE_MAX_NUM_LABELS = 256
+AZURE_MAX_TAG_LENGTH = 512
+
 # Kubernetes job submission retry parameters
 ELB_K8S_JOB_SUBMISSION_MAX_RETRIES=5    # Try up to this many times
 ELB_K8S_JOB_SUBMISSION_TIMEOUT=600      # or a maximum of this many seconds

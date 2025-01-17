@@ -116,6 +116,7 @@ MT_ONE_BATCH_LENGTH_PER_THREAD = {'blastp':    20_000,
 # Maximum number of threads to use per BLAST job
 MAX_NUM_THREADS_AWS = 16
 MAX_NUM_THREADS_GCP = 15
+MAX_NUM_THREADS_AZURE = 16
 
 
 def get_mt_mode(program: str, options: str = '', db_metadata: Optional[DbMetadata] = None,
@@ -171,8 +172,10 @@ def get_num_cpus(cloud_provider: CSP, program: str, mt_mode: MTMode,
             num_cpus += 1
         if cloud_provider == CSP.AWS:
             return min([num_cpus, MAX_NUM_THREADS_AWS])
-        else:
+        elif cloud_provider == CSP.GCP:
             return min([num_cpus, MAX_NUM_THREADS_GCP])
+        else:
+            return min([num_cpus, MAX_NUM_THREADS_AZURE])
     else:
         return ELB_DFLT_AWS_NUM_CPUS if cloud_provider == CSP.AWS else ELB_DFLT_GCP_NUM_CPUS
 
@@ -202,7 +205,7 @@ def get_batch_length(cloud_provider: CSP, program: str, task: Optional[str],
         # threading by query
         if program.lower() in MT_ONE_BATCH_LENGTH_PER_THREAD:
             batch_len = MT_ONE_BATCH_LENGTH_PER_THREAD[program.lower()]
-        max_num_cpus = MAX_NUM_THREADS_AWS if cloud_provider == CSP.AWS else MAX_NUM_THREADS_GCP
+        max_num_cpus = MAX_NUM_THREADS_AWS if cloud_provider == CSP.AWS else MAX_NUM_THREADS_GCP if cloud_provider == CSP.GCP else MAX_NUM_THREADS_AZURE
         batch_len *= min((num_cpus, max_num_cpus))
     else:
         # MTMode.DB
