@@ -228,6 +228,9 @@ def check_dir_for_write(dirname: str, dry_run=False) -> None:
     elif dirname.startswith(ELB_S3_PREFIX):
         # TODO: implement the write test, see EB-491
         return
+    elif dirname.startswith(ELB_AZURE_PREFIX):
+        # TODO: implement the write test, see EB-491
+        return
     # Local file system
     test_file_name = os.path.join(dirname, random_filename())
     if dry_run:
@@ -242,7 +245,13 @@ def check_dir_for_write(dirname: str, dry_run=False) -> None:
 @contextmanager
 def open_for_write_immediate(fname):
     """ Open a file in a cloud bucket for write in text mode. """
-    if fname.startswith(ELB_GCS_PREFIX):
+    # TODO: need to test this function
+    if fname.startswith(ELB_AZURE_PREFIX):
+        proc = subprocess.Popen(['azcopy', 'cp', '-', fname],
+                                stdin=subprocess.PIPE, stderr=subprocess.DEVNULL,
+                                universal_newlines=True)
+        f = proc.stdin
+    elif fname.startswith(ELB_GCS_PREFIX):
         proc = subprocess.Popen(['gsutil', 'cp', '-', fname],
                                 stdin=subprocess.PIPE, stderr=subprocess.DEVNULL,
                                 universal_newlines=True)
@@ -379,22 +388,17 @@ def check_for_read(fname: str, dry_run : bool = False, print_file_size: bool = F
     if is_stdin(fname):
         return
     if fname.startswith(ELB_AZURE_PREFIX):
-        
-        cmd = f'azcopy list {fname}?{sas_token}'
         if dry_run:
-            logging.info(f'Open Azure file {cmd}')
-            return        
+            logging.info(f'Open Azure file {fname}?{sas_token}')
+            return    
+        req = urllib.request.Request(f'{fname}?{sas_token}', method='HEAD')
         try:
-            p = safe_exec(cmd)
-            if print_file_size and p.stdout:
-                lines = p.stdout.decode('utf-8').splitlines()
-                content_length = filter(lambda l: 'Content Length' in l, lines) if 'Content Length' in lines else filter(lambda l: 'Content-Length' in l, lines)
-                if content_length:
-                    fsize = list(content_length).pop().split()[1]
-                    logging.debug(f'{fname} size {fsize}')
-        except SafeExecError as e:
-            raise FileNotFoundError(e.returncode, e.message)
-        return
+            obj = urllib.request.urlopen(req)
+            fsize = int(obj.headers['Content-Length'])
+            return
+        except:
+            raise FileNotFoundError(2, f'Length is not available for {fname}')
+        
         
     if fname.startswith(ELB_GCS_PREFIX):
         prj = f'-u {gcp_prj}' if gcp_prj else ''
@@ -452,10 +456,21 @@ def check_for_read(fname: str, dry_run : bool = False, print_file_size: bool = F
     open(fname, 'r')
 
 
-def get_length(fname: str, dry_run: bool = False, gcp_prj: Optional[str] = None) -> int:
+def get_length(fname: str, dry_run: bool = False, gcp_prj: Optional[str] = None, sas_token: Optional[str] = None) -> int:
     """ Get length of a path on local, GS, AWS S3, or URL-available filesystem.
     raises FileNotFoundError if there is no such file
     """
+    if fname.startswith(ELB_AZURE_PREFIX):
+        if dry_run:
+            logging.info(f'Check length of URL {fname}')
+            return ELB_DFLT_FSIZE_FOR_TESTING
+        req = urllib.request.Request(f'{fname}?{sas_token}', method='HEAD')
+        try:
+            obj = urllib.request.urlopen(req)
+            return int(obj.headers['Content-Length'])
+        except:
+            raise FileNotFoundError(2, f'Length is not available for {fname}')
+        
     if fname.startswith(ELB_GCS_PREFIX):
         prj = f'-u {gcp_prj}' if gcp_prj else ''
         cmd = f'gsutil {prj} stat {fname}'
@@ -550,7 +565,7 @@ def open_for_read(fname: str, gcp_prj: Optional[str] = None, sas_token: Optional
     return unpack_stream(f, gzipped, tarred)
 
 
-def open_for_read_iter(fnames: Iterable[str], gcp_prj: Optional[str] = None) -> Generator[TextIO, None, None]:
+def open_for_read_iter(fnames: Iterable[str], gcp_prj: Optional[str] = None, sas_token: Optional[str] = None) -> Generator[TextIO, None, None]:
     """Generator function that Iterates over paths/uris and open them for
     reading.
 
@@ -560,7 +575,7 @@ def open_for_read_iter(fnames: Iterable[str], gcp_prj: Optional[str] = None) -> 
     Returns:
         Generator of files open for reading"""
     for fname in fnames:
-        with open_for_read(fname, gcp_prj) as f:
+        with open_for_read(fname, gcp_prj, sas_token=sas_token) as f:
             yield f
 
 

@@ -513,19 +513,43 @@ def provide_cluster():
     # cfg.azure.client_id = os.environ['AZURE_CLIENT_ID']
     # cfg.azure.client_secret = os.environ['AZURE_CLIENT_SECRET']
     
+    """test commands
+    az group create --name rg-elb-test --location koreacentral
+    az aks create --resource-group rg-elb-test --name elb-test --node-count 1 --node-vm-size Standard_D2s_v3 --tags elb=test-suite --generate-ssh-keys
+    
+    """
+    
+    # cmd = f'az group create --name {cfg.azure.resourcegroup} --location {cfg.azure.region}'
+    # azure.safe_exec(cmd.split())
+
+    # cmd = f'az aks create --resource-group {cfg.azure.resourcegroup} --name {cfg.cluster.name} --node-count 1 --node-vm-size Standard_D2s_v3 --tags elb=test-suite --generate-ssh-keys'
+    # azure.safe_exec(cmd.split())
+    yield cfg
+
+    return
+    # teardown
+    name = cfg.cluster.name
+    if name in azure.get_aks_clusters(cfg):
+        cmd = f'az aks delete --resource-group {cfg.azure.resourcegroup} --name {cfg.cluster.name}'
+        azure.safe_exec(cmd.split())
+
+def test_create_cluster(provide_cluster):
+    """Test that azure.create_aks_cluster does not raise exceptions when a
+    cluster is present"""
+    cfg = provide_cluster
+    """test commands
+    az group create --name rg-elb-test --location koreacentral
+    az aks create --resource-group rg-elb-test --name elb-test --node-count 1 --node-vm-size Standard_D2s_v3 --tags elb=test-suite --generate-ssh-keys
+    
+    """
+    
     cmd = f'az group create --name {cfg.azure.resourcegroup} --location {cfg.azure.region}'
     azure.safe_exec(cmd.split())
 
     cmd = f'az aks create --resource-group {cfg.azure.resourcegroup} --name {cfg.cluster.name} --node-count 1 --node-vm-size Standard_D2s_v3 --tags elb=test-suite --generate-ssh-keys'
     azure.safe_exec(cmd.split())
     yield cfg
-
-    # teardown
-    name = cfg.cluster.name
-    if name in azure.get_aks_clusters(cfg):
-        cmd = f'gcloud container clusters delete {name} -q'
-        azure.safe_exec(cmd.split())
-
+    assert cfg.cluster.name in azure.get_aks_clusters(cfg)
 
 @pytest.mark.skipif(False, reason='This test requires specific GCP credentials and may create GCP resources. It should be used with care.')
 def test_get_aks_credentials_real(provide_cluster):
@@ -546,4 +570,7 @@ def test_get_gke_credentials_no_cluster_real():
     assert cfg.cluster.name not in gcp.get_gke_clusters(cfg)
     with pytest.raises(SafeExecError):
         gcp.get_gke_credentials(cfg)
+        
+# def test_submit(provide_cluster):
+    
 

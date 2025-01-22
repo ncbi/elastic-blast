@@ -8,6 +8,7 @@ Authors: Moon Hyuk Choi moonchoi@microsoft.com
 
 import os
 from pathlib import Path
+import shlex
 from subprocess import check_call
 from tempfile import TemporaryDirectory
 import time
@@ -317,7 +318,11 @@ class ElasticBlastAzure(ElasticBlast):
         """ Creates a k8s cluster, connects to it and initializes the persistent disk """
         cfg, query_files, clean_up_stack = self.cfg, self.query_files, self.cleanup_stack
         pd_size = MemoryStr(cfg.cluster.pd_size).asGB()
-        disk_limit, disk_usage = self.get_disk_quota()
+        # disk_limit, disk_usage = self.get_disk_quota()
+        
+        # TODO: need to implement get_disk_quota
+        disk_limit, disk_usage = 1e9, 0.0
+        
         disk_quota = disk_limit - disk_usage
         if pd_size > disk_quota:
             raise UserReportError(INPUT_ERROR, f'Requested disk size {pd_size}G is larger than allowed ({disk_quota}G) for region {cfg.gcp.region}\n'
@@ -388,8 +393,9 @@ class ElasticBlastAzure(ElasticBlast):
         """ Prepare substitution dictionary for job generation """
         cfg = self.cfg
         usage_reporting = get_usage_reporting()
+        sas_token = cfg.azure.get_sas_token()
         db, _, db_label = get_blastdb_info(cfg.blast.db,
-                                           cfg.gcp.get_project_for_gcs_downloads())
+                                           None, sas_token=sas_token)
 
         blast_program = cfg.blast.program
 
@@ -800,7 +806,7 @@ def get_aks_clusters(cfg: ElasticBlastConfig) -> List[str]:
     cmd = f'az aks list --query "[].name" -o json'
     p = safe_exec(cmd)
     try:
-        clusters = json.loads(p.stdout.decode())
+        clusters = json.loads(handle_error(p.stdout))
     except Exception as err:
         raise RuntimeError(f'Error when parsing JSON listing of GKE clusters: {str(err)}')
     return [i['name'] for i in clusters]
@@ -846,8 +852,9 @@ def check_cluster(cfg: ElasticBlastConfig):
     All possible exceptions will be passed to upper level.
     """
     cluster_name = cfg.cluster.name
-   
-    cmd = f'az aks show --resource-group {cfg.azure.resourcegroup} -nname {cluster_name} --query "provisioningState" -o tsv'
+    
+    query = f'[?name=={cluster_name}]' + '.{Name:name,ProvisioningState:provisioningState}'
+    cmd = f'az aks list --resource-group {cfg.azure.resourcegroup} --query "{query}" -o tsv'
     retval = ''
     if cfg.cluster.dry_run:
         logging.info(cmd)
@@ -874,10 +881,12 @@ def start_cluster(cfg: ElasticBlastConfig):
         cluster_name = cfg.cluster.name
     else:
         raise ValueError('Configuration error: missing cluster name in [cluster] sections')
+    
     if cfg.cluster.machine_type is not None:
         machine_type = cfg.cluster.machine_type
     else:
         raise ValueError('Configuration error: missing machine-type in [cluster] sections')
+    
     if cfg.cluster.num_nodes is not None:
         num_nodes = cfg.cluster.num_nodes
     else:
@@ -888,58 +897,57 @@ def start_cluster(cfg: ElasticBlastConfig):
     use_local_ssd = cfg.cluster.use_local_ssd
     dry_run = cfg.cluster.dry_run
 
-    actual_params = ["gcloud", "container", "clusters", "create", cluster_name]
-    actual_params.append('--no-enable-autoupgrade')
+    # https://learn.microsoft.com/en-us/cli/azure/aks?view=azure-cli-latest#az-aks-create
+    actual_params = ["az", "aks", "create"]
+    actual_params.append('--auto-upgrade-channel')
+    actual_params.append('none')
     #actual_params.append('--no-enable-ip-alias')
-    actual_params.append('--project')
-    actual_params.append(f'{cfg.gcp.project}')
-    actual_params.append('--zone')
-    actual_params.append(f'{cfg.gcp.zone}')
+    actual_params.append('--resource-group')
+    actual_params.append(f'{cfg.azure.resourcegroup}')
+    actual_params.append('--name')
+    actual_params.append(f'{cluster_name}')
+    actual_params.append('--generate-ssh-keys')
+    # actual_params.append('--zone')
+    # actual_params.append(f'{cfg.gcp.zone}')
 
-    actual_params.append('--machine-type')
+    actual_params.append('--node-vm-size')
     actual_params.append(machine_type)
 
-    actual_params.append('--num-nodes')
+    actual_params.append('--node-count')
+    actual_params.append(str(num_nodes))
     # Autoscaling for clusters with local SSD works only by shrinking
     # so to support it we start cluster with maximum nodes.
     # Thus the nodes are properly initialized and autoscaler
     # later can remove them if/when they're not needed.
-    if use_local_ssd:
-        actual_params.append(str(cfg.cluster.num_nodes))
-    else:
-        actual_params.append(str(ELB_DFLT_MIN_NUM_NODES))
+    # if use_local_ssd:
+    #     actual_params.append(str(cfg.cluster.num_nodes))
+    # else:
+    #     actual_params.append(str(ELB_DFLT_MIN_NUM_NODES))
 
     if use_preemptible:
         actual_params.append('--preemptible')
 
     # https://cloud.google.com/stackdriver/pricing
-    if cfg.cluster.enable_stackdriver:
-        actual_params.append('--enable-stackdriver-kubernetes')
+    # if cfg.cluster.enable_stackdriver:
+    #     actual_params.append('--enable-stackdriver-kubernetes')
 
-    # ATT: hardcoded parameters
-    # specifies GCP API in use
-    actual_params.append('--scopes')
-    scopes = 'compute-rw,storage-rw,cloud-platform,logging-write,monitoring-write'
-    actual_params.append(scopes)
-
+    
     # FIXME: labels, in future will be provided by config or run-time
-    labels = cfg.cluster.labels
-    actual_params.append('--labels')
-    actual_params.append(labels)
+    tags = cfg.cluster.labels
+    actual_params.append('--tags')
+    actual_params.append(tags)
 
-    if use_local_ssd:
-        actual_params.append('--local-ssd-count')
-        actual_params.append('1')
+    # if use_local_ssd:
+    #     actual_params.append('--local-ssd-count')
+    #     actual_params.append('1')
 
-    if cfg.gcp.network is not None:
-        actual_params.append(f'--network={cfg.gcp.network}')
-    if cfg.gcp.subnet is not None:
-        actual_params.append(f'--subnetwork={cfg.gcp.subnet}')
+    # if cfg.azure.network is not None:
+    #     actual_params.append(f'--network={cfg.azure.network}')
+    # if cfg.azure.subnet is not None:
+    #     actual_params.append(f'--subnetwork={cfg.azure.subnet}')
 
-    if cfg.gcp.gke_version:
-        actual_params.append('--cluster-version')
-        actual_params.append(f'{cfg.gcp.gke_version}')
-        actual_params.append('--node-version')
+    if cfg.azure.aks_version:
+        actual_params.append('--kubernetes-version')
         actual_params.append(f'{cfg.gcp.gke_version}')
 
     start = timer()
@@ -955,12 +963,11 @@ def start_cluster(cfg: ElasticBlastConfig):
 
 def delete_cluster(cfg: ElasticBlastConfig):
     cluster_name = cfg.cluster.name
-    actual_params = ["gcloud", "container", "clusters", "delete", cluster_name]
-    actual_params.append('--project')
-    actual_params.append(f'{cfg.gcp.project}')
-    actual_params.append('--zone')
-    actual_params.append(f'{cfg.gcp.zone}')
-    actual_params.append('--quiet')
+    actual_params = ["az", "aks", "delete"]
+    actual_params.append('--resource-group')
+    actual_params.append(f'{cfg.azure.resourcegroup}')
+    actual_params.append('--name')
+    actual_params.append(f'{cluster_name}')
     start = timer()
     if cfg.cluster.dry_run:
         logging.info(actual_params)

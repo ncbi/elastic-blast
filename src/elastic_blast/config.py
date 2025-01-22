@@ -191,8 +191,8 @@ def _validate_csp(cfg: configparser.ConfigParser) -> None:
 
     # are gcp or aws entries present in cloud-provider config
     azure = sum([i.startswith('azure') for i in cfg[CFG_CLOUD_PROVIDER]]) > 0
-    gcp = sum([i.startswith('gcp') for i in cfg[CFG_CLOUD_PROVIDER]]) > 0
-    aws = sum([i.startswith('aws') for i in cfg[CFG_CLOUD_PROVIDER]]) > 0    
+    gcp = sum([i.startswith('gcp') for i in cfg[CFG_CLOUD_PROVIDER]]) > 0 if azure == False else False
+    aws = sum([i.startswith('aws') for i in cfg[CFG_CLOUD_PROVIDER]]) > 0 if azure == False else False
 
     msg = []
 

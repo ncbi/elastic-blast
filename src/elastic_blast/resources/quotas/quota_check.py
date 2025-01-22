@@ -32,5 +32,8 @@ def check_resource_quotas(cfg: ElasticBlastConfig) -> None:
         ResourceCheckAwsBatch(boto_cfg)()
     elif cfg.cloud_provider.cloud == elastic_blast.config.CSP.GCP:
         raise NotImplementedError('Resource check for GCP is not implemented yet')
+    elif cfg.cloud_provider.cloud == elastic_blast.config.CSP.AZURE:
+        # TODO: Implement Azure resource check
+        pass
     else:
         raise NotImplementedError('Resource check for unknown cloud vendor')

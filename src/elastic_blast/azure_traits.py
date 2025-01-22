@@ -15,7 +15,7 @@ from .util import UserReportError, safe_exec
 from .constants import DEPENDENCY_ERROR, GCP_APIS
 from datetime import datetime, timedelta, timezone
 from azure.identity import ClientSecretCredential # type: ignore
-from azure.storage.blob import (BlobServiceClient, generate_container_sas, AccountSasPermissions)  # type: ignore
+from azure.storage.blob import (BlobServiceClient, generate_account_sas, generate_container_sas, AccountSasPermissions, ContainerSasPermissions, ResourceTypes)  # type: ignore
 
 AZURE_HPC_MACHINES = {
     'Standard_HB120rs_v3': {'cpu': 120, 'memory': 480},  # 120 vCPU, 480 GB RAM
@@ -40,10 +40,11 @@ def get_azure_blob_client(account_url: str, tenant_id:str, client_id: str, clien
 
 def get_sas_token(storage_account: str, storage_account_container: str, storage_account_key: str) -> str:
     """ Get SAS token for Azure Blob Storage """
-    return generate_container_sas(
+    return generate_account_sas(
         account_key=storage_account_key,
         account_name=storage_account,
-        container_name=storage_account_container,
+        resource_types=ResourceTypes(container=True, object=True),
+        # container_name=storage_account_container,
         permission=AccountSasPermissions(read=True, list=True),
         start=datetime.now(timezone.utc),
         expiry=datetime.now(timezone.utc) + timedelta(hours=8)

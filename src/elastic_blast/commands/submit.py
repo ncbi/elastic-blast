@@ -41,6 +41,7 @@ from elastic_blast.filehelper import get_length, harvest_query_splitting_results
 from elastic_blast.split import FASTAReader
 from elastic_blast.gcp import check_cluster as gcp_check_cluster
 from elastic_blast.gcp_traits import get_machine_properties
+from elastic_blast.azure import check_cluster as azure_check_cluster
 from elastic_blast.util import check_user_provided_blastdb_exists, UserReportError
 from elastic_blast.util import get_resubmission_error_msg
 from elastic_blast.util import ElbSupportedPrograms
@@ -50,7 +51,7 @@ from elastic_blast.constants import PERMISSIONS_ERROR, CLUSTER_ERROR, CSP, QUERY
 from elastic_blast.constants import ElbCommand, ELB_META_CONFIG_FILE
 from elastic_blast.constants import ELB_DFLT_MIN_QUERY_FILESIZE_TO_SPLIT_ON_CLIENT_COMPRESSED
 from elastic_blast.constants import ELB_DFLT_MIN_QUERY_FILESIZE_TO_SPLIT_ON_CLIENT_UNCOMPRESSED
-from elastic_blast.constants import ELB_S3_PREFIX, ELB_GCS_PREFIX
+from elastic_blast.constants import ELB_S3_PREFIX, ELB_GCS_PREFIX, ELB_AZURE_PREFIX
 from elastic_blast.taxonomy import setup_taxid_filtering
 from elastic_blast.config import validate_cloud_storage_object_uri
 from elastic_blast.elb_config import ElasticBlastConfig
@@ -65,13 +66,16 @@ def get_query_split_mode(cfg: ElasticBlastConfig, query_files):
     if len(query_files) == 1 and (
             cfg.cloud_provider.cloud == CSP.AWS and query_files[0].startswith(ELB_S3_PREFIX)
             or
-            cfg.cloud_provider.cloud == CSP.GCP and query_files[0].startswith(ELB_GCS_PREFIX)):
+            cfg.cloud_provider.cloud == CSP.GCP and query_files[0].startswith(ELB_GCS_PREFIX)
+            or
+            cfg.cloud_provider.cloud == CSP.AZURE and query_files[0].startswith(ELB_AZURE_PREFIX)):
         if cfg.cloud_provider.cloud == CSP.AWS and \
            'ELB_USE_1_STAGE_CLOUD_SPLIT' in os.environ:
             return QuerySplitMode.CLOUD_ONE_STAGE
 
-        gcp_prj = None if cfg.cloud_provider.cloud == CSP.AWS else cfg.gcp.get_project_for_gcs_downloads()
-        fsize : int = get_length(query_files[0], cfg.cluster.dry_run, gcp_prj)
+        gcp_prj = None if cfg.cloud_provider.cloud == CSP.AWS or cfg.cloud_provider.cloud == CSP.AZURE else cfg.gcp.get_project_for_gcs_downloads()
+        sas_token = cfg.azure.get_sas_token() if cfg.cloud_provider.cloud == CSP.AZURE else None
+        fsize : int = get_length(query_files[0], cfg.cluster.dry_run, gcp_prj, sas_token=sas_token)
         is_compressed : bool = query_files[0].endswith('.gz')
         min_fsize_to_split_on_client: int = \
                 cfg.blast.min_qsize_to_split_on_client_compressed if is_compressed else \
@@ -89,7 +93,7 @@ def prepare_1_stage(cfg: ElasticBlastConfig, query_files):
     """ Prepare data for 1 stage cloud query split on AWS """
     query_file = query_files[0]
     # Get file length as approximation of sequence length
-    gcp_prj = None if cfg.cloud_provider.cloud == CSP.AWS else cfg.gcp.get_project_for_gcs_downloads()
+    gcp_prj = None if cfg.cloud_provider.cloud == CSP.AWS or cfg.cloud_provider.cloud == CSP.AZURE else cfg.gcp.get_project_for_gcs_downloads()
     query_length = get_length(query_file, gcp_prj = gcp_prj)
     if query_file.endswith('.gz'):
         query_length = query_length * 4 # approximation again
@@ -119,12 +123,12 @@ def submit(args, cfg, clean_up_stack):
     cfg.validate(ElbCommand.SUBMIT, dry_run)
 
     # For now, checking resources is only implemented for AWS
-    if cfg.cloud_provider.cloud == CSP.AWS and os.getenv('TEAMCITY_VERSION') is None:
+    if (cfg.cloud_provider.cloud == CSP.AWS or cfg.cloud_provider.cloud == CSP.AZURE) and os.getenv('TEAMCITY_VERSION') is None:
         check_resource_quotas(cfg)
     
     if check_running_cluster(cfg):
         msg = get_resubmission_error_msg(cfg.cluster.results, cfg.cloud_provider.cloud)
-        raise UserReportError(CLUSTER_ERROR, msg);
+        raise UserReportError(CLUSTER_ERROR, msg)
 
     query_files = assemble_query_file_list(cfg)
     check_submit_data(query_files, cfg)
@@ -150,9 +154,10 @@ def submit(args, cfg, clean_up_stack):
     setup_taxid_filtering(cfg)
 
     # check database availability
-    gcp_prj = None if cfg.cloud_provider.cloud == CSP.AWS else cfg.gcp.get_project_for_gcs_downloads()
+    gcp_prj = None if cfg.cloud_provider.cloud == CSP.AWS or cfg.cloud_provider.cloud == CSP.AZURE else cfg.gcp.get_project_for_gcs_downloads()
+    sas_token = cfg.azure.get_sas_token() if cfg.cloud_provider.cloud == CSP.AZURE else None
     try:
-        check_user_provided_blastdb_exists(cfg.blast.db, ElbSupportedPrograms().get_db_mol_type(cfg.blast.program), cfg.cluster.db_source, gcp_prj)
+        check_user_provided_blastdb_exists(cfg.blast.db, ElbSupportedPrograms().get_db_mol_type(cfg.blast.program), cfg.cluster.db_source, gcp_prj, sas_token=sas_token)
     except ValueError as err:
         raise UserReportError(returncode=BLASTDB_ERROR, message=str(err))
 
@@ -192,20 +197,27 @@ def check_running_cluster(cfg: ElasticBlastConfig) -> bool:
     if cfg.cluster.dry_run:
         return False
     metadata_dir = os.path.join(cfg.cluster.results, ELB_METADATA_DIR)
-    gcp_prj = None if cfg.cloud_provider.cloud == CSP.AWS else cfg.gcp.get_project_for_gcs_downloads()
+    gcp_prj = None if cfg.cloud_provider.cloud == CSP.AWS or cfg.cloud_provider.cloud == CSP.AZURE else cfg.gcp.get_project_for_gcs_downloads()
     if cfg.cloud_provider.cloud == CSP.AWS:
         metadata_file = os.path.join(metadata_dir, ELB_AWS_JOB_IDS)
     else:
         metadata_file = os.path.join(metadata_dir, ELB_STATE_DISK_ID_FILE)
     try:
-        check_for_read(metadata_file, gcp_prj=gcp_prj)
+        sas_token = cfg.azure.get_sas_token() if cfg.cloud_provider.cloud == CSP.AZURE else None
+        check_for_read(metadata_file, gcp_prj=gcp_prj, sas_token=sas_token)
         return True
     except FileNotFoundError:
         pass
     if cfg.cloud_provider.cloud == CSP.AWS:
         return aws_check_cluster(cfg)
-    else:
+    elif cfg.cloud_provider.cloud == CSP.GCP:
         status = gcp_check_cluster(cfg)
+        if status:
+            logging.error(f'Previous instance of cluster {cfg.cluster.name} is still {status}')
+            return True
+        return False
+    elif cfg.cloud_provider.cloud == CSP.AZURE:
+        status = azure_check_cluster(cfg)
         if status:
             logging.error(f'Previous instance of cluster {cfg.cluster.name} is still {status}')
             return True
@@ -220,9 +232,10 @@ def check_submit_data(query_files: List[str], cfg: ElasticBlastConfig) -> None:
     """
     dry_run = cfg.cluster.dry_run
     try:
-        gcp_prj = None if cfg.cloud_provider.cloud == CSP.AWS else cfg.gcp.get_project_for_gcs_downloads()
+        gcp_prj = None if cfg.cloud_provider.cloud == CSP.AWS or cfg.cloud_provider.cloud == CSP.AZURE else cfg.gcp.get_project_for_gcs_downloads()
+        sas_token = cfg.azure.get_sas_token() if cfg.cloud_provider.cloud == CSP.AZURE else None
         for query_file in query_files:
-            check_for_read(query_file, dry_run, True, gcp_prj)
+            check_for_read(query_file, dry_run, True, gcp_prj, sas_token=sas_token)
     except FileNotFoundError:
         raise UserReportError(INPUT_ERROR, f'Query input {query_file} is not readable or does not exist')
     bucket = cfg.cluster.results
@@ -251,15 +264,16 @@ def split_query(query_files: List[str], cfg: ElasticBlastConfig) -> Tuple[List[s
         queries = [os.path.join(out_path, f'batch_{x:03d}.fa') for x in range(10)]
         logging.info(f'Splitting queries and writing batches to {out_path}')
     else:
-        gcp_prj = None if cfg.cloud_provider.cloud == CSP.AWS else cfg.gcp.get_project_for_gcs_downloads()
-        reader = FASTAReader(open_for_read_iter(query_files, gcp_prj), batch_len, out_path)
+        gcp_prj = None if cfg.cloud_provider.cloud == CSP.AWS or cfg.cloud_provider.cloud == CSP.AZURE else cfg.gcp.get_project_for_gcs_downloads()
+        sas_token = cfg.azure.get_sas_token() if cfg.cloud_provider.cloud == CSP.AZURE else None
+        reader = FASTAReader(open_for_read_iter(query_files, gcp_prj, sas_token=sas_token), batch_len, out_path)
         query_length, queries = reader.read_and_cut()
         logging.info(f'{len(queries)} batches, {query_length} base/residue total')
         if len(queries) < num_concurrent_blast_jobs:
             adjusted_batch_len = int(query_length/num_concurrent_blast_jobs)
             msg = f'The provided elastic-blast configuration is sub-optimal as the query was split into {len(queries)} batch(es) and elastic-blast can run up to {num_concurrent_blast_jobs} concurrent BLAST jobs. elastic-blast changed the batch-len parameter to {adjusted_batch_len} to maximize resource utilization and improve performance.'
             logging.info(msg)
-            reader = FASTAReader(open_for_read_iter(query_files, gcp_prj), adjusted_batch_len, out_path)
+            reader = FASTAReader(open_for_read_iter(query_files, gcp_prj, sas_token=sas_token), adjusted_batch_len, out_path)
             query_length, queries = reader.read_and_cut()
             logging.info(f'Re-computed {len(queries)} batches, {query_length} base/residue total')
     end = timer()
@@ -273,7 +287,7 @@ def assemble_query_file_list(cfg: ElasticBlastConfig) -> List[str]:
     is considered a list of files, otherwise it is a FASTA file with queries."""
     msg = []
     query_files = []
-    gcp_prj = None if cfg.cloud_provider.cloud == CSP.AWS else cfg.gcp.get_project_for_gcs_downloads()
+    gcp_prj = None if cfg.cloud_provider.cloud == CSP.AWS or cfg.cloud_provider.cloud == CSP.AZURE else cfg.gcp.get_project_for_gcs_downloads()
     for query_file in cfg.blast.queries_arg.split():
         if query_file.endswith(QUERY_LIST_EXT):
             with open_for_read(query_file, gcp_prj) as f:
@@ -282,7 +296,8 @@ def assemble_query_file_list(cfg: ElasticBlastConfig) -> List[str]:
                         continue
                     query_file_from_list = line.rstrip()
                     if query_file_from_list.startswith(ELB_GCS_PREFIX) or \
-                           query_file_from_list.startswith(ELB_S3_PREFIX):
+                           query_file_from_list.startswith(ELB_S3_PREFIX) or \
+                               query_file_from_list.startswith(ELB_AZURE_PREFIX):
                         try:
                             validate_cloud_storage_object_uri(query_file_from_list)
                         except ValueError as err:

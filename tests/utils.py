@@ -38,7 +38,7 @@ import io
 from dataclasses import dataclass, field
 from unittest.mock import MagicMock, patch
 from botocore.exceptions import ClientError
-from elastic_blast.util import SafeExecError
+from elastic_blast.util import SafeExecError, UserReportError
 from elastic_blast import config
 from elastic_blast.elb_config import ElasticBlastConfig
 from elastic_blast.constants import ElbCommand, ELB_DFLT_FSIZE_FOR_TESTING
@@ -191,11 +191,13 @@ def gke_mock(mocker):
     # safe_exec is imported in gcp.py with 'from util import safe_exec'
     # and safe_exec in gcp is seen as local, python is funny this way
     mocker.patch('elastic_blast.gcp.safe_exec', side_effect=mock.mocked_safe_exec)
+    mocker.patch('elastic_blast.azure.safe_exec', side_effect=mock.mocked_safe_exec)
     mocker.patch('elastic_blast.kubernetes.safe_exec', side_effect=mock.mocked_safe_exec)
     mocker.patch('elastic_blast.util.safe_exec', side_effect=mock.mocked_safe_exec)
     mocker.patch('elastic_blast.filehelper.safe_exec', side_effect=mock.mocked_safe_exec)
     mocker.patch('elastic_blast.elb_config.safe_exec', side_effect=mock.mocked_safe_exec)
     mocker.patch('elastic_blast.gcp_traits.safe_exec', side_effect=mock.mocked_safe_exec)
+    mocker.patch('elastic_blast.azure_traits.safe_exec', side_effect=mock.mocked_safe_exec)
     mocker.patch('elastic_blast.tuner.aws_get_machine_type', new=MagicMock(return_value='test-machine-type'))
 #    mocker.patch('subprocess.Popen', new=MagicMock(return_value=MockedCompletedProcess()))
     mocker.patch('subprocess.Popen', side_effect=mock.mocked_popen)
@@ -460,6 +462,12 @@ def mocked_safe_exec(cmd: Union[List[str], str], env: Optional[Dict[str, str]] =
     elif ' '.join(cmd).startswith('gcloud compute regions describe'):
         return MockedCompletedProcess(stdout='{"quotas":[{"limit": 81920.0,"metric": "SSD_TOTAL_GB","usage": 2666.0}]}',stderr='',returncode=0)
 
+    elif ' '.join(cmd).startswith('az') and 'account' in cmd:
+        return MockedCompletedProcess(stdout='',stderr='',returncode=0)
+    elif ' '.join(cmd).startswith('azcopy') and 'list' in cmd:
+        return MockedCompletedProcess(stdout='',stderr='',returncode=0)
+    elif ' '.join(cmd).startswith('az') and 'aks' in cmd:
+        return MockedCompletedProcess(stdout='',stderr='',returncode=0)
     # raise ValueError for unrecognized command line
     else:
         raise ValueError(f'Unrecognized gcloud or kubectl command line: {cmd}')
@@ -548,7 +556,8 @@ class GKEMock:
                 return MockedCompletedProcess(storage=self.cloud.storage, key=cmd[-1], subprocess_run_called=False)
             else:
                 return MockedCompletedProcess(returncode=1, subprocess_run_called=False)
-
+        elif ' '.join(cmd).startswith('azcopy') and 'cp' in cmd:
+            return MockedCompletedProcess('')
         # raise ValueError for unrecognized command line
         else:
             raise ValueError(f'Unrecognized gcloud or kubectl command line: {cmd}')
