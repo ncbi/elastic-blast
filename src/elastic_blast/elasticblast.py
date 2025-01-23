@@ -31,7 +31,7 @@ from abc import ABCMeta, abstractmethod
 from collections import defaultdict
 from typing import Any, List, Tuple, Dict, DefaultDict, Optional
 
-from .constants import ELB_QUERY_BATCH_DIR, ELB_METADATA_DIR
+from .constants import CSP, ELB_QUERY_BATCH_DIR, ELB_METADATA_DIR
 from .filehelper import copy_to_bucket, remove_bucket_key, cleanup_temp_bucket_dirs
 from .filehelper import open_for_read, check_for_read
 from .elb_config import ElasticBlastConfig
@@ -102,7 +102,9 @@ class ElasticBlast(metaclass=ABCMeta):
         self.cleanup_stack.append(lambda: logging.debug('Before copying split jobs to bucket'))
         if not self.cloud_job_submission:
             self.cleanup_stack.append(cleanup_temp_bucket_dirs)
-        copy_to_bucket(self.dry_run)
+            
+        sas_token = self.cfg.azure.get_sas_token() if self.cfg.cloud_provider.cloud == CSP.AZURE else None
+        copy_to_bucket(self.dry_run, sas_token=sas_token)
         self.cleanup_stack.append(lambda: logging.debug('After copying split jobs to bucket'))
 
     def _status_from_results(self):

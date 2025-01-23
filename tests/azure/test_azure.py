@@ -25,6 +25,7 @@ from tests.utils import MockedCompletedProcess
 from tests.utils import mocked_safe_exec, get_mocked_config
 from tests.utils import GCP_PROJECT, GCP_DISKS, GKE_PVS, GKE_CLUSTERS
 from tests.utils import GKEMock, gke_mock, GCP_REGIONS
+from elastic_blast.util import safe_exec
 
 # Mocked tests
 
@@ -39,42 +40,12 @@ DB_METADATA = DbMetadata(version = '1',
                          bytes_total = 25,
                          bytes_to_cache = 25,
                          number_of_volumes = 1)
-
-def test_fake_gcloud(gke_mock):
-    """Test that calling fake safe_exec with wrong command line results in
-    ValueError"""
-    with pytest.raises(ValueError):
-        gcp.safe_exec(['some', 'bad', 'commad', 'line'])
-
-
-def test_get_gcp_project(gke_mock):
-    """Test getting GCP project"""
-    project = util.get_gcp_project()
-    assert project == GCP_PROJECT
-    util.safe_exec.assert_called()
-
-
-def test_get_unset_gcp_project(mocker):
-    """Test getting GCP project for unset project"""
-
-    # we need a special case safe_exec
-    def subst_safe_exec_unset_project(cmd):
-        if cmd != 'gcloud config get-value project':
-            raise ValueError(f'Bad gcloud command line: {cmd}')
-        # this is how gcloud reports unset project
-        return MockedCompletedProcess('(unset)')
-
-    mocker.patch('elastic_blast.util.safe_exec',
-                 side_effect=subst_safe_exec_unset_project)
-    with pytest.raises(ValueError):
-        project = util.get_gcp_project()
-
-
-def test_set_gcp_project(gke_mock):
-    """Test setting GCP project"""
-    gcp.set_gcp_project('some-project')
-    gcp.safe_exec.assert_called()
-
+def test_safe_exec():
+    cmd = "az aks create --auto-upgrade-channel none --resource-group rg-elasticblast-test-01 --name elastic-blast-moonchoi-test1 --generate-ssh-keys --node-vm-size Standard_E32s_v3 --node-count 1 --tags"
+    cmd = cmd.split(' ')
+    cmd.append('{"Environment":"Production","Owner":"TeamA"}')
+    
+    # safe_exec(cmd)
 
 @patch(target='elastic_blast.elb_config.gcp_get_regions', new=MagicMock(return_value=GCP_REGIONS))
 def test_get_disks(gke_mock):

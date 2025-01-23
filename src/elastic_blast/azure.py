@@ -117,7 +117,8 @@ class ElasticBlastAzure(ElasticBlast):
         """ Save query length in a metadata file in GS """
         if query_length <= 0: return
         fname = os.path.join(self.cfg.cluster.results, ELB_METADATA_DIR, ELB_QUERY_LENGTH)
-        with open_for_write_immediate(fname) as f:
+        sas_token = self.cfg.azure.get_sas_token()
+        with open_for_write_immediate(fname, sas_token=sas_token) as f:
             f.write(str(query_length))
         # Note: if cloud split is used this file is uploaded
         # by the run script in the 1st stage
@@ -174,8 +175,9 @@ class ElasticBlastAzure(ElasticBlast):
                 self.cfg.appstate.resources.disks += disk_ids
                 dest = os.path.join(self.cfg.cluster.results, ELB_METADATA_DIR,
                                     ELB_STATE_DISK_ID_FILE)
+                sas_token = self.cfg.azure.get_sas_token()
                 with open_for_write_immediate(dest) as f:
-                    f.write(self.cfg.appstate.resources.to_json())
+                    f.write(self.cfg.appstate.resources.to_json(), sas_token=sas_token)
 
                 kubernetes.label_persistent_disk(self.cfg, 'blast-dbs-pvc')
                 kubernetes.delete_volume_snapshots(self.cfg.appstate.k8s_ctx)
@@ -337,7 +339,8 @@ class ElasticBlastAzure(ElasticBlast):
             job_template = read_job_template(cfg=cfg)
             s = substitute_params(job_template, subs)
             bucket_job_template = os.path.join(cfg.cluster.results, ELB_METADATA_DIR, 'job.yaml.template')
-            with open_for_write_immediate(bucket_job_template) as f:
+            sas_token = self.cfg.azure.get_sas_token()
+            with open_for_write_immediate(bucket_job_template, sas_token=sas_token) as f:
                 f.write(s)
         start_cluster(cfg)
         clean_up_stack.append(lambda: logging.debug('After creating cluster'))
@@ -351,6 +354,7 @@ class ElasticBlastAzure(ElasticBlast):
 
         logging.info('Initializing storage')
         clean_up_stack.append(lambda: logging.debug('Before initializing storage'))
+        
         kubernetes.initialize_storage(cfg, query_files,
             ElbExecutionMode.NOWAIT if self.cloud_job_submission else ElbExecutionMode.WAIT)
         clean_up_stack.append(lambda: logging.debug('After initializing storage'))
@@ -457,8 +461,10 @@ class ElasticBlastAzure(ElasticBlast):
             clean_up_stack.append(lambda: logging.debug('After submission computational jobs'))
             if job_names:
                 logging.debug(f'Job #1 name: {job_names[0]}')
+                
+            sas_token = self.cfg.azure.get_sas_token()
             # Signal janitor job to start checking for results
-            with open_for_write_immediate(os.path.join(cfg.cluster.results, ELB_METADATA_DIR, ELB_NUM_JOBS_SUBMITTED)) as f:
+            with open_for_write_immediate(os.path.join(cfg.cluster.results, ELB_METADATA_DIR, ELB_NUM_JOBS_SUBMITTED), sas_token=sas_token) as f:
                 f.write(str(len(job_names)))
 
 
@@ -853,13 +859,14 @@ def check_cluster(cfg: ElasticBlastConfig):
     """
     cluster_name = cfg.cluster.name
     
+    # TODO: A timeout occurs when AKS is in a stopped state.
     query = f'[?name=={cluster_name}]' + '.{Name:name,ProvisioningState:provisioningState}'
     cmd = f'az aks list --resource-group {cfg.azure.resourcegroup} --query "{query}" -o tsv'
     retval = ''
     if cfg.cluster.dry_run:
         logging.info(cmd)
     else:
-        out = safe_exec(cmd)
+        out = safe_exec(cmd, timeout=10)
         retval = out.stdout.strip()
     return retval
 
@@ -915,6 +922,10 @@ def start_cluster(cfg: ElasticBlastConfig):
 
     actual_params.append('--node-count')
     actual_params.append(str(num_nodes))
+    
+    actual_params.append('--node-osdisk-type')
+    actual_params.append('Managed') # Premium SSD LRS
+    
     # Autoscaling for clusters with local SSD works only by shrinking
     # so to support it we start cluster with maximum nodes.
     # Thus the nodes are properly initialized and autoscaler
@@ -948,13 +959,13 @@ def start_cluster(cfg: ElasticBlastConfig):
 
     if cfg.azure.aks_version:
         actual_params.append('--kubernetes-version')
-        actual_params.append(f'{cfg.gcp.gke_version}')
+        actual_params.append(f'{cfg.azure.aks_version}')
 
     start = timer()
     if dry_run:
         logging.info(' '.join(actual_params))
     else:
-        safe_exec(actual_params)
+        safe_exec(actual_params, timeout=1200) # 20 minutes
     end = timer()
     logging.debug(f'RUNTIME cluster-create {end-start} seconds')
 

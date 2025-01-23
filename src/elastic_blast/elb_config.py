@@ -352,6 +352,10 @@ class AZUREConfig(CloudProviderBaseConfig, ConfigParserToDataclassMapper):
     def get_sas_token(self) -> str:
         """Get SAS token for Azure Blob Storage """
         return get_sas_token(str(self.storage_account), str(self.storage_account_container), str(self.storage_account_key))
+    
+    def get_latest_dir(self) -> str:
+        """Get the latest directory from Azure Blob Storage """
+        return get_latest_dir(str(self.storage_account), str(self.storage_account_container), str(self.storage_account_key))
 
 
 
@@ -1366,6 +1370,7 @@ def create_labels(cloud_provider: CSP,
         if num_labels > AWS_MAX_NUM_LABELS:
             raise UserReportError(INPUT_ERROR, f'Too many labels are being used ({num_labels}); AWS only supports up to {AWS_MAX_NUM_LABELS}')
     elif cloud_provider == CSP.AZURE:
+        labels = str(dict(item.split('=') for item in labels.split(','))).replace(' ','') # Azure does not allow commas in labels
         if num_labels > AZURE_MAX_NUM_LABELS:
             raise UserReportError(INPUT_ERROR, f'Too many labels are being used ({num_labels}); Azure only supports up to {AZURE_MAX_NUM_LABELS}')
 

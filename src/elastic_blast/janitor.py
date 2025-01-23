@@ -27,12 +27,13 @@
 import argparse
 import logging
 import os
+from typing import Optional
 from botocore.exceptions import ClientError # type: ignore
 from tempfile import NamedTemporaryFile
 from pathlib import Path
 from pprint import pformat
 from elastic_blast.constants import ElbCommand, ELB_DFLT_LOGLEVEL, ElbStatus
-from elastic_blast.constants import CSP, ELB_S3_PREFIX
+from elastic_blast.constants import CSP, ELB_S3_PREFIX, ELB_GCS_PREFIX, ELB_AZURE_PREFIX
 from elastic_blast.constants import ELB_METADATA_DIR, ELB_META_CONFIG_FILE
 from elastic_blast.constants import ELB_STATUS_SUCCESS, ELB_STATUS_FAILURE
 from elastic_blast.elasticblast import ElasticBlast
@@ -43,20 +44,23 @@ from elastic_blast.filehelper import open_for_read
 from elastic_blast import VERSION
 
 from elastic_blast.filehelper import upload_file_to_gcs, check_for_read
+from elastic_blast.filehelper import upload_file_to_azure
 from elastic_blast.object_storage_utils import copy_file_to_s3
 
 
 DESC = 'ElasticBLAST Janitor module to clean up after itself'
 
-def copy_to_results_bucket_if_not_present(filename: str, bucket: str):
+def copy_to_results_bucket_if_not_present(filename: str, bucket: str, sas_token: Optional[str] = None):
     """ Wrapper function to copy a file to cloud object storage """
     try:
         check_for_read(bucket)
     except FileNotFoundError:
         if bucket.startswith(ELB_S3_PREFIX):
             copy_file_to_s3(bucket, Path(filename))
-        else:
+        elif bucket.startswith(ELB_GCS_PREFIX):
             upload_file_to_gcs(filename, bucket) # type: ignore
+        elif bucket.startswith(ELB_AZURE_PREFIX):
+            upload_file_to_azure(filename, bucket, sas_token=sas_token) # type: ignore
 
 
 def janitor(elb: ElasticBlast) -> None:
@@ -64,14 +68,15 @@ def janitor(elb: ElasticBlast) -> None:
     st, _, _ = elb.check_status()
     results = elb.cfg.cluster.results
     cluster_name = elb.cfg.cluster.name
+    sas_token = elb.cfg.azure.get_sas_token() if elb.cfg.cloud_provider.cloud == CSP.AZURE else None
     if st == ElbStatus.SUCCESS:
         with NamedTemporaryFile() as f:
-            copy_to_results_bucket_if_not_present(f.name, os.path.join(results, ELB_METADATA_DIR, ELB_STATUS_SUCCESS))
+            copy_to_results_bucket_if_not_present(f.name, os.path.join(results, ELB_METADATA_DIR, ELB_STATUS_SUCCESS), sas_token)
         logging.debug(f'ElasticBLAST search with results on {results} is DONE, deleting it (cluster name {cluster_name})')
         elb.delete()
     elif st == ElbStatus.FAILURE:
         with NamedTemporaryFile() as f:
-            copy_to_results_bucket_if_not_present(f.name, os.path.join(results, ELB_METADATA_DIR, ELB_STATUS_FAILURE))
+            copy_to_results_bucket_if_not_present(f.name, os.path.join(results, ELB_METADATA_DIR, ELB_STATUS_FAILURE), sas_token)
         logging.debug(f'ElasticBLAST search with results on {results} has FAILED, deleting it (cluster name {cluster_name})')
         elb.delete()
     elif st == ElbStatus.CREATING:

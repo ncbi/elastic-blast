@@ -35,9 +35,10 @@ from tempfile import TemporaryDirectory
 from typing import List, Optional
 
 from .util import safe_exec, gcp_get_blastdb_latest_path, ElbSupportedPrograms, SafeExecError
-from .util import get_blastdb_info, UserReportError
+from .util import get_blastdb_info, UserReportError, handle_error
 from .subst import substitute_params
-from .constants import ELB_JANITOR_DOCKER_IMAGE_GCP, ELB_PAUSE_AFTER_INIT_PV, ELB_DOCKER_IMAGE_GCP, ELB_QS_DOCKER_IMAGE_GCP, K8S_JOB_SUBMIT_JOBS
+from .constants import CSP, ELB_JANITOR_DOCKER_IMAGE_GCP, ELB_PAUSE_AFTER_INIT_PV, ELB_DOCKER_IMAGE_GCP, ELB_QS_DOCKER_IMAGE_GCP, K8S_JOB_SUBMIT_JOBS
+from .constants import ELB_DOCKER_IMAGE_AZURE, ELB_QS_DOCKER_IMAGE_AZURE
 from .constants import K8S_JOB_BLAST, K8S_JOB_GET_BLASTDB
 from .constants import K8S_JOB_IMPORT_QUERY_BATCHES, K8S_JOB_LOAD_BLASTDB_INTO_RAM, K8S_JOB_RESULTS_EXPORT
 from .constants import ELB_K8S_JOB_SUBMISSION_MAX_WAIT
@@ -64,7 +65,7 @@ def get_maximum_number_of_allowed_k8s_jobs(dry_run: bool = False) -> int:
             if p.stdout:
                 # the kubectl call returns a single value as a quoted string
                 # (ex. '"5k"'), we take the substring [1:-1] to remove the quotes
-                output = p.stdout.decode('utf-8').strip()[1:-1]
+                output = handle_error(p.stdout).strip()[1:-1]
                 if output.endswith('k'):  # Sample output: 5k
                     retval = int(output[:-1]) * 1000
                 else:
@@ -91,7 +92,7 @@ def get_persistent_volumes(k8s_ctx: str) -> List[str]:
     cmd = f'kubectl --context={k8s_ctx} get pv -o json'
     p = safe_exec(cmd)
     try:
-        dvols = json.loads(p.stdout.decode())
+        dvols = json.loads(handle_error(p.stdout))
     except Exception as err:
         raise RuntimeError('Error when parsing listing of Kubernetes persistent volumes ' + str(err))
     if dvols is None:
@@ -112,7 +113,7 @@ def get_persistent_disks(k8s_ctx: str, dry_run: bool = False) -> List[str]:
     else:
         p = safe_exec(cmd)
         if p.stdout:
-            pds = json.loads(p.stdout.decode())
+            pds = json.loads(handle_error(p.stdout))
             return [i['spec']['csi']['volumeHandle'].split('/')[-1] for i in pds['items']]
     return list()
 
@@ -130,7 +131,7 @@ def get_volume_snapshots(k8s_ctx: str, dry_run: bool = False) -> List[str]:
     else:
         p = safe_exec(cmd)
         if p.stdout:
-            pds = json.loads(p.stdout.decode())
+            pds = json.loads(handle_error(p.stdout))
             return [f"snapshot-{i['metadata']['uid']}" for i in pds['items']]
     return list()
 
@@ -176,7 +177,7 @@ def submit_jobs(k8s_ctx: str, path: pathlib.Path, dry_run=False) -> List[str]:
     else:
         p = safe_exec(cmd)
         if p.stdout:
-            out = json.loads(p.stdout.decode())
+            out = json.loads(handle_error(p.stdout))
             if 'items' in out:
                 retval = [i['metadata']['name'] for i in out['items']]
             else:
@@ -212,7 +213,7 @@ def delete_all(k8s_ctx: str, dry_run: bool = False) -> List[str]:
             else:
                 p = safe_exec(cmd)
                 if p.stdout:
-                    for line in p.stdout.decode().split('\n'):
+                    for line in handle_error(p.stdout).split('\n'):
                         if line:
                             if line.startswith('No resources found'):
                                 # nothing was deleted
@@ -238,7 +239,7 @@ def delete_all(k8s_ctx: str, dry_run: bool = False) -> List[str]:
             else:
                 p = safe_exec(cmd)
                 if p.stdout:
-                    logging.debug(p.stdout.decode().rstrip())
+                    logging.debug(handle_error(p.stdout).rstrip())
 
     def inspect_storage_objects_for_debugging(k8s_ctx: str, dry_run: bool = False):
         """ Retrieve information about PV and PVC from kubectl and log it for debugging purposes. """
@@ -250,7 +251,7 @@ def delete_all(k8s_ctx: str, dry_run: bool = False) -> List[str]:
             else:
                 p = safe_exec(cmd)
                 if p.stdout:
-                    for line in p.stdout.decode().split('\n'):
+                    for line in handle_error(p.stdout).split('\n'):
                         if line.startswith("Status") or line.startswith("Finalizers"):
                             logging.debug(f'{storage_obj} {line}')
 
@@ -301,7 +302,7 @@ def get_jobs(k8s_ctx: str, selector: Optional[str] = None, dry_run: bool = False
     if not p.stdout:
         # a small JSON structure is always returned, even if there are no jobs
         raise RuntimeError('Unexpected lack of output for listing kubernetes jobs')
-    out = json.loads(p.stdout.decode())
+    out = json.loads(handle_error(p.stdout))
     return [i['metadata']['name'] for i in out['items']]
 
 
@@ -338,7 +339,7 @@ def _job_succeeded(k8s_ctx: str, k8s_job_file: pathlib.Path, dry_run: bool = Fal
     if not p.stdout:
         return False
 
-    json_output = json.loads(p.stdout.decode())
+    json_output = json.loads(handle_error(p.stdout))
     if 'status' not in json_output:
         return False
 
@@ -372,9 +373,9 @@ def _ensure_successful_job(k8s_ctx: str, k8s_job_file: pathlib.Path, dry_run: bo
         return
 
     p = safe_exec(cmd)
-    status = json.loads(p.stdout.decode())['status']['succeeded']
+    status = json.loads(handle_error(p.stdout))['status']['succeeded']
     if int(status) != 1:
-        raise RuntimeError(f'{k8s_job_file} failed: {p.stderr.decode()}')
+        raise RuntimeError(f'{k8s_job_file} failed: {handle_error(p.stderr)}')
 
 
 def _snapshot_ready(k8s_ctx: str, k8s_spec_file: pathlib.Path, dry_run: bool = False) -> bool:
@@ -399,7 +400,7 @@ def _snapshot_ready(k8s_ctx: str, k8s_spec_file: pathlib.Path, dry_run: bool = F
     if not p.stdout:
         return False
 
-    json_output = json.loads(p.stdout.decode())
+    json_output = json.loads(handle_error(p.stdout))
     if 'status' not in json_output or 'readyToUse' not in json_output['status']:
         return False
 
@@ -446,7 +447,7 @@ def _pvc_bound(k8s_ctx: str, pvc_name: str, dry_run: bool = False) -> bool:
     if not p.stdout:
         return False
 
-    json_output = json.loads(p.stdout.decode())
+    json_output = json.loads(handle_error(p.stdout))
     if 'status' not in json_output or 'phase' not in json_output['status']:
         return False
 
@@ -476,7 +477,9 @@ def initialize_storage(cfg: ElasticBlastConfig, query_files: List[str] = [], wai
 
 def initialize_local_ssd(cfg: ElasticBlastConfig, query_files: List[str] = [], wait=ElbExecutionMode.WAIT) -> None:
     """ Initialize local SSDs for ElasticBLAST cluster """
-    db, db_path, _ = get_blastdb_info(cfg.blast.db, cfg.gcp.get_project_for_gcs_downloads())
+    gcp_project = cfg.gcp.get_project_for_gcs_downloads() if cfg.cloud_provider.cloud == CSP.GCP else None
+    sas_token = cfg.azure.get_sas_token() if cfg.cloud_provider.cloud == CSP.AZURE else None
+    db, db_path, _ = get_blastdb_info(cfg.blast.db, gcp_project, sas_token=sas_token)
     if not db:
         raise ValueError("Config parameter 'db' can't be empty")
     dry_run = cfg.cluster.dry_run
@@ -488,7 +491,7 @@ def initialize_local_ssd(cfg: ElasticBlastConfig, query_files: List[str] = [], w
         # Case of QuerySplitMode.CLOUD_TWO_STAGE
         # We have one file we need to pass to job init_pv/import-query-batches
         # and signal the splitting is required
-        logging.debug('Starting GCP cloud split job')
+        
         job_template = 'job-cloud-split-local-ssd.yaml.template'
         input_query = query_files[0]
         subs = {
@@ -496,9 +499,16 @@ def initialize_local_ssd(cfg: ElasticBlastConfig, query_files: List[str] = [], w
             'K8S_JOB_IMPORT_QUERY_BATCHES' : K8S_JOB_IMPORT_QUERY_BATCHES,
             'INPUT_QUERY' : input_query,
             'BATCH_LEN' : str(cfg.blast.batch_len),
-            'ELB_IMAGE_QS' : ELB_QS_DOCKER_IMAGE_GCP,
+            # 'ELB_IMAGE_QS' : ELB_QS_DOCKER_IMAGE_GCP,
             'TIMEOUT': str(init_blastdb_minutes_timeout*60)
         }
+        if cfg.cloud_provider.cloud == CSP.GCP:
+            logging.debug('Starting GCP cloud split job')
+            subs['ELB_IMAGE_QS'] = ELB_QS_DOCKER_IMAGE_GCP
+        elif cfg.cloud_provider.cloud == CSP.AZURE:
+            logging.debug('Starting Azure cloud split job')
+            subs['ELB_IMAGE_QS'] = ELB_QS_DOCKER_IMAGE_AZURE
+            
         with TemporaryDirectory() as d:
             ref = files('elastic_blast').joinpath(f'templates/{job_template}')
             job_cloud_split_local_ssd_tmpl = ref.read_text()
@@ -515,11 +525,15 @@ def initialize_local_ssd(cfg: ElasticBlastConfig, query_files: List[str] = [], w
     program = cfg.blast.program
     job_init_template = 'job-init-local-ssd.yaml.template'
     taxdb_path = ''
-    gcp_project = cfg.gcp.get_project_for_gcs_downloads()
+    # gcp_project = cfg.gcp.get_project_for_gcs_downloads()
     prj = f'--gcp-project ${gcp_project}' if gcp_project else ''
     if db_path:
         # Custom database
-        taxdb_path = gcp_get_blastdb_latest_path(cfg.gcp.get_project_for_gcs_downloads()) + '/taxdb.*'
+        if cfg.cloud_provider.cloud == CSP.GCP:
+            taxdb_path = gcp_get_blastdb_latest_path(cfg.gcp.get_project_for_gcs_downloads()) + '/taxdb.*'
+        elif cfg.cloud_provider.cloud == CSP.AZURE:
+            taxdb_path = cfg.azure.get_latest_dir() + '/taxdb.*'
+
     subs = {
         'ELB_DB': db,
         'ELB_DB_PATH': db_path,
@@ -527,7 +541,7 @@ def initialize_local_ssd(cfg: ElasticBlastConfig, query_files: List[str] = [], w
         'ELB_DB_MOL_TYPE': str(ElbSupportedPrograms().get_db_mol_type(program)),
         'ELB_BLASTDB_SRC': cfg.cluster.db_source.name,
         'NODE_ORDINAL': '0',
-        'ELB_DOCKER_IMAGE': ELB_DOCKER_IMAGE_GCP,
+        # 'ELB_DOCKER_IMAGE': ELB_DOCKER_IMAGE_GCP,
         'K8S_JOB_GET_BLASTDB' : K8S_JOB_GET_BLASTDB,
         'K8S_JOB_LOAD_BLASTDB_INTO_RAM' : K8S_JOB_LOAD_BLASTDB_INTO_RAM,
         'K8S_JOB_IMPORT_QUERY_BATCHES' : K8S_JOB_IMPORT_QUERY_BATCHES,
@@ -535,9 +549,18 @@ def initialize_local_ssd(cfg: ElasticBlastConfig, query_files: List[str] = [], w
         'K8S_JOB_BLAST' : K8S_JOB_BLAST,
         'K8S_JOB_RESULTS_EXPORT' : K8S_JOB_RESULTS_EXPORT,
         'TIMEOUT': str(init_blastdb_minutes_timeout*60),
-        'GCP_PROJECT_OPT' : prj
+        # 'GCP_PROJECT_OPT' : prj
     }
-    logging.debug(f"Initializing local SSD: {ELB_DOCKER_IMAGE_GCP}")
+    
+    if cfg.cloud_provider.cloud == CSP.GCP:
+        subs['ELB_DOCKER_IMAGE'] = ELB_DOCKER_IMAGE_GCP
+        subs['GCP_PROJECT_OPT'] = prj
+        logging.debug(f"Initializing local SSD: {ELB_DOCKER_IMAGE_GCP} ")
+    elif cfg.cloud_provider.cloud == CSP.AZURE:
+        subs['ELB_DOCKER_IMAGE'] = ELB_DOCKER_IMAGE_AZURE
+        logging.debug(f"Initializing local SSD: {ELB_DOCKER_IMAGE_AZURE}")
+        
+    # logging.debug(f"Initializing local SSD: {ELB_DOCKER_IMAGE_GCP}")
     with TemporaryDirectory() as d:
 
         start = timer()
@@ -571,12 +594,12 @@ def initialize_local_ssd(cfg: ElasticBlastConfig, query_files: List[str] = [], w
                     ' '.join([f'init-ssd-{n}' for n in range(num_nodes)])
             else:
                 proc = safe_exec(cmd)
-                res = proc.stdout.decode()
+                res = handle_error(proc.stdout)
                 logging.debug(res)
             active, failed, succeeded = res.split('\t')
             if failed:
                 proc = safe_exec(f'kubectl --context={cfg.appstate.k8s_ctx} logs -l app=setup')
-                for line in proc.stdout.decode().split('\n'):
+                for line in handle_error(proc.stdout).split('\n'):
                     logging.debug(line)
                 raise RuntimeError(f'Local SSD initialization jobs failed: {failed}')
             if not active:
@@ -607,8 +630,11 @@ def initialize_persistent_disk(cfg: ElasticBlastConfig, query_files: List[str] =
     """
 
     # ${LOGDATETIME} setup_pd start >>${ELB_LOGFILE}
+    gcp_project = cfg.gcp.get_project_for_gcs_downloads() if cfg.cloud_provider.cloud == CSP.GCP else None
+    sas_token = cfg.azure.get_sas_token() if cfg.cloud_provider.cloud == 'Azure' else None
     db, db_path, _ = get_blastdb_info(cfg.blast.db,
-                                      cfg.gcp.get_project_for_gcs_downloads())
+                                      gcp_project,
+                                      sas_token=sas_token)
     if not db:
         raise ValueError("Config parameter 'db' can't be empty")
     cluster_name = cfg.cluster.name
@@ -618,7 +644,10 @@ def initialize_persistent_disk(cfg: ElasticBlastConfig, query_files: List[str] =
     taxdb_path = ''
     if db_path:
         # Custom database
-        taxdb_path = gcp_get_blastdb_latest_path(cfg.gcp.get_project_for_gcs_downloads()) + '/taxdb.*'
+        if cfg.cloud_provider.cloud == CSP.GCP:
+            taxdb_path = gcp_get_blastdb_latest_path(cfg.gcp.get_project_for_gcs_downloads()) + '/taxdb.*'
+        elif cfg.cloud_provider.cloud == CSP.AZURE:
+            taxdb_path = cfg.azure.get_latest_dir() + '/taxdb.*'
 
     results_bucket = cfg.cluster.results
     dry_run = cfg.cluster.dry_run
@@ -647,7 +676,7 @@ def initialize_persistent_disk(cfg: ElasticBlastConfig, query_files: List[str] =
         raise RuntimeError(f'kubernetes context is missing for "{cluster_name}"')
 
     init_blastdb_minutes_timeout = cfg.timeouts.init_pv
-    gcp_project = cfg.gcp.get_project_for_gcs_downloads()
+    # gcp_project = cfg.gcp.get_project_for_gcs_downloads()
     prj = f'--gcp-project {gcp_project}' if gcp_project else ''
 
     subs = {
@@ -655,7 +684,7 @@ def initialize_persistent_disk(cfg: ElasticBlastConfig, query_files: List[str] =
         'INPUT_QUERY' : input_query,
         'BATCH_LEN' : str(cfg.blast.batch_len),
         'COPY_ONLY' : copy_only,
-        'ELB_IMAGE_QS' : ELB_QS_DOCKER_IMAGE_GCP,
+        # 'ELB_IMAGE_QS' : ELB_QS_DOCKER_IMAGE_GCP,
         # For disk initialization query and database download
         'QUERY_BATCHES': query_batches,
         'ELB_PD_SIZE': pd_size,
@@ -666,16 +695,27 @@ def initialize_persistent_disk(cfg: ElasticBlastConfig, query_files: List[str] =
         'ELB_DB_MOL_TYPE': str(ElbSupportedPrograms().get_db_mol_type(program)),
         'ELB_BLASTDB_SRC': cfg.cluster.db_source.name,
         'ELB_RESULTS': results_bucket,
-        'ELB_DOCKER_IMAGE': ELB_DOCKER_IMAGE_GCP,
+        # 'ELB_DOCKER_IMAGE': ELB_DOCKER_IMAGE_GCP,
         'ELB_TAXIDLIST'     : cfg.blast.taxidlist if cfg.blast.taxidlist is not None else '',
         # Container names
         'K8S_JOB_GET_BLASTDB' : K8S_JOB_GET_BLASTDB,
         'K8S_JOB_IMPORT_QUERY_BATCHES' : K8S_JOB_IMPORT_QUERY_BATCHES,
         'TIMEOUT': str(init_blastdb_minutes_timeout*60),
-        'GCP_PROJECT_OPT' : prj
+        # 'GCP_PROJECT_OPT' : prj
     }
+    
+    if cfg.cloud_provider.cloud == CSP.GCP:
+        subs['ELB_IMAGE_QS'] = ELB_QS_DOCKER_IMAGE_GCP
+        subs['ELB_DOCKER_IMAGE'] = ELB_DOCKER_IMAGE_GCP
+        subs['GCP_PROJECT_OPT'] = prj
+        logging.debug(f"Initializing persistent volume: {ELB_DOCKER_IMAGE_GCP} {ELB_QS_DOCKER_IMAGE_GCP}")
+    elif cfg.cloud_provider.cloud == CSP.AZURE:
+        subs['ELB_IMAGE_QS'] = ELB_QS_DOCKER_IMAGE_AZURE
+        subs['ELB_DOCKER_IMAGE'] = ELB_DOCKER_IMAGE_AZURE
+        logging.debug(f"Initializing persistent volume: {ELB_DOCKER_IMAGE_AZURE} {ELB_QS_DOCKER_IMAGE_AZURE}")
+        
 
-    logging.debug(f"Initializing persistent volume: {ELB_DOCKER_IMAGE_GCP} {ELB_QS_DOCKER_IMAGE_GCP}")
+    
     with TemporaryDirectory() as d:
         ref = files('elastic_blast') / 'templates/storage-gcp-ssd.yaml'
         with as_file(ref) as storage_gcp:
@@ -821,7 +861,7 @@ def label_persistent_disk(cfg: ElasticBlastConfig, pv_claim: str) -> None:
         pd_name = f'disk_name_with_claim_{pv_claim}'
     else:
         proc = safe_exec(get_pv_cmd)
-        output = proc.stdout.decode()
+        output = handle_error(proc.stdout)
         pd_name = ''
         for line in output.split('\n'):
             parts = line.split()
@@ -874,7 +914,7 @@ def get_logs(k8s_ctx: str, label: str, containers: List[str], dry_run: bool = Fa
                     root_logger = logging.getLogger()
                     orig_formatter = root_logger.handlers[0].formatter
                     root_logger.handlers[0].setFormatter(logging.Formatter(fmt='%(message)s'))
-                    for line in proc.stdout.decode().split('\n'):
+                    for line in handle_error(proc.stdout).split('\n'):
                         if line:
                             logging.info(line)
                 finally:

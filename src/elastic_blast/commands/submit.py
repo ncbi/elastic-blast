@@ -111,7 +111,8 @@ def write_config_to_metadata(cfg):
     # FIXME: refactor this code into object_storage_utils
     cfg_text = cfg.to_json()
     dst = os.path.join(cfg.cluster.results, ELB_METADATA_DIR, ELB_META_CONFIG_FILE)
-    with open_for_write_immediate(dst) as f:
+    sas_token = cfg.azure.get_sas_token() if cfg.cloud_provider.cloud == CSP.AZURE else None
+    with open_for_write_immediate(dst, sas_token=sas_token) as f:
         f.write(cfg_text)
 
 
