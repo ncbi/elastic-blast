@@ -1,0 +1,14 @@
+---
+apiVersion: storage.k8s.io/v1
+kind: StorageClass
+metadata:
+  name: azure-disk-standard 
+provisioner: disk.csi.azure.com 
+parameters:
+  skuName: Standard_LRS 
+  storageaccounttype: Standard_LRS 
+  csi.storage.k8s.io/fstype: ext4 
+reclaimPolicy: Delete 
+allowVolumeExpansion: true 
+volumeBindingMode: WaitForFirstConsumer 
+

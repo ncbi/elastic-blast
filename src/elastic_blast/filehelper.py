@@ -35,6 +35,7 @@ Author: Victor Joukov joukovv@ncbi.nlm.nih.gov
 import subprocess, os, io, gzip, tarfile, re, tempfile, shutil, sys
 import logging, shlex
 import urllib.request
+
 from string import digits
 from random import sample
 from timeit import default_timer as timer
@@ -433,13 +434,14 @@ def check_for_read(fname: str, dry_run : bool = False, print_file_size: bool = F
     if fname.startswith(ELB_AZURE_PREFIX):
         if dry_run:
             logging.info(f'Open Azure file {fname}?{sas_token}')
-            return    
-        req = urllib.request.Request(f'{fname}?{sas_token}', method='HEAD')
-        try:
-            obj = urllib.request.urlopen(req)
-            fsize = int(obj.headers['Content-Length'])
             return
-        except:
+        try:
+            # req = urllib.request.Request(f'{fname}?{sas_token}', method='HEAD')
+            # obj = urllib.request.urlopen(req)
+            # fsize = int(obj.headers['Content-Length'])
+            get_length(fname=fname, dry_run=dry_run, gcp_prj=gcp_prj, sas_token=sas_token)
+            return
+        except Exception as e:
             raise FileNotFoundError(2, f'Length is not available for {fname}')
         
         
@@ -507,12 +509,22 @@ def get_length(fname: str, dry_run: bool = False, gcp_prj: Optional[str] = None,
         if dry_run:
             logging.info(f'Check length of URL {fname}')
             return ELB_DFLT_FSIZE_FOR_TESTING
-        req = urllib.request.Request(f'{fname}?{sas_token}', method='HEAD')
+        # req = urllib.request.Request(f'{fname}?{sas_token}', method='HEAD')
         try:
-            obj = urllib.request.urlopen(req)
-            return int(obj.headers['Content-Length'])
-        except:
+            # obj = urllib.request.urlopen(req)
+            # return int(obj.headers['Content-Length'])
+            temp_file = NamedTemporaryFile(delete=False, mode='wb')
+            temp_file.close()
+            cmd = f'azcopy cp {fname}?{sas_token} {temp_file.name}'
+            safe_exec(cmd.split(' '))
+            file_size = os.path.getsize(temp_file.name)
+            
+            return file_size
+            
+        except Exception as e:
             raise FileNotFoundError(2, f'Length is not available for {fname}')
+        finally:
+            os.unlink(temp_file.name)
         
     if fname.startswith(ELB_GCS_PREFIX):
         prj = f'-u {gcp_prj}' if gcp_prj else ''
@@ -566,7 +578,18 @@ def open_for_read(fname: str, gcp_prj: Optional[str] = None, sas_token: Optional
     mode = 'rb' if binary else 'rt'
     if fname.startswith(ELB_AZURE_PREFIX):
         cmd = f''
-        response = urllib.request.urlopen(f'{fname}?{sas_token}')
+        try:
+            response = urllib.request.urlopen(f'{fname}?{sas_token}')
+            # temp_file = NamedTemporaryFile(delete=False, mode='wb')
+            # temp_file.close()
+            # cmd = f'azcopy cp {fname}?{sas_token} {temp_file.name}'
+            # proc = safe_exec(cmd.split(' '))
+            # response = open(temp_file.name, mode='r')
+        except Exception as e:
+            raise FileNotFoundError(2, f'Length is not available for {fname}')
+        # finally:
+        #     os.unlink(temp_file.name)
+            
         return unpack_stream(response, gzipped, tarred)
         
     if fname.startswith(ELB_GCS_PREFIX):

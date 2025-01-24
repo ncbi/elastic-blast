@@ -108,6 +108,10 @@ yamllint: ${VENV}
 	source ${VENV}/bin/activate && \
 		yamllint -d share/etc/yamllint-config.yaml src/elastic_blast/templates/storage-gcp-ssd.yaml
 	source ${VENV}/bin/activate && \
+		yamllint -d share/etc/yamllint-config.yaml src/elastic_blast/templates/storage-aks.yaml
+	source ${VENV}/bin/activate && \
+		yamllint -d share/etc/yamllint-config.yaml src/elastic_blast/templates/storage-aks-ssd.yaml
+	source ${VENV}/bin/activate && \
 		yamllint -d share/etc/yamllint-config.yaml src/elastic_blast/templates/pvc-*.yaml.template
 	source ${VENV}/bin/activate && \
 		yamllint -d share/etc/yamllint-config.yaml src/elastic_blast/templates/job-init-*

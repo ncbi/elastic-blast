@@ -4,7 +4,7 @@ kind: PersistentVolumeClaim
 metadata:
   name: blast-dbs-pvc-rwo
 spec:
-  storageClassName: "gcp-pd-ssd"
+  storageClassName: ${ELB_SC_NAME}
   accessModes:
   - ReadWriteOnce
   resources:

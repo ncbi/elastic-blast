@@ -61,7 +61,7 @@ def get_maximum_number_of_allowed_k8s_jobs(dry_run: bool = False) -> int:
     cmd = f'kubectl get resourcequota gke-resource-quotas -o=jsonpath={JSON_PATH}'
     if not dry_run:
         try:
-            p = safe_exec(cmd)
+            p = safe_exec(cmd, timeout=10)
             if p.stdout:
                 # the kubectl call returns a single value as a quoted string
                 # (ex. '"5k"'), we take the substring [1:-1] to remove the quotes
@@ -631,7 +631,7 @@ def initialize_persistent_disk(cfg: ElasticBlastConfig, query_files: List[str] =
 
     # ${LOGDATETIME} setup_pd start >>${ELB_LOGFILE}
     gcp_project = cfg.gcp.get_project_for_gcs_downloads() if cfg.cloud_provider.cloud == CSP.GCP else None
-    sas_token = cfg.azure.get_sas_token() if cfg.cloud_provider.cloud == 'Azure' else None
+    sas_token = cfg.azure.get_sas_token() if cfg.cloud_provider.cloud == CSP.AZURE else None
     db, db_path, _ = get_blastdb_info(cfg.blast.db,
                                       gcp_project,
                                       sas_token=sas_token)
@@ -707,19 +707,26 @@ def initialize_persistent_disk(cfg: ElasticBlastConfig, query_files: List[str] =
     if cfg.cloud_provider.cloud == CSP.GCP:
         subs['ELB_IMAGE_QS'] = ELB_QS_DOCKER_IMAGE_GCP
         subs['ELB_DOCKER_IMAGE'] = ELB_DOCKER_IMAGE_GCP
+        subs['ELB_SC_NAME'] = 'gcp-pd-ssd'
         subs['GCP_PROJECT_OPT'] = prj
         logging.debug(f"Initializing persistent volume: {ELB_DOCKER_IMAGE_GCP} {ELB_QS_DOCKER_IMAGE_GCP}")
     elif cfg.cloud_provider.cloud == CSP.AZURE:
         subs['ELB_IMAGE_QS'] = ELB_QS_DOCKER_IMAGE_AZURE
         subs['ELB_DOCKER_IMAGE'] = ELB_DOCKER_IMAGE_AZURE
+        subs['ELB_SC_NAME'] = 'azure-disk-ssd'
         logging.debug(f"Initializing persistent volume: {ELB_DOCKER_IMAGE_AZURE} {ELB_QS_DOCKER_IMAGE_AZURE}")
         
 
     
     with TemporaryDirectory() as d:
+        
         ref = files('elastic_blast') / 'templates/storage-gcp-ssd.yaml'
-        with as_file(ref) as storage_gcp:
-            cmd = f"kubectl --context={k8s_ctx} apply -f {storage_gcp}"
+        
+        if cfg.cloud_provider.cloud == CSP.AZURE:
+            ref = files('elastic_blast') / 'templates/storage-aks-ssd.yaml'
+            
+        with as_file(ref) as storage_yaml:
+            cmd = f"kubectl --context={k8s_ctx} apply -f {storage_yaml}"
             if dry_run:
                 logging.info(cmd)
             else:

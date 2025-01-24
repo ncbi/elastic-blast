@@ -208,7 +208,7 @@ class ElasticBlastAzure(ElasticBlast):
         if self.cached_status:
             return self.cached_status, self.cached_counts, {STATUS_MESSAGE_ERROR: self.cached_failure_message} if self.cached_failure_message else {}
         counts: DefaultDict[str, int] = defaultdict(int)
-        self._enable_gcp_apis()
+        # self._enable_gcp_apis()
         status = self._status_from_results()
         if status != ElbStatus.UNKNOWN:
             return status, self.cached_counts, {STATUS_MESSAGE_ERROR: self.cached_failure_message} if self.cached_failure_message else {}
@@ -342,6 +342,7 @@ class ElasticBlastAzure(ElasticBlast):
             sas_token = self.cfg.azure.get_sas_token()
             with open_for_write_immediate(bucket_job_template, sas_token=sas_token) as f:
                 f.write(s)
+        # test comment !!!
         start_cluster(cfg)
         clean_up_stack.append(lambda: logging.debug('After creating cluster'))
 

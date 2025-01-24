@@ -103,7 +103,7 @@ def prepare_1_stage(cfg: ElasticBlastConfig, query_files):
     return queries
 
 
-def write_config_to_metadata(cfg):
+def write_config_to_metadata(cfg: ElasticBlastConfig):
     """ Serialize configuration object (not ElasticBLAST configuration file)
         and write to results bucket as metadata """
     if cfg.cluster.dry_run:
@@ -117,7 +117,7 @@ def write_config_to_metadata(cfg):
 
 
 # TODO: use cfg only when args.wait, args.sync, and args.run_label are replicated in cfg
-def submit(args, cfg, clean_up_stack):
+def submit(args, cfg: ElasticBlastConfig, clean_up_stack):
     """ Entry point to submit an ElasticBLAST search
     """
     dry_run = cfg.cluster.dry_run

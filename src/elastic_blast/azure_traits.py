@@ -46,7 +46,7 @@ def get_sas_token(storage_account: str, storage_account_container: str, storage_
         resource_types=ResourceTypes(container=True, object=True),
         # container_name=storage_account_container,
         permission=AccountSasPermissions(read=True, write=True, delete=True, create=True, add=True, list=True),
-        start=datetime.now(timezone.utc),
+        start=datetime.now(timezone.utc) - timedelta(hours=1), # allow 1 hour back
         expiry=datetime.now(timezone.utc) + timedelta(hours=8)
     )
     

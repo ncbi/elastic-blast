@@ -8,3 +8,6 @@ botocore==1.34.141
 awslimitchecker==12.0.0
 tenacity==8.5.0
 dataclasses-json==0.6.7
+azure-core==1.32.0
+azure-identity==1.19.0
+azure-storage-blob==12.24.0
