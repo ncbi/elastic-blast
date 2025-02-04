@@ -641,6 +641,9 @@ def initialize_persistent_disk(cfg: ElasticBlastConfig, query_files: List[str] =
     pd_size = str(cfg.cluster.pd_size)
     program = cfg.blast.program
     job_init_pv_template = 'job-init-pv.yaml.template'
+    if cfg.cloud_provider.cloud == CSP.AZURE:
+        job_init_pv_template = 'job-init-pv-aks.yaml.template'
+        
     taxdb_path = ''
     if db_path:
         # Custom database
@@ -744,6 +747,7 @@ def initialize_persistent_disk(cfg: ElasticBlastConfig, query_files: List[str] =
 
         start = timer()
         job_init_pv = pathlib.Path(os.path.join(d, 'job-init-pv.yaml'))
+        
         with job_init_pv.open(mode='wt') as f:
             ref = files('elastic_blast').joinpath(f'templates/{job_init_pv_template}')
             f.write(substitute_params(ref.read_text(), subs))

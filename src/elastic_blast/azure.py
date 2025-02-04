@@ -343,7 +343,7 @@ class ElasticBlastAzure(ElasticBlast):
             with open_for_write_immediate(bucket_job_template, sas_token=sas_token) as f:
                 f.write(s)
         # test comment !!!
-        start_cluster(cfg)
+        # start_cluster(cfg)
         clean_up_stack.append(lambda: logging.debug('After creating cluster'))
 
         self._get_aks_credentials()
