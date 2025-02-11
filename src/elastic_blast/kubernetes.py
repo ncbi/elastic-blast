@@ -764,10 +764,10 @@ def initialize_persistent_disk(cfg: ElasticBlastConfig, query_files: List[str] =
             logging.warning('Timed out waiting for PVC to bind')
         disks = get_persistent_disks(k8s_ctx, dry_run)
         if disks:
-            logging.debug(f'GCP disk IDs {disks}')
+            logging.debug(f'disk IDs {disks}')
             cfg.appstate.resources.disks += disks
             dest = os.path.join(cfg.cluster.results, ELB_METADATA_DIR, ELB_STATE_DISK_ID_FILE)
-            with open_for_write_immediate(dest) as f:
+            with open_for_write_immediate(dest, sas_token=sas_token) as f:
                 f.write(cfg.appstate.resources.to_json())
         elif not dry_run:
             logging.error('Failed to get disk ID')
@@ -825,10 +825,11 @@ def initialize_persistent_disk(cfg: ElasticBlastConfig, query_files: List[str] =
 
         snapshots = get_volume_snapshots(k8s_ctx, dry_run)
         if snapshots:
-            logging.debug(f'GCP volume snapshot IDs {snapshots}')
+            # logging.debug(f'GCP volume snapshot IDs {snapshots}')
+            logging.debug(f'volume snapshot IDs {snapshots}')
             cfg.appstate.resources.snapshots += snapshots
             dest = os.path.join(cfg.cluster.results, ELB_METADATA_DIR, ELB_STATE_DISK_ID_FILE)
-            with open_for_write_immediate(dest) as f:
+            with open_for_write_immediate(dest, sas_token=sas_token) as f:
                 f.write(cfg.appstate.resources.to_json())
         elif not dry_run:
             logging.error('Failed to get snapshot ID')

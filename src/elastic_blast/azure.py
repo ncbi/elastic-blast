@@ -349,6 +349,9 @@ class ElasticBlastAzure(ElasticBlast):
         self._get_aks_credentials()
 
         self._label_nodes()
+        
+        # test comment !!!
+        # set_role_assignment(cfg)
 
         if self.cloud_job_submission or self.auto_shutdown:
             kubernetes.enable_service_account(cfg)
@@ -851,6 +854,60 @@ def get_aks_credentials(cfg: ElasticBlastConfig) -> str:
         retval = handle_error(p.stdout).strip()
     return retval
 
+def set_role_assignment(cfg: ElasticBlastConfig):
+    """Set role assignment for the managed identity of the AKS cluster.
+
+    Arguments:
+        cfg: configuration object
+
+    Raises:
+        util.SafeExecError on problems with command line aks"""
+    cmd: List[str] = 'az aks show'.split()
+    cmd.append('--resource-group')
+    cmd.append(f'{cfg.azure.resourcegroup}')
+    cmd.append('--name')
+    cmd.append(cfg.cluster.name)
+    cmd.append('--query')
+    cmd.append('identity.principalId')
+    cmd.append('-o')
+    cmd.append('tsv')
+
+    if cfg.cluster.dry_run:
+        logging.info(cmd)
+    else:
+        p = safe_exec(cmd)
+        principal_id = handle_error(p.stdout).strip()
+        
+    cmd: List[str] = 'az storage account show'.split()
+    cmd.append('--name')
+    cmd.append(cfg.azure.storage_account)
+    cmd.append('--resource-group')
+    cmd.append(cfg.azure.resourcegroup)
+    cmd.append('--query')
+    cmd.append('id')
+    cmd.append('-o')
+    cmd.append('tsv')
+    
+    if cfg.cluster.dry_run:
+        logging.info(cmd)
+    else:
+        p = safe_exec(cmd)
+        storage_account_id = handle_error(p.stdout).strip()
+        
+    cmd: List[str] = 'az role assignment create'.split()
+    cmd.append('--role')
+    cmd.append('Storage Blob Data Contributor')
+    cmd.append('--assignee')
+    cmd.append(principal_id)
+    cmd.append('--scope')
+    cmd.append(storage_account_id)
+    
+    if cfg.cluster.dry_run:
+        logging.info(cmd)
+    else:
+        safe_exec(cmd)
+        
+
 
 def check_cluster(cfg: ElasticBlastConfig):
     """ Check if cluster specified by configuration is running.
@@ -926,6 +983,10 @@ def start_cluster(cfg: ElasticBlastConfig):
     
     actual_params.append('--node-osdisk-type')
     actual_params.append('Managed') # Premium SSD LRS
+    
+    
+    #enable managed identity
+    actual_params.append('--enable-managed-identity')
     
     # Autoscaling for clusters with local SSD works only by shrinking
     # so to support it we start cluster with maximum nodes.

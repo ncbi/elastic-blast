@@ -25,7 +25,7 @@
 # Created: Wed Jun 23 13:32:04 EDT 2021
 
 SHELL=/bin/bash
-.PHONY: all pre-check check clean build publish gcp-build gcp-check gcp-clean
+.PHONY: all pre-check check clean build publish gcp-build gcp-check gcp-clean azure-build
 
 IMG?=ncbi/elasticblast-query-split
 VERSION?=0.1.4
@@ -35,6 +35,7 @@ GCP_TEST_BUCKET?=gs://elasticblast-test/query-split-run-test
 AWS_REGION?=us-east-1
 AWS_SERVER?=public.ecr.aws/ncbi-elasticblast
 AWS_IMG?=${AWS_SERVER}/elasticblast-query-split
+AZURE_REGISTRY?=elbacr.azurecr.io
 
 all: gcp-build gcp-check
 
@@ -107,3 +108,7 @@ ecr-create:
 	aws ecr create-repository --repository-name ${AWS_IMG} --region ${AWS_REGION} \
 		--image-scanning-configuration scanOnPush=true \
 		--tags Key=Project,Value=BLAST Key=billingcode,Value=elastic-blast Key=Owner,Value=${USER} | tee ecr-create.json
+
+.PHONY: azure-build
+azure-build:
+	az acr build --registry $(AZURE_REGISTRY) --image $(IMG):$(VERSION) .

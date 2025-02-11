@@ -479,7 +479,9 @@ def provide_cluster():
     cfg = ElasticBlastConfig(config.configure(args), task = ElbCommand.SUBMIT)
     
     # The following values should be defined in .env.
-    cfg.cluster.name = cfg.cluster.name + f'-{os.environ["USER"]}'    
+    
+    cfg.cluster.name = cfg.cluster.name + f'-{os.environ["USER"]}' + '-02'
+
     # cfg.azure.tenant_id = os.environ['AZURE_TENANT_ID']
     # cfg.azure.client_id = os.environ['AZURE_CLIENT_ID']
     # cfg.azure.client_secret = os.environ['AZURE_CLIENT_SECRET']
@@ -528,6 +530,13 @@ def test_get_aks_credentials_real(provide_cluster):
     cluster is present"""
     cfg = provide_cluster
     azure.get_aks_credentials(cfg)
+    
+
+def test_set_role_assignment(provide_cluster):
+    """Test that azure.set_role_assignment does not raise exceptions when a
+    cluster is present"""
+    cfg = provide_cluster
+    azure.set_role_assignment(cfg)
 
 
 @pytest.mark.skipif(False, reason='This test requires specific GCP credentials and may create GCP resources. It should be used with care.')

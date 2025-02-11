@@ -234,11 +234,11 @@ ELB_JOB_SUBMIT_DOCKER_VERSION = '4.0.3'
 
 ELB_DOCKER_IMAGE_GCP = f'gcr.io/ncbi-sandbox-blast/ncbi/elb:{ELB_DOCKER_VERSION}'
 ELB_DOCKER_IMAGE_AWS = f'public.ecr.aws/ncbi-elasticblast/elasticblast-elb:{ELB_DOCKER_VERSION}'
-ELB_DOCKER_IMAGE_AZURE = f'gcr.io/ncbi-sandbox-blast/ncbi/elb:{ELB_DOCKER_VERSION}' # TODO: it will be replaced using ACR
+ELB_DOCKER_IMAGE_AZURE = f'elbacr.azurecr.io/ncbi/elb:{ELB_DOCKER_VERSION}' # TODO: it will be replaced using ACR
 
 ELB_QS_DOCKER_IMAGE_GCP = f'gcr.io/ncbi-sandbox-blast/ncbi/elasticblast-query-split:{ELB_QS_DOCKER_VERSION}'
 ELB_QS_DOCKER_IMAGE_AWS = f'public.ecr.aws/ncbi-elasticblast/elasticblast-query-split:{ELB_QS_DOCKER_VERSION}'
-ELB_QS_DOCKER_IMAGE_AZURE = f'gcr.io/ncbi-sandbox-blast/ncbi/elasticblast-query-split:{ELB_QS_DOCKER_VERSION}' # TODO: it will be replaced using ACR
+ELB_QS_DOCKER_IMAGE_AZURE = f'elbacr.azurecr.io/ncbi/elasticblast-query-split:{ELB_QS_DOCKER_VERSION}' # TODO: it will be replaced using ACR
 
 ELB_JANITOR_DOCKER_IMAGE_GCP = f'gcr.io/ncbi-sandbox-blast/ncbi/elasticblast-janitor:{ELB_JANITOR_DOCKER_VERSION}'
 ELB_JANITOR_DOCKER_IMAGE_AZURE = '' # TODO: it will be replaced using ACR

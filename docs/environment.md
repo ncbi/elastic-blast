@@ -103,6 +103,7 @@ Now You will need to configure aws configure until your project is fully Azure-e
 
 build package and install package
 ```bash
+pip install pytest
 pip uninstall elastic-blast -y; python setup.py sdist bdist_wheel; pip install dist/elastic_blast-0.0-py3-none-any.whl;
 ```
 

@@ -31,6 +31,7 @@ AWS_SERVER?=public.ecr.aws/i6v3i0i9
 AWS_IMG?=${AWS_SERVER}/elasticblast-elb
 AWS_REGION?=us-east-1
 VERSION?=1.3.2
+AZURE_REGISTRY?=elbacr.azurecr.io
 
 ifeq (, $(shell which vmtouch 2>/dev/null))
 NOVMTOUCH?=--no-vmtouch
@@ -42,7 +43,7 @@ NOVMTOUCH?=
 endif
 endif
 
-.PHONY: all
+.PHONY: all azure-build
 all: build check
 
 .PHONY: build
@@ -64,6 +65,10 @@ setup.cfg_cloud:
 .PHONY: clean-local-sources
 clean-local-sources:
 	rm -rf setup.py setup.cfg_cloud src bin requirements
+
+.PHONY: azure-build
+azure-build:
+	az acr build --registry $(AZURE_REGISTRY) --image $(IMG):$(VERSION) .
 
 .PHONY: gcp-build
 gcp-build:
