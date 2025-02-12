@@ -31,6 +31,13 @@ RUN chmod +x /usr/bin/run.sh && \
     pip3 install --no-cache-dir --upgrade pip --break-system-packages && \
     pip3 install --no-cache-dir -r requirements.txt --break-system-packages && rm -rf /var/cache/apk/* requirements.txt
 
+# Add azcopy installation
+WORKDIR /tmp
+RUN wget -O azcopy_v10.tar.gz https://aka.ms/downloadazcopy-v10-linux && \
+    tar -xf azcopy_v10.tar.gz --strip-components=1 && \
+    ls -al && \
+    cp ./azcopy /usr/bin
+
 LABEL Description="NCBI ElasticBLAST Query Splitting Module"
 LABEL Version=${version}
 LABEL Vendor="NCBI/NLM/NIH"
