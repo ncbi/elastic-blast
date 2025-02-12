@@ -366,7 +366,9 @@ class ElasticBlastAzure(ElasticBlast):
         if not self.auto_shutdown:
             logging.debug('Disabling janitor')
         else:
-            kubernetes.submit_janitor_cronjob(cfg)
+            # TODO: need to implement submit_janitor_cronjob
+            pass
+            # kubernetes.submit_janitor_cronjob(cfg)
 
     def _label_nodes(self):
         """ Label nodes by ordinal numbers for proper initialization.

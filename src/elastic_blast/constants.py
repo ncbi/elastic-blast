@@ -245,7 +245,7 @@ ELB_JANITOR_DOCKER_IMAGE_AZURE = '' # TODO: it will be replaced using ACR
 
 ELB_CJS_DOCKER_IMAGE_GCP = f'gcr.io/ncbi-sandbox-blast/ncbi/elasticblast-job-submit:{ELB_JOB_SUBMIT_DOCKER_VERSION}'
 ELB_CJS_DOCKER_IMAGE_AWS = f'public.ecr.aws/ncbi-elasticblast/elasticblast-job-submit:{ELB_JOB_SUBMIT_DOCKER_VERSION}'
-ELB_CJS_DOCKER_IMAGE_AWS = '' # TODO: it will be replaced using ACR
+ELB_CJS_DOCKER_IMAGE_AZURE = f'elbacr.azurecr.io/ncbi/elasticblast-job-submit:{ELB_JOB_SUBMIT_DOCKER_VERSION}' # TODO: it will be replaced using ACR
 
 ELB_DFLT_AWS_DISK_TYPE = 'gp3'
 ELB_DFLT_AWS_PD_SIZE = '1000G'

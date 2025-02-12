@@ -47,6 +47,7 @@ from .constants import ELB_K8S_JOB_SUBMISSION_MAX_RETRIES
 from .constants import ELB_K8S_JOB_SUBMISSION_TIMEOUT, ELB_METADATA_DIR
 from .constants import K8S_MAX_JOBS_PER_DIR, ELB_STATE_DISK_ID_FILE, ELB_QUERY_BATCH_DIR
 from .constants import ELB_CJS_DOCKER_IMAGE_GCP
+from .constants import ELB_CJS_DOCKER_IMAGE_AZURE
 from .constants import ElbExecutionMode, ELB_JANITOR_SCHEDULE
 from .constants import ELB_DFLT_JANITOR_SCHEDULE_GCP, PERMISSIONS_ERROR, DEPENDENCY_ERROR
 from .constants import CLUSTER_ERROR
@@ -1011,9 +1012,7 @@ def submit_job_submission_job(cfg: ElasticBlastConfig):
 
     subs = {
         'K8S_JOB_SUBMIT_JOBS'  : K8S_JOB_SUBMIT_JOBS,
-        'ELB_DOCKER_IMAGE'     : ELB_CJS_DOCKER_IMAGE_GCP,
-        'ELB_GCP_PROJECT'      : cfg.gcp.project,
-        'ELB_GCP_ZONE'         : cfg.gcp.zone,
+        # 'ELB_DOCKER_IMAGE'     : ELB_CJS_DOCKER_IMAGE_GCP,
         'ELB_RESULTS'          : cfg.cluster.results,
         'ELB_CLUSTER_NAME'     : cfg.cluster.name,
         'ELB_PD_SIZE'          : cfg.cluster.pd_size,
@@ -1022,11 +1021,23 @@ def submit_job_submission_job(cfg: ElasticBlastConfig):
         'ELB_NUM_NODES' : str(cfg.cluster.num_nodes),
         'ELB_USE_LOCAL_SSD': str(cfg.cluster.use_local_ssd).lower()
     }
+    
+    if cfg.cloud_provider.cloud == CSP.GCP:
+        subs['ELB_DOCKER_IMAGE'] = ELB_CJS_DOCKER_IMAGE_GCP
+        subs['ELB_GCP_PROJECT'] = cfg.gcp.project
+        subs['ELB_GCP_ZONE'] = cfg.gcp.zone
+    elif cfg.cloud_provider.cloud == CSP.AZURE:
+        subs['ELB_DOCKER_IMAGE'] = ELB_CJS_DOCKER_IMAGE_AZURE
+       
+        
     logging.debug(f"Submitting job submission job: {ELB_CJS_DOCKER_IMAGE_GCP}")
     with TemporaryDirectory() as d:
         job_yaml = os.path.join(d, 'job-submit-jobs.yaml')
         with open(job_yaml, 'wt') as f:
             ref = files('elastic_blast').joinpath('templates/job-submit-jobs.yaml.template')
+            if cfg.cloud_provider.cloud == CSP.AZURE:
+                ref = files('elastic_blast') / 'templates/job-submit-jobs-aks.yaml.template'
+            
             f.write(substitute_params(ref.read_text(), subs))
         cmd = f"kubectl --context={cfg.appstate.k8s_ctx} apply -f {job_yaml}"
         if dry_run:

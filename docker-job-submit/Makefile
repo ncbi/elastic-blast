@@ -25,7 +25,7 @@
 # Created: Tue Aug 31 11:29:06 EDT 2021
 
 SHELL=/bin/bash
-.PHONY: all pre-check check clean build publish gcp-build gcp-check gcp-clean
+.PHONY: all pre-check check clean build publish gcp-build gcp-check gcp-clean azure-build
 
 IMG?=ncbi/elasticblast-job-submit
 VERSION?=4.0.3
@@ -42,6 +42,7 @@ ELB_GCP_REGION?=us-east4
 ELB_GCP_ZONE?=us-east4-a
 ELB_RESULTS?=gs://elasticblast-test
 ELB_CLUSTER_NAME?=elb-test-cluster
+AZURE_REGISTRY?=elbacr.azurecr.io
 
 all: gcp-build gcp-check
 
@@ -59,6 +60,10 @@ clean:
 check:
 	-docker run --rm ${IMG}:${VERSION} kubectl version --client=true
 	-docker run --rm ${IMG}:${VERSION}
+
+.PHONY: azure-build
+azure-build:
+	az acr build -f Dockerfile.azure --registry $(AZURE_REGISTRY) --image $(IMG):$(VERSION) .
 
 .PHONY: gcp-build
 gcp-build:

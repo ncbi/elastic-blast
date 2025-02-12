@@ -1,0 +1,41 @@
+---
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: submit-jobs
+  labels:
+    app: submit
+spec:
+  template:
+    metadata:
+      labels:
+        app: submit
+    spec:
+      volumes:
+      - name: workspace
+        emptyDir: {}
+      containers:
+      - name: ${K8S_JOB_SUBMIT_JOBS}
+        image: ${ELB_DOCKER_IMAGE}
+        imagePullPolicy: IfNotPresent
+        env:
+        - name: ELB_RESULTS
+          value: "${ELB_RESULTS}"
+        - name: ELB_CLUSTER_NAME
+          value: "${ELB_CLUSTER_NAME}"
+        - name: ELB_NUM_NODES
+          value: "${ELB_NUM_NODES}"
+        - name: ELB_PD_SIZE
+          value: "${ELB_PD_SIZE}"
+        - name: ELB_LABELS
+          value: "${ELB_LABELS}"
+        - name: ELB_USE_LOCAL_SSD
+          value: "${ELB_USE_LOCAL_SSD}"
+        # - name: ELB_DEBUG_SUBMIT_JOB_FAIL
+        #   value: "1"
+        workingDir: /workspace
+        volumeMounts:
+        - name: workspace
+          mountPath: /workspace
+      restartPolicy: Never
+  backoffLimit: 0

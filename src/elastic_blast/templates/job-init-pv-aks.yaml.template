@@ -38,8 +38,8 @@ spec:
             exit_code=$?;
             [ $exit_code -eq 0 ] || exit $exit_code;
           else
-            echo azcopy cp ${ELB_DB_PATH} .;
-            azcopy cp ${ELB_DB_PATH} .;
+            echo azcopy cp '${ELB_DB_PATH}' .;
+            azcopy cp '${ELB_DB_PATH}' .;
             exit_code=$?;
             [ $exit_code -eq 0 ] || exit $exit_code;
             [ -f ${ELB_DB}.tar.gz ] && tar xzf ${ELB_DB}.tar.gz;
@@ -59,7 +59,7 @@ spec:
           exit_code=$?;
           [ $exit_code -eq 0 ] || exit $exit_code;
           if [ ! -z "${ELB_TAXIDLIST}" ] ; then
-              azcopy cp ${ELB_TAXIDLIST} /blast/blastdb;
+              azcopy cp '${ELB_TAXIDLIST}' /blast/blastdb;
               exit_code=$?;
           fi;
           exit $exit_code;
