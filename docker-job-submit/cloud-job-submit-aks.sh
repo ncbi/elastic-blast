@@ -36,18 +36,18 @@ K8S_JOB_SUBMIT_JOBS=submit-jobs
 ELB_PAUSE_AFTER_INIT_PV=150
 ELB_DISK_ID_FILE=disk-id.txt
 
-GSUTIL_COPY='gsutil -q cp'
+AZCOPY_COPY='azcopy cp'
 GCLOUD=gcloud
 KUBECTL=kubectl
 
 log() { ts=`date +'%F %T'`; printf '%s RUNTIME %s %f seconds\n' "$ts" "$1" "$2"; };
 copy_job_logs_to_results_bucket() {
-    ${KUBECTL} logs -l "app=$1" -c "$2" --timestamps --since=24h --tail=-1 | ${GSUTIL_COPY} /dev/stdin "${ELB_RESULTS}/logs/k8s-$1-$2.log" || true
+    ${KUBECTL} logs -l "app=$1" -c "$2" --timestamps --since=24h --tail=-1 | ${AZCOPY_COPY} - "${ELB_RESULTS}/logs/k8s-$1-$2.log" || true
 }
 
 TEST=${ELB_LOCAL_TEST:-}
 if [ "x$TEST" == "x1" ]; then
-GSUTIL_COPY='cp'
+AZCOPY_COPY='cp'
 GCLOUD='echo gcloud'
 KUBECTL='echo kubectl'
 ELB_RESULTS=test
@@ -86,7 +86,7 @@ fi
 pods=`kubectl get pods -l job-name=init-pv -o jsonpath='{.items[*].metadata.name}'`
 for pod in $pods; do
     for c in ${K8S_JOB_GET_BLASTDB} ${K8S_JOB_IMPORT_QUERY_BATCHES}; do
-        ${KUBECTL} logs $pod -c $c --timestamps --since=24h --tail=-1 | ${GSUTIL_COPY} /dev/stdin ${ELB_RESULTS}/logs/k8s-$pod-$c.log
+        ${KUBECTL} logs $pod -c $c --timestamps --since=24h --tail=-1 | ${AZCOPY_COPY} - ${ELB_RESULTS}/logs/k8s-$pod-$c.log
     done
 done
 
@@ -130,8 +130,8 @@ fi
 [ -n "${ELB_DEBUG_SUBMIT_JOB_FAIL:-}" ] && echo Job submit job failed for debug && exit 1
 
 # Get template, batch list, and submit BLAST jobs
-if ${GSUTIL_COPY} ${ELB_RESULTS}/${ELB_METADATA_DIR}/job.yaml.template . && 
-   ${GSUTIL_COPY} ${ELB_RESULTS}/${ELB_METADATA_DIR}/batch_list.txt . ; then
+if ${AZCOPY_COPY} ${ELB_RESULTS}/${ELB_METADATA_DIR}/job.yaml.template . && 
+   ${AZCOPY_COPY} ${ELB_RESULTS}/${ELB_METADATA_DIR}/batch_list.txt . ; then
     echo Submitting jobs
     i=0; j=0; job_dir_num=0; job_dir="jobs/$job_dir_num"
     start=`date +%s`
@@ -171,7 +171,7 @@ if ${GSUTIL_COPY} ${ELB_RESULTS}/${ELB_METADATA_DIR}/job.yaml.template . &&
         printf "SPEED to submit-jobs %f jobs/second\n" $(( $num_jobs/($end-$start) ))
     fi
     echo Submitted $num_jobs jobs
-    echo $num_jobs | ${GSUTIL_COPY} /dev/stdin ${ELB_RESULTS}/${ELB_METADATA_DIR}/${ELB_NUM_JOBS_SUBMITTED}
+    echo $num_jobs | ${AZCOPY_COPY} - ${ELB_RESULTS}/${ELB_METADATA_DIR}/${ELB_NUM_JOBS_SUBMITTED}
     if [ ${ELB_NUM_NODES} -ne 1 ] ; then
         echo Reconfiguring cluster to auto-scale to ${ELB_NUM_NODES} nodes
         ${GCLOUD} container clusters update ${ELB_CLUSTER_NAME} --enable-autoscaling --node-pool default-pool --min-nodes 0 --max-nodes ${ELB_NUM_NODES} --project ${ELB_GCP_PROJECT} --zone ${ELB_GCP_ZONE}

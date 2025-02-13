@@ -47,6 +47,7 @@ from .constants import GKE_CLUSTER_STATUS_STOPPING, GKE_CLUSTER_STATUS_ERROR
 from .constants import AKS_CLUSTER_STATUS_CREATING, AKS_CLUSTER_STATUS_UPDATING
 from .constants import AKS_CLUSTER_STATUS_SUCCEEDED, AKS_CLUSTER_STATUS_FAILED
 from .constants import AKS_CLUSTER_STATUS_DELETING, AKS_CLUSTER_STATUS_RUNNING
+from .constants import AKS_ACR_NAME, AKS_ACR_RESOURCE_GROUP
 from .constants import STATUS_MESSAGE_ERROR
 from .elb_config import ElasticBlastConfig, ResourceIds
 from .elasticblast import ElasticBlast
@@ -864,22 +865,7 @@ def set_role_assignment(cfg: ElasticBlastConfig):
 
     Raises:
         util.SafeExecError on problems with command line aks"""
-    cmd: List[str] = 'az aks show'.split()
-    cmd.append('--resource-group')
-    cmd.append(f'{cfg.azure.resourcegroup}')
-    cmd.append('--name')
-    cmd.append(cfg.cluster.name)
-    cmd.append('--query')
-    cmd.append('identity.principalId')
-    cmd.append('-o')
-    cmd.append('tsv')
-
-    if cfg.cluster.dry_run:
-        logging.info(cmd)
-    else:
-        p = safe_exec(cmd)
-        principal_id = handle_error(p.stdout).strip()
-        
+    # get storage account id
     cmd: List[str] = 'az storage account show'.split()
     cmd.append('--name')
     cmd.append(cfg.azure.storage_account)
@@ -889,25 +875,71 @@ def set_role_assignment(cfg: ElasticBlastConfig):
     cmd.append('id')
     cmd.append('-o')
     cmd.append('tsv')
+    if cfg.cluster.dry_run:
+        logging.info(cmd)
+    else:
+        p = safe_exec(cmd)
+        sa_id = handle_error(p.stdout).strip()
+    
+    # get kubeletidentity
+    cmd: List[str] = 'az aks show'.split()
+    cmd.append('--name')
+    cmd.append(cfg.cluster.name)
+    cmd.append('--resource-group')
+    cmd.append(cfg.azure.resourcegroup)
+    cmd.append('--query')
+    cmd.append('identityProfile.kubeletidentity.clientId')
+    cmd.append('-o')
+    cmd.append('tsv')
     
     if cfg.cluster.dry_run:
         logging.info(cmd)
     else:
         p = safe_exec(cmd)
-        storage_account_id = handle_error(p.stdout).strip()
+        aks_kubelet_id = handle_error(p.stdout).strip()
         
+    # Storage Blob Data Contributor role assign
     cmd: List[str] = 'az role assignment create'.split()
     cmd.append('--role')
     cmd.append('Storage Blob Data Contributor')
     cmd.append('--assignee')
-    cmd.append(principal_id)
+    cmd.append(aks_kubelet_id)
     cmd.append('--scope')
-    cmd.append(storage_account_id)
-    
+    cmd.append(sa_id)
     if cfg.cluster.dry_run:
         logging.info(cmd)
     else:
         safe_exec(cmd)
+    
+    # get acr id
+    cmd: List[str] = 'az acr show'.split()
+    cmd.append('--name')
+    cmd.append(AKS_ACR_NAME)
+    cmd.append('--resource-group')
+    cmd.append(AKS_ACR_RESOURCE_GROUP)
+    cmd.append('--query')
+    cmd.append('id')
+    cmd.append('-o')
+    cmd.append('tsv')
+    if cfg.cluster.dry_run:
+        logging.info(cmd)
+    else:
+        p = safe_exec(cmd)
+        acr_id = handle_error(p.stdout).strip()
+    
+    # AcrPull role assignment
+    cmd: List[str] = 'az role assignment create'.split()
+    cmd.append('--role')
+    cmd.append('AcrPull')
+    cmd.append('--assignee')
+    cmd.append(aks_kubelet_id)
+    cmd.append('--scope')
+    cmd.append(acr_id)
+    if cfg.cluster.dry_run:
+        logging.info(cmd)
+    else:
+        safe_exec(cmd)
+        
         
 
 
@@ -963,6 +995,7 @@ def start_cluster(cfg: ElasticBlastConfig):
     use_preemptible = cfg.cluster.use_preemptible
     use_local_ssd = cfg.cluster.use_local_ssd
     dry_run = cfg.cluster.dry_run
+    
 
     # https://learn.microsoft.com/en-us/cli/azure/aks?view=azure-cli-latest#az-aks-create
     actual_params = ["az", "aks", "create"]
@@ -989,6 +1022,7 @@ def start_cluster(cfg: ElasticBlastConfig):
     
     #enable managed identity
     actual_params.append('--enable-managed-identity')
+    
     
     # Autoscaling for clusters with local SSD works only by shrinking
     # so to support it we start cluster with maximum nodes.
@@ -1032,6 +1066,8 @@ def start_cluster(cfg: ElasticBlastConfig):
         safe_exec(actual_params, timeout=1200) # 20 minutes
     end = timer()
     logging.debug(f'RUNTIME cluster-create {end-start} seconds')
+    
+    
 
     return cluster_name
 

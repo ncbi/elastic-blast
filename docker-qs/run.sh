@@ -81,7 +81,17 @@ if [[ $output_bucket =~ ^s3:// ]]; then
   time aws s3 cp batch_list.txt $output_bucket/metadata/batch_list.txt --only-show-errors
 elif [[ $output_bucket =~ ^https:// ]]; then
   echo "Output bucket starts with https://"
-  # 필요한 추가 작업을 여기에 작성하세요
+  azcopy login --identity
+
+  if [ $copy_only -eq 1 ]; then
+    time azcopy cp "$output_bucket/query_batches/*" $local_output_dir --include-pattern "batch_*.fa"
+  else
+    echo "Not Implemented"
+    exit 1
+  fi
+  find $local_output_dir -type f -name "batch_*.fa" | xargs -n1 basename > batch_list.txt
+  time azcopy cp batch_list.txt $output_bucket/metadata/batch_list.txt
+  
 else
   if [ $copy_only -eq 1 ]; then
     time gsutil -mq cp "$output_bucket/query_batches/batch_*.fa" $local_output_dir

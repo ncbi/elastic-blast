@@ -377,6 +377,10 @@ AKS_CLUSTER_STATUS_FAILED = 'Failed'
 AKS_CLUSTER_STATUS_DELETING = 'Deleting'
 AKS_CLUSTER_STATUS_RUNNING = 'Running'
 
+# ACR
+AKS_ACR_NAME = 'elbacr'
+AKS_ACR_RESOURCE_GROUP = 'rg-elbacr'
+
 # File names of the sentinel files which indicate status reported by janitor
 ELB_STATUS_SUCCESS = "SUCCESS.txt"
 ELB_STATUS_FAILURE = "FAILURE.txt"
