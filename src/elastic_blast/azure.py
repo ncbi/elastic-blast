@@ -348,7 +348,7 @@ class ElasticBlastAzure(ElasticBlast):
             with open_for_write_immediate(bucket_job_template, sas_token=sas_token) as f:
                 f.write(s)
         # test comment !!!
-        # start_cluster(cfg)
+        start_cluster(cfg)
         clean_up_stack.append(lambda: logging.debug('After creating cluster'))
 
         self._get_aks_credentials()
@@ -356,7 +356,7 @@ class ElasticBlastAzure(ElasticBlast):
         self._label_nodes()
         
         # test comment !!!
-        # set_role_assignment(cfg)
+        set_role_assignment(cfg)
 
         if self.cloud_job_submission or self.auto_shutdown:
             kubernetes.enable_service_account(cfg)
@@ -441,6 +441,7 @@ class ElasticBlastAzure(ElasticBlast):
             'K8S_JOB_BLAST' : K8S_JOB_BLAST,
             'K8S_JOB_RESULTS_EXPORT' : K8S_JOB_RESULTS_EXPORT,
             'ELB_AZURE_RESOURCEGROUP': cfg.azure.resourcegroup,
+            'ELB_METADATA_DIR': ELB_METADATA_DIR,
         }
         return subs
 

@@ -33,6 +33,8 @@ spec:
           value: "${ELB_USE_LOCAL_SSD}"
         - name: ELB_AZURE_RESOURCEGROUP
           value: "${ELB_AZURE_RESOURCEGROUP}"
+        - name: ELB_METADATA_DIR
+          value: "${ELB_METADATA_DIR}"
         # - name: ELB_DEBUG_SUBMIT_JOB_FAIL
         #   value: "1"
         workingDir: /workspace

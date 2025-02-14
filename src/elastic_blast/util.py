@@ -54,14 +54,17 @@ RESOURCES = [
     'pvc-rwo.yaml.template',
     'pvc-rom.yaml.template',
     'job-init-pv.yaml.template',
+    'job-init-pv-aks.yaml.template',
     'elb-janitor-rbac.yaml',
     'elb-janitor-cronjob.yaml.template',
+    'job-submit-jobs-aks.yaml.template',
     'job-submit-jobs.yaml.template',
     'blast-batch-job.yaml.template',
     'blast-batch-job-local-ssd.yaml.template',
     'blast-batch-job-aks.yaml.template',
     'blast-batch-job-local-ssd-aks.yaml.template',
     'volume-snapshot-class.yaml',
+    'volume-snapshot-class-aks.yaml',
     'volume-snapshot.yaml'
 ]
 # Not used by elastic-blast tool:

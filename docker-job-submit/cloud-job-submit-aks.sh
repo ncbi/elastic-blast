@@ -42,7 +42,9 @@ KUBECTL=kubectl
 
 log() { ts=`date +'%F %T'`; printf '%s RUNTIME %s %f seconds\n' "$ts" "$1" "$2"; };
 copy_job_logs_to_results_bucket() {
-    ${KUBECTL} logs -l "app=$1" -c "$2" --timestamps --since=24h --tail=-1 | ${AZCOPY_COPY} - "${ELB_RESULTS}/logs/k8s-$1-$2.log" || true
+    ${KUBECTL} logs -l "app=$1" -c "$2" --timestamps --since=24h --tail=-1 >> logs
+    ${AZCOPY_COPY} logs "${ELB_RESULTS}/logs/k8s-$1-$2.log"
+    rm logs
 }
 
 TEST=${ELB_LOCAL_TEST:-}

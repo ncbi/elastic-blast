@@ -1028,6 +1028,8 @@ def submit_job_submission_job(cfg: ElasticBlastConfig):
         subs['ELB_GCP_ZONE'] = cfg.gcp.zone
     elif cfg.cloud_provider.cloud == CSP.AZURE:
         subs['ELB_DOCKER_IMAGE'] = ELB_CJS_DOCKER_IMAGE_AZURE
+        subs['ELB_METADATA_DIR'] = ELB_METADATA_DIR
+        subs['ELB_AZURE_RESOURCEGROUP'] = cfg.azure.resourcegroup
        
         
     logging.debug(f"Submitting job submission job: {ELB_CJS_DOCKER_IMAGE_GCP}")
