@@ -29,7 +29,8 @@ spec:
           value: "false"
         command: ["/bin/bash", "-c"]
         args:
-        - echo "BASH version ${BASH_VERSION}";
+        - |
+          echo "BASH version ${BASH_VERSION}";
           start=`date +%s`;
           log() { ts=`date +'%F %T'`; printf '%s RUNTIME %s %f seconds\n' "$ts" "$1" "$2"; };
           if [ -z '${ELB_DB_PATH}' ]; then

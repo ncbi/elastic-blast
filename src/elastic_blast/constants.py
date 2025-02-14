@@ -160,6 +160,9 @@ ELB_DFLT_BLASTDB_SOURCE = 'gcp'
 
 ELB_DFLT_BLAST_JOB_TEMPLATE = 'resource:templates/blast-batch-job.yaml.template'
 ELB_LOCAL_SSD_BLAST_JOB_TEMPLATE = 'resource:templates/blast-batch-job-local-ssd.yaml.template'
+
+ELB_DFLT_BLAST_JOB_AKS_TEMPLATE = 'resource:templates/blast-batch-job-aks.yaml.template'
+ELB_LOCAL_SSD_BLAST_JOB_AKS_TEMPLATE = 'resource:templates/blast-batch-job-local-ssd-aks.yaml.template'
 GCS_DFLT_BUCKET = 'gs://blast-db'
 
 # TODO: check if the azure reqiured.

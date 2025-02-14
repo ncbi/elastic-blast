@@ -63,7 +63,9 @@ check:
 
 .PHONY: azure-build
 azure-build:
+	rsync -a ../src/elastic_blast/templates ${PWD}/
 	az acr build -f Dockerfile.azure --registry $(AZURE_REGISTRY) --image $(IMG):$(VERSION) .
+	rm -fr templates
 
 .PHONY: gcp-build
 gcp-build:

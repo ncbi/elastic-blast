@@ -45,6 +45,4 @@ aws-docker-login.txt
 elb-run-report.csv
 aws-credentials
 .elb-venv
-https:/saelb01.blob.core.windows.net/results/query_batches/batch_000.fa
-https:/saelb01.blob.core.windows.net/results/query_batches/batch_001.fa
-https:/saelb01.blob.core.windows.net/results/query_batches/batch_002.fa
+docker-job-submit/templates/

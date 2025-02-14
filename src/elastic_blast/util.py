@@ -59,6 +59,8 @@ RESOURCES = [
     'job-submit-jobs.yaml.template',
     'blast-batch-job.yaml.template',
     'blast-batch-job-local-ssd.yaml.template',
+    'blast-batch-job-aks.yaml.template',
+    'blast-batch-job-local-ssd-aks.yaml.template',
     'volume-snapshot-class.yaml',
     'volume-snapshot.yaml'
 ]
@@ -628,7 +630,7 @@ def get_resubmission_error_msg(results: str, cloud: CSP) -> str:
     elif cloud == CSP.GCP:
         retval += f'gsutil -qm rm -r {results}'
     elif cloud == CSP.AZURE:
-        retval += f'azcopy rm {results} --recursive'
+        retval += f'azcopy rm {results} --recursive or delete "disk-id.txt" file'
     else:
         # TODO: add Azure
         raise NotImplementedError(f'Cloud provider {cloud} is not implemented')

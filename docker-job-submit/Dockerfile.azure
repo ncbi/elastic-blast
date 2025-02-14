@@ -17,33 +17,58 @@
 # purpose.
 #   
 # Please cite NCBI in any work or product based on this material.
+# This code is a modified version of the original. 
 
 FROM google/cloud-sdk:alpine
 
 ARG version
 
-LABEL Description="NCBI ElasticBLAST Cloud Job Submission Module"
+LABEL Description="NCBI ElasticBLAST Cloud Job Submission Module for Azure Kubernetes Service"
 LABEL Version=${version}
-LABEL Vendor="NCBI/NLM/NIH"
-LABEL Maintainer=camacho@ncbi.nlm.nih.gov
+LABEL Vendor="Microsoft"
+LABEL Maintainer=moonchoi@microsoft.com
 
 COPY cloud-job-submit-aks.sh /usr/bin/
-COPY templates/volume-snapshot-class.yaml /templates/
+COPY templates/volume-snapshot-class-aks.yaml /templates/
 COPY templates/volume-snapshot.yaml /templates/
 COPY templates/pvc-rom.yaml.template /templates/
 
 RUN chmod +x /usr/bin/cloud-job-submit-aks.sh && \
     apk -U upgrade && \
-    apk add --no-cache bash gettext curl jq && \
+    apk add --no-cache bash gettext curl unzip jq python3 py3-pip && \
+    # apk add --no-cache --update --virtual=build gcc musl-dev python3-dev libffi-dev openssl-dev cargo make && \
+    # pip install --no-cache-dir azure-cli --break-system-packages && \
     rm -rf /var/cache/apk/*
 
+# Install system dependencies
+RUN apk add --no-cache --update \
+    python3 \
+    py3-pip \
+    gcc \
+    musl-dev \
+    python3-dev \
+    libffi-dev \
+    openssl-dev \
+    cargo \
+    make
+
+# Create and activate a virtual environment for Azure CLI
+RUN python3 -m venv /opt/venv \
+    && . /opt/venv/bin/activate \
+    && pip install --upgrade pip \
+    && pip install --no-cache-dir azure-cli --break-system-packages\
+    && deactivate
+
+ENV PATH="/opt/venv/bin:$PATH"
+    
 RUN wget -O azcopy_v10.tar.gz https://aka.ms/downloadazcopy-v10-linux && \
     tar -xf azcopy_v10.tar.gz --strip-components=1 && \
     ls -al && \
     cp ./azcopy /usr/bin 
 
-RUN sudo snap install kubectl --classic
 
-# RUN gcloud -q components install kubectl
+# RUN snap install kubectl --classic
+
+RUN gcloud -q components install kubectl
 
 CMD ["/usr/bin/cloud-job-submit-aks.sh"]

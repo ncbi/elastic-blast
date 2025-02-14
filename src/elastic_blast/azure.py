@@ -38,7 +38,7 @@ from .constants import ELB_QUERY_BATCH_DIR, ELB_DFLT_MIN_NUM_NODES
 from .constants import K8S_JOB_CLOUD_SPLIT_SSD, K8S_JOB_INIT_PV
 from .constants import K8S_JOB_BLAST, K8S_JOB_GET_BLASTDB, K8S_JOB_IMPORT_QUERY_BATCHES
 from .constants import K8S_JOB_LOAD_BLASTDB_INTO_RAM, K8S_JOB_RESULTS_EXPORT, K8S_UNINITIALIZED_CONTEXT
-from .constants import ELB_DOCKER_IMAGE_GCP, ELB_QUERY_LENGTH, INPUT_ERROR
+from .constants import ELB_DOCKER_IMAGE_AZURE, ELB_QUERY_LENGTH, INPUT_ERROR
 from .constants import ElbExecutionMode, ElbStatus
 from .constants import GKE_CLUSTER_STATUS_PROVISIONING, GKE_CLUSTER_STATUS_RECONCILING
 from .constants import GKE_CLUSTER_STATUS_RUNNING, GKE_CLUSTER_STATUS_RUNNING_WITH_ERROR
@@ -49,6 +49,8 @@ from .constants import AKS_CLUSTER_STATUS_SUCCEEDED, AKS_CLUSTER_STATUS_FAILED
 from .constants import AKS_CLUSTER_STATUS_DELETING, AKS_CLUSTER_STATUS_RUNNING
 from .constants import AKS_ACR_NAME, AKS_ACR_RESOURCE_GROUP
 from .constants import STATUS_MESSAGE_ERROR
+
+from .constants import ELB_DFLT_BLAST_JOB_AKS_TEMPLATE, ELB_LOCAL_SSD_BLAST_JOB_AKS_TEMPLATE
 from .elb_config import ElasticBlastConfig, ResourceIds
 from .elasticblast import ElasticBlast
 from .gcp_traits import enable_gcp_api
@@ -337,7 +339,9 @@ class ElasticBlastAzure(ElasticBlast):
         clean_up_stack.append(lambda: kubernetes.collect_k8s_logs(cfg))
         if self.cloud_job_submission:
             subs = self.job_substitutions()
-            job_template = read_job_template(cfg=cfg)
+            
+            template_name = ELB_LOCAL_SSD_BLAST_JOB_AKS_TEMPLATE if cfg.cluster.use_local_ssd else ELB_DFLT_BLAST_JOB_AKS_TEMPLATE
+            job_template = read_job_template(template_name=template_name, cfg=cfg)
             s = substitute_params(job_template, subs)
             bucket_job_template = os.path.join(cfg.cluster.results, ELB_METADATA_DIR, 'job.yaml.template')
             sas_token = self.cfg.azure.get_sas_token()
@@ -409,6 +413,7 @@ class ElasticBlastAzure(ElasticBlast):
                                            None, sas_token=sas_token)
 
         blast_program = cfg.blast.program
+        
 
         # prepare substitution for current template
         # TODO consider template using cfg variables directly as, e.g. ${blast.program}
@@ -424,7 +429,7 @@ class ElasticBlastAzure(ElasticBlast):
             'ELB_RESULTS': cfg.cluster.results,
             'ELB_NUM_CPUS': str(cfg.cluster.num_cpus),
             'ELB_DB_MOL_TYPE': str(ElbSupportedPrograms().get_db_mol_type(blast_program)),
-            'ELB_DOCKER_IMAGE': ELB_DOCKER_IMAGE_GCP,
+            'ELB_DOCKER_IMAGE': ELB_DOCKER_IMAGE_AZURE,
             'ELB_TIMEFMT': '%s%N',  # timestamp in nanoseconds
             'BLAST_ELB_JOB_ID': uuid.uuid4().hex,
             'BLAST_ELB_VERSION': VERSION,
@@ -434,7 +439,8 @@ class ElasticBlastAzure(ElasticBlast):
             'K8S_JOB_IMPORT_QUERY_BATCHES' : K8S_JOB_IMPORT_QUERY_BATCHES,
             'K8S_JOB_SUBMIT_JOBS' : K8S_JOB_SUBMIT_JOBS,
             'K8S_JOB_BLAST' : K8S_JOB_BLAST,
-            'K8S_JOB_RESULTS_EXPORT' : K8S_JOB_RESULTS_EXPORT
+            'K8S_JOB_RESULTS_EXPORT' : K8S_JOB_RESULTS_EXPORT,
+            'ELB_AZURE_RESOURCEGROUP': cfg.azure.resourcegroup,
         }
         return subs
 
@@ -951,7 +957,7 @@ def check_cluster(cfg: ElasticBlastConfig):
     """
     cluster_name = cfg.cluster.name
     
-    # TODO: A timeout occurs when AKS is in a stopped state.
+    # TODO: A timeout occurs when AKS is in a stopped state. or check nameserver in /etc/resolv.conf
     query = f'[?name=={cluster_name}]' + '.{Name:name,ProvisioningState:provisioningState}'
     cmd = f'az aks list --resource-group {cfg.azure.resourcegroup} --query "{query}" -o tsv'
     retval = ''

@@ -88,14 +88,14 @@ for pod in $pods; do
     for c in ${K8S_JOB_GET_BLASTDB} ${K8S_JOB_IMPORT_QUERY_BATCHES}; do
         ${KUBECTL} logs $pod -c $c --timestamps --since=24h --tail=-1 | ${AZCOPY_COPY} - ${ELB_RESULTS}/logs/k8s-$pod-$c.log
     done
-done
+done 
 
 
 # no need to deal with persistent disks and snapshots if a local SSD is used
 if ! $ELB_USE_LOCAL_SSD ; then
 
     # Create a volume snapshot
-    ${KUBECTL} apply -f /templates/volume-snapshot-class.yaml
+    ${KUBECTL} apply -f /templates/volume-snapshot-class-aks.yaml
     ${KUBECTL} apply -f /templates/volume-snapshot.yaml
     sleep 5
 
@@ -174,12 +174,12 @@ if ${AZCOPY_COPY} ${ELB_RESULTS}/${ELB_METADATA_DIR}/job.yaml.template . &&
     echo $num_jobs | ${AZCOPY_COPY} - ${ELB_RESULTS}/${ELB_METADATA_DIR}/${ELB_NUM_JOBS_SUBMITTED}
     if [ ${ELB_NUM_NODES} -ne 1 ] ; then
         echo Reconfiguring cluster to auto-scale to ${ELB_NUM_NODES} nodes
-        ${GCLOUD} container clusters update ${ELB_CLUSTER_NAME} --enable-autoscaling --node-pool default-pool --min-nodes 0 --max-nodes ${ELB_NUM_NODES} --project ${ELB_GCP_PROJECT} --zone ${ELB_GCP_ZONE}
+        az aks update --resource-group ${ELB_AKS_RESOURCE_GROUP} --name ${ELB_CLUSTER_NAME} --min-count 0 --max-count ${ELB_NUM_NODES}
     fi
     copy_job_logs_to_results_bucket submit "${K8S_JOB_SUBMIT_JOBS}"
     echo Done
 else
-    echo "Job file or batch list not found in GCS"
+    echo "Job file or batch list not found in Azure Blob Storage"
     exit 1
 fi
 
@@ -205,11 +205,13 @@ export vs=snapshot-$(${KUBECTL} get -f /templates/volume-snapshot.yaml -o jsonpa
 echo "PV: $pv"
 echo "Volume snapshot: $vs"
 jq -n --arg dd $pv --arg ss $vs '{"disks": [$dd], "snapshots": [$ss]}' | gsutil -qm cp - ${ELB_RESULTS}/${ELB_METADATA_DIR}/$ELB_DISK_ID_FILE
-gcloud compute disks update $pv --update-labels ${ELB_LABELS} --zone ${ELB_GCP_ZONE} --project ${ELB_GCP_PROJECT}
+az disk update --resource-group ${ELB_AKS_RESOURCE_GROUP} --name $pv --set tags.elastic-blast-disk-id=$ELB_DISK_ID_FILE
+# gcloud compute disks update $pv --update-labels ${ELB_LABELS} --zone ${ELB_GCP_ZONE} --project ${ELB_GCP_PROJECT}
 
 # delete snapshot
 ${KUBECTL} delete volumesnapshot --all
 
+exit 0;
 # check if the writable disk was deleted and try deleting again,
 # if unsuccessful save its id in GS
 if gcloud compute disks describe $pv_rwo --zone $ELB_GCP_ZONE ; then
