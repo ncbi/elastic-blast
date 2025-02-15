@@ -101,6 +101,7 @@ ELB_DFLT_USE_PREEMPTIBLE = False
 # Using Gi unit rather than G is safer for volume cloning and creating volumes
 # from snapshots
 ELB_DFLT_GCP_PD_SIZE = '3000Gi'
+ELB_DFLT_AZURE_PD_SIZE = '3000Gi'
 
 ELB_DFLT_GCP_MACHINE_TYPE = 'n1-highmem-32'
 ELB_DFLT_AWS_MACHINE_TYPE = 'm5.8xlarge'

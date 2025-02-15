@@ -10,6 +10,7 @@ import os
 from pathlib import Path
 import shlex
 from subprocess import check_call
+import subprocess
 from tempfile import TemporaryDirectory
 import time
 import logging
@@ -947,7 +948,46 @@ def set_role_assignment(cfg: ElasticBlastConfig):
     else:
         safe_exec(cmd)
         
+    # get nodeResourceGroup
+    cmd: List[str] = 'az aks show'.split()
+    cmd.append('--name')
+    cmd.append(cfg.cluster.name)
+    cmd.append('--resource-group')
+    cmd.append(cfg.azure.resourcegroup)
+    cmd.append('--query')
+    cmd.append('nodeResourceGroup')
+    cmd.append('-o')
+    cmd.append('tsv')
+    if cfg.cluster.dry_run:
+        logging.info(cmd)
+    else:
+        p = safe_exec(cmd)
+        node_resourcegroup = handle_error(p.stdout).strip()
         
+    # get subscription id
+    cmd: List[str] = 'az account show'.split()
+    cmd.append('--query')
+    cmd.append('id')
+    cmd.append('-o')
+    cmd.append('tsv')
+    if cfg.cluster.dry_run:
+        logging.info(cmd)
+    else:
+        p = safe_exec(cmd)
+        subscription_id = handle_error(p.stdout).strip()
+        
+    # assign Controbutor role to nodeResourceGroup, to allow the cluster to create resources(disk) in the nodeResourceGroup
+    cmd: List[str] = 'az role assignment create'.split()
+    cmd.append('--role')
+    cmd.append('Contributor')
+    cmd.append('--assignee')
+    cmd.append(aks_kubelet_id)
+    cmd.append('--scope')
+    cmd.append(f'/subscriptions/{subscription_id}/resourceGroups/{node_resourcegroup}')
+    if cfg.cluster.dry_run:
+        logging.info(cmd)
+    else:
+        safe_exec(cmd)
 
 
 def check_cluster(cfg: ElasticBlastConfig):
@@ -1071,6 +1111,10 @@ def start_cluster(cfg: ElasticBlastConfig):
         logging.info(' '.join(actual_params))
     else:
         safe_exec(actual_params, timeout=1200) # 20 minutes
+        # proc = subprocess.Popen(actual_params,
+        #         stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+        #         universal_newlines=True)
+        # proc.communicate()
     end = timer()
     logging.debug(f'RUNTIME cluster-create {end-start} seconds')
     

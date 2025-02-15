@@ -717,7 +717,7 @@ def initialize_persistent_disk(cfg: ElasticBlastConfig, query_files: List[str] =
     elif cfg.cloud_provider.cloud == CSP.AZURE:
         subs['ELB_IMAGE_QS'] = ELB_QS_DOCKER_IMAGE_AZURE
         subs['ELB_DOCKER_IMAGE'] = ELB_DOCKER_IMAGE_AZURE
-        subs['ELB_SC_NAME'] = 'azure-disk-ssd'
+        subs['ELB_SC_NAME'] = 'azure-file-ssd'
         logging.debug(f"Initializing persistent volume: {ELB_DOCKER_IMAGE_AZURE} {ELB_QS_DOCKER_IMAGE_AZURE}")
         
 

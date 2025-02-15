@@ -40,6 +40,8 @@ AZCOPY_COPY='azcopy cp'
 GCLOUD=gcloud
 KUBECTL=kubectl
 
+azcopy login --identity
+
 log() { ts=`date +'%F %T'`; printf '%s RUNTIME %s %f seconds\n' "$ts" "$1" "$2"; };
 copy_job_logs_to_results_bucket() {
     ${KUBECTL} logs -l "app=$1" -c "$2" --timestamps --since=24h --tail=-1 >> logs
@@ -123,7 +125,8 @@ if ! $ELB_USE_LOCAL_SSD ; then
     ${KUBECTL} delete pvc blast-dbs-pvc-rwo
 
     # Create ReadOnlyMany PVC
-    envsubst '${ELB_PD_SIZE}' </templates/pvc-rom.yaml.template >pvc-rom.yaml
+    echo Create ReadOnlyMany PVC
+    envsubst '${ELB_PD_SIZE}' </templates/pvc-rom-aks.yaml.template >pvc-rom.yaml
     ${KUBECTL} apply -f pvc-rom.yaml
 fi
 

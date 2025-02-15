@@ -7,7 +7,7 @@ spec:
     name: blast-dbs-snapshot
     kind: VolumeSnapshot
     apiGroup: snapshot.storage.k8s.io
-  storageClassName: gcp-pd-ssd
+  storageClassName: azure-file-ssd
   accessModes:
     - ReadOnlyMany
   resources:

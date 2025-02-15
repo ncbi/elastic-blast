@@ -49,7 +49,7 @@ from . import VERSION
 from .constants import CSP, ElbCommand
 from .constants import ELB_DFLT_NUM_NODES
 from .constants import ELB_DFLT_USE_PREEMPTIBLE
-from .constants import ELB_DFLT_GCP_PD_SIZE, ELB_DFLT_AWS_PD_SIZE
+from .constants import ELB_DFLT_GCP_PD_SIZE, ELB_DFLT_AWS_PD_SIZE, ELB_DFLT_AZURE_PD_SIZE
 from .constants import ELB_DFLT_GCP_MACHINE_TYPE, ELB_DFLT_AWS_MACHINE_TYPE
 from .constants import ELB_DFLT_AZURE_MACHINE_TYPE
 from .constants import ELB_DFLT_INIT_PV_TIMEOUT, ELB_DFLT_BLAST_K8S_TIMEOUT
@@ -608,7 +608,10 @@ class ClusterConfig(ConfigParserToDataclassMapper):
         self.db_source = DBSource[cloud_provider.name]
 
         # default machine type and pd size
-        if cloud_provider == CSP.GCP:
+        if cloud_provider == CSP.AZURE:
+            if not self.pd_size:
+                self.pd_size = ELB_DFLT_AZURE_PD_SIZE
+        elif cloud_provider == CSP.GCP:
             if not self.pd_size:
                 self.pd_size = ELB_DFLT_GCP_PD_SIZE
 
