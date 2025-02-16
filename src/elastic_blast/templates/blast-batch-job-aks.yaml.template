@@ -47,7 +47,7 @@ spec:
         resources:
           requests:
             memory: "${ELB_MEM_REQUEST}"
-            cpu: ${ELB_NUM_CPUS}
+            cpu: ${ELB_NUM_CPUS_REQ}
           limits:
             memory: "${ELB_MEM_LIMIT}"
             cpu: ${ELB_NUM_CPUS}

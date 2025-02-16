@@ -2,8 +2,8 @@
 apiVersion: storage.k8s.io/v1
 kind: StorageClass
 metadata:
-  name: azure-file-ssd
-provisioner: file.csi.azure.com
+  name: azure-disk-ssd
+provisioner: disk.csi.azure.com
 parameters:
   skuName: Premium_LRS  
   storageaccounttype: Premium_LRS  

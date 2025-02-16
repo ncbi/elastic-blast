@@ -90,7 +90,9 @@ fi
 pods=`kubectl get pods -l job-name=init-pv -o jsonpath='{.items[*].metadata.name}'`
 for pod in $pods; do
     for c in ${K8S_JOB_GET_BLASTDB} ${K8S_JOB_IMPORT_QUERY_BATCHES}; do
-        ${KUBECTL} logs $pod -c $c --timestamps --since=24h --tail=-1 | ${AZCOPY_COPY} - ${ELB_RESULTS}/logs/k8s-$pod-$c.log
+        ${KUBECTL} logs $pod -c $c --timestamps --since=24h --tail=-1 >> logs-init-pv 
+        ${AZCOPY_COPY} logs-init-pv ${ELB_RESULTS}/logs/k8s-$pod-$c.log
+        rm logs-init-pv
     done
 done 
 
@@ -176,7 +178,7 @@ if ${AZCOPY_COPY} ${ELB_RESULTS}/${ELB_METADATA_DIR}/job.yaml.template . &&
         printf "SPEED to submit-jobs %f jobs/second\n" $(( $num_jobs/($end-$start) ))
     fi
     echo Submitted $num_jobs jobs
-    echo $num_jobs | ${AZCOPY_COPY} - ${ELB_RESULTS}/${ELB_METADATA_DIR}/${ELB_NUM_JOBS_SUBMITTED}
+    echo $num_jobs | $num_jobs >> num_jobs | ${AZCOPY_COPY} num_jobs ${ELB_RESULTS}/${ELB_METADATA_DIR}/${ELB_NUM_JOBS_SUBMITTED}
     if [ ${ELB_NUM_NODES} -ne 1 ] ; then
         echo Reconfiguring cluster to auto-scale to ${ELB_NUM_NODES} nodes
         az aks update --resource-group ${ELB_AKS_RESOURCE_GROUP} --name ${ELB_CLUSTER_NAME} --min-count 0 --max-count ${ELB_NUM_NODES}
@@ -216,6 +218,7 @@ az disk update --resource-group ${ELB_AKS_RESOURCE_GROUP} --name $pv --set tags.
 # delete snapshot
 ${KUBECTL} delete volumesnapshot --all
 
+echo exit
 exit 0;
 # check if the writable disk was deleted and try deleting again,
 # if unsuccessful save its id in GS

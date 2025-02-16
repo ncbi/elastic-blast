@@ -525,6 +525,8 @@ def initialize_local_ssd(cfg: ElasticBlastConfig, query_files: List[str] = [], w
     num_nodes = cfg.cluster.num_nodes
     program = cfg.blast.program
     job_init_template = 'job-init-local-ssd.yaml.template'
+    if cfg.cloud_provider.cloud == CSP.AZURE:
+        job_init_template = 'job-init-local-ssd-aks.yaml.template'
     taxdb_path = ''
     # gcp_project = cfg.gcp.get_project_for_gcs_downloads()
     prj = f'--gcp-project ${gcp_project}' if gcp_project else ''
@@ -717,7 +719,7 @@ def initialize_persistent_disk(cfg: ElasticBlastConfig, query_files: List[str] =
     elif cfg.cloud_provider.cloud == CSP.AZURE:
         subs['ELB_IMAGE_QS'] = ELB_QS_DOCKER_IMAGE_AZURE
         subs['ELB_DOCKER_IMAGE'] = ELB_DOCKER_IMAGE_AZURE
-        subs['ELB_SC_NAME'] = 'azure-file-ssd'
+        subs['ELB_SC_NAME'] = 'azure-disk-ssd'
         logging.debug(f"Initializing persistent volume: {ELB_DOCKER_IMAGE_AZURE} {ELB_QS_DOCKER_IMAGE_AZURE}")
         
 

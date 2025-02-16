@@ -96,12 +96,12 @@ class ElasticBlastAzure(ElasticBlast):
             else:
                 logging.debug(f'Waiting for job {job_to_wait}')
                 proc = safe_exec(cmd)
-                res = proc.stdout.decode()
+                res = handle_error(proc.stdout)
             if not res:
                 # Job's not active, check it did not fail
                 cmd = f"{kubectl} get job {job_to_wait} -o jsonpath=" "'{.items[?(@.status.failed)].metadata.name}'"
                 proc = safe_exec(cmd)
-                res = proc.stdout.decode()
+                res = handle_error(proc.stdout)
                 if res:
                     if job_to_wait == K8S_JOB_INIT_PV:
                         # Assume BLASTDB error, as it is more likely to occur than copying files to PV when importing queries
@@ -244,7 +244,7 @@ class ElasticBlastAzure(ElasticBlast):
             logging.debug(cmd)
         else:
             proc = safe_exec(cmd)
-            for line in proc.stdout.decode().split('\n'):
+            for line in handle_error(proc.stdout).split('\n'):
                 if not line or line.startswith('STATUS'):
                     continue
                 if line.startswith('Complete'):
@@ -304,7 +304,7 @@ class ElasticBlastAzure(ElasticBlast):
             except SafeExecError as err:
                 logging.debug(f'Error "{err.message}" in command "{cmd}"')
                 return 0, 0, 0
-            for line in proc.stdout.decode().split('\n'):
+            for line in handle_error(proc.stdout).split('\n'):
                 if not line or line.startswith('STATUS'):
                     continue
                 if line.startswith('Complete'):
@@ -397,7 +397,7 @@ class ElasticBlastAzure(ElasticBlast):
                 res = ' '.join([f'gke-node-{i}' for i in range(self.cfg.cluster.num_nodes)])
             else:
                 proc = safe_exec(cmd)
-                res = proc.stdout.decode()
+                res = handle_error(proc.stdout)
             for i, name in enumerate(res.split()):
                 cmd = f'{kubectl} label nodes {name} ordinal={i}'
                 if dry_run:
@@ -428,6 +428,7 @@ class ElasticBlastAzure(ElasticBlast):
             # FIXME: EB-210
             'ELB_BLAST_TIMEOUT': str(cfg.timeouts.blast_k8s * 60),
             'ELB_RESULTS': cfg.cluster.results,
+            'ELB_NUM_CPUS_REQ': str(cfg.cluster.num_cpus // 3),
             'ELB_NUM_CPUS': str(cfg.cluster.num_cpus),
             'ELB_DB_MOL_TYPE': str(ElbSupportedPrograms().get_db_mol_type(blast_program)),
             'ELB_DOCKER_IMAGE': ELB_DOCKER_IMAGE_AZURE,
@@ -1043,6 +1044,17 @@ def start_cluster(cfg: ElasticBlastConfig):
     use_local_ssd = cfg.cluster.use_local_ssd
     dry_run = cfg.cluster.dry_run
     
+    # install k8s-extension
+    logging.info('Installing k8s-extension')
+    cmd: List[str] = 'az extension add'.split()
+    cmd.append('--upgrade')
+    cmd.append('--name')
+    cmd.append('k8s-extension')
+    if cfg.cluster.dry_run:
+        logging.info(cmd)
+    else:
+        safe_exec(cmd)
+    
 
     # https://learn.microsoft.com/en-us/cli/azure/aks?view=azure-cli-latest#az-aks-create
     actual_params = ["az", "aks", "create"]
@@ -1064,12 +1076,15 @@ def start_cluster(cfg: ElasticBlastConfig):
     actual_params.append(str(num_nodes))
     
     actual_params.append('--node-osdisk-type')
-    actual_params.append('Managed') # Premium SSD LRS
+    actual_params.append('Ephemeral') # Managed, Premium SSD LRS
     
     
     #enable managed identity
     actual_params.append('--enable-managed-identity')
     
+    # enable container storage
+    # actual_params.append('--enable-azure-container-storage')
+    # actual_params.append('azureDisk')
     
     # Autoscaling for clusters with local SSD works only by shrinking
     # so to support it we start cluster with maximum nodes.
@@ -1110,7 +1125,8 @@ def start_cluster(cfg: ElasticBlastConfig):
     if dry_run:
         logging.info(' '.join(actual_params))
     else:
-        safe_exec(actual_params, timeout=1200) # 20 minutes
+        logging.info('create aks cluster: ' + ' '.join(actual_params))
+        safe_exec(actual_params, timeout=1800) # 30 minutes
         # proc = subprocess.Popen(actual_params,
         #         stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
         #         universal_newlines=True)
