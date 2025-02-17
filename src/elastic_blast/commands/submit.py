@@ -127,7 +127,7 @@ def submit(args, cfg: ElasticBlastConfig, clean_up_stack):
     if (cfg.cloud_provider.cloud == CSP.AWS or cfg.cloud_provider.cloud == CSP.AZURE) and os.getenv('TEAMCITY_VERSION') is None:
         check_resource_quotas(cfg)
     
-    if check_running_cluster(cfg):
+    if not cfg.cluster.reuse and check_running_cluster(cfg):
         msg = get_resubmission_error_msg(cfg.cluster.results, cfg.cloud_provider.cloud)
         raise UserReportError(CLUSTER_ERROR, msg)
 

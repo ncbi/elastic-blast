@@ -120,10 +120,11 @@ class ElasticBlast(metaclass=ABCMeta):
         """
         cfg = self.cfg
         status = ElbStatus.UNKNOWN
-        gcp_prj = None if cfg.aws else cfg.gcp.get_project_for_gcs_downloads()
+        gcp_prj = None if cfg.aws else cfg.gcp.get_project_for_gcs_downloads() if cfg.gcp else None
+        sas_token = self.cfg.azure.get_sas_token() if self.cfg.cloud_provider.cloud == CSP.AZURE else None
         try:
             failure_file = os.path.join(cfg.cluster.results, ELB_METADATA_DIR, ELB_STATUS_FAILURE)
-            check_for_read(failure_file, self.dry_run, gcp_prj=gcp_prj)
+            check_for_read(failure_file, self.dry_run, gcp_prj=gcp_prj, sas_token=sas_token)
         except FileNotFoundError:
             pass
         else:
@@ -137,7 +138,7 @@ class ElasticBlast(metaclass=ABCMeta):
 
         try:
             done_file = os.path.join(cfg.cluster.results, ELB_METADATA_DIR, ELB_STATUS_SUCCESS)
-            check_for_read(done_file, self.dry_run, gcp_prj=gcp_prj)
+            check_for_read(done_file, self.dry_run, gcp_prj=gcp_prj, sas_token=sas_token)
         except FileNotFoundError:
             pass
         else:

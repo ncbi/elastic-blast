@@ -46,3 +46,4 @@ elb-run-report.csv
 aws-credentials
 .elb-venv
 docker-job-submit/templates/
+tests/submit/data/260_part_aa.ini

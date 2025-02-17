@@ -217,15 +217,16 @@ class ElasticBlastAzure(ElasticBlast):
         if status != ElbStatus.UNKNOWN:
             return status, self.cached_counts, {STATUS_MESSAGE_ERROR: self.cached_failure_message} if self.cached_failure_message else {}
 
-        gke_status = check_cluster(self.cfg)
-        if not gke_status:
+        aks_status = check_cluster(self.cfg)
+        if not aks_status:
             return ElbStatus.UNKNOWN, {}, {STATUS_MESSAGE_ERROR: f'Cluster "{self.cfg.cluster.name}" was not found'}
 
-        logging.debug(f'GKE status: {gke_status}')
-        if gke_status in [GKE_CLUSTER_STATUS_RECONCILING, GKE_CLUSTER_STATUS_PROVISIONING]:
+        # TODO: need to implement AKS status
+        logging.debug(f'AKS status: {aks_status}')
+        if aks_status in [GKE_CLUSTER_STATUS_RECONCILING, GKE_CLUSTER_STATUS_PROVISIONING]:
             return ElbStatus.SUBMITTING, {}, {}
 
-        if gke_status == GKE_CLUSTER_STATUS_STOPPING:
+        if aks_status == GKE_CLUSTER_STATUS_STOPPING:
             # TODO: This behavior is consistent with current tests, consider returning a value
             # as follows, and changing test in tests/app/test_elasticblast.py::test_cluster_error
             # return ElbStatus.DELETING, {}, ''
@@ -349,7 +350,8 @@ class ElasticBlastAzure(ElasticBlast):
             with open_for_write_immediate(bucket_job_template, sas_token=sas_token) as f:
                 f.write(s)
         # test comment !!!
-        start_cluster(cfg)
+        if not cfg.cluster.reuse:
+            start_cluster(cfg)
         clean_up_stack.append(lambda: logging.debug('After creating cluster'))
 
         self._get_aks_credentials()
@@ -357,7 +359,8 @@ class ElasticBlastAzure(ElasticBlast):
         self._label_nodes()
         
         # test comment !!!
-        set_role_assignment(cfg)
+        if not cfg.cluster.reuse:
+            set_role_assignment(cfg)
 
         if self.cloud_job_submission or self.auto_shutdown:
             kubernetes.enable_service_account(cfg)
@@ -442,7 +445,7 @@ class ElasticBlastAzure(ElasticBlast):
             'K8S_JOB_SUBMIT_JOBS' : K8S_JOB_SUBMIT_JOBS,
             'K8S_JOB_BLAST' : K8S_JOB_BLAST,
             'K8S_JOB_RESULTS_EXPORT' : K8S_JOB_RESULTS_EXPORT,
-            'ELB_AZURE_RESOURCEGROUP': cfg.azure.resourcegroup,
+            'ELB_AZURE_RESOURCE_GROUP': cfg.azure.resourcegroup,
             'ELB_METADATA_DIR': ELB_METADATA_DIR,
         }
         return subs
@@ -1000,13 +1003,13 @@ def check_cluster(cfg: ElasticBlastConfig):
     cluster_name = cfg.cluster.name
     
     # TODO: A timeout occurs when AKS is in a stopped state. or check nameserver in /etc/resolv.conf
-    query = f'[?name=={cluster_name}]' + '.{Name:name,ProvisioningState:provisioningState}'
+    query = f'[?name==\'{cluster_name}\']' + '.{ProvisioningState:provisioningState}'
     cmd = f'az aks list --resource-group {cfg.azure.resourcegroup} --query "{query}" -o tsv'
     retval = ''
     if cfg.cluster.dry_run:
         logging.info(cmd)
     else:
-        out = safe_exec(cmd, timeout=10)
+        out = safe_exec(shlex.split(cmd), timeout=10)
         retval = out.stdout.strip()
     return retval
 
@@ -1076,7 +1079,7 @@ def start_cluster(cfg: ElasticBlastConfig):
     actual_params.append(str(num_nodes))
     
     actual_params.append('--node-osdisk-type')
-    actual_params.append('Ephemeral') # Managed, Premium SSD LRS
+    actual_params.append('Managed') # Managed | Ephemeral, Premium SSD LRS
     
     
     #enable managed identity

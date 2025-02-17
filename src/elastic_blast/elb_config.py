@@ -82,7 +82,7 @@ from .constants import CFG_BLAST_MIN_QSIZE_TO_SPLIT_ON_CLIENT_UNCOMPRESSED
 from .constants import CFG_CLUSTER, CFG_CLUSTER_NAME, CFG_CLUSTER_MACHINE_TYPE
 from .constants import CFG_CLUSTER_NUM_NODES, CFG_CLUSTER_NUM_CPUS
 from .constants import CFG_CLUSTER_PD_SIZE, CFG_CLUSTER_USE_PREEMPTIBLE
-from .constants import CFG_CLUSTER_DRY_RUN, CFG_CLUSTER_DISK_TYPE
+from .constants import CFG_CLUSTER_DRY_RUN, CFG_CLUSTER_DISK_TYPE, CFG_CLUSTER_REUSE
 from .constants import CFG_CLUSTER_PROVISIONED_IOPS, CFG_CLUSTER_BID_PERCENTAGE
 from .constants import CFG_CLUSTER_LABELS, CFG_CLUSTER_EXP_USE_LOCAL_SSD
 from .constants import CFG_CLUSTER_ENABLE_STACKDRIVER
@@ -573,6 +573,7 @@ class ClusterConfig(ConfigParserToDataclassMapper):
     dry_run: bool = False
     num_cores_per_instance: int = -1
     instance_memory: Optional[MemoryStr] = None
+    reuse: bool = False
 
     mapping = {'results': ParamInfo(CFG_BLAST, CFG_BLAST_RESULTS),
                'name': ParamInfo(CFG_CLUSTER, CFG_CLUSTER_NAME),
@@ -592,7 +593,8 @@ class ClusterConfig(ConfigParserToDataclassMapper):
                'enable_stackdriver': ParamInfo(CFG_CLUSTER, CFG_CLUSTER_ENABLE_STACKDRIVER),
                'dry_run': ParamInfo(CFG_CLUSTER, CFG_CLUSTER_DRY_RUN),
                'num_cores_per_instance': None,
-               'instance_memory': None
+               'instance_memory': None,
+               'reuse': ParamInfo(CFG_CLUSTER, CFG_CLUSTER_REUSE)
    }
     
 

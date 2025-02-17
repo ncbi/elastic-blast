@@ -24,7 +24,7 @@ spec:
       activeDeadlineSeconds: ${ELB_BLAST_TIMEOUT}
       initContainers:
       - name: ${K8S_JOB_IMPORT_QUERY_BATCHES}
-        image: google/cloud-sdk:slim
+        image: ${ELB_DOCKER_IMAGE}
         volumeMounts:
           - name: shared-data
             mountPath: /shared
@@ -32,6 +32,7 @@ spec:
         args:
         - mkdir -p /shared/requests;
           mkdir -p /shared/results;
+          azcopy login --identity;
           azcopy cp ${ELB_RESULTS}/query_batches/batch_${JOB_NUM}.fa /shared/requests;
       containers:
       - name: ${K8S_JOB_BLAST}
@@ -40,7 +41,7 @@ spec:
         resources:
           requests:
             memory: "${ELB_MEM_REQUEST}"
-            cpu: ${ELB_NUM_CPUS}
+            cpu: ${ELB_NUM_CPUS_REQ}
           limits:
             memory: "${ELB_MEM_LIMIT}"
             cpu: ${ELB_NUM_CPUS}
@@ -62,6 +63,7 @@ spec:
         command: ["/bin/bash", "-c"]
         args:
         - echo "BASH version ${BASH_VERSION}";
+          azcopy login --identity;
           BLAST_RUNTIME=`mktemp`;
           ERROR_FILE=`mktemp`;
           DATE_NOW=`date -u +${ELB_TIMEFMT}`;
@@ -85,7 +87,7 @@ spec:
               fi;
           fi;
       - name: ${K8S_JOB_RESULTS_EXPORT}
-        image: google/cloud-sdk:slim
+        image: ${ELB_DOCKER_IMAGE}
         volumeMounts:
           - name: shared-data
             mountPath: /shared
@@ -94,8 +96,10 @@ spec:
         - until [ -s /shared/results/BLAST_EXIT_CODE.out ] ; do
             sleep 1;
           done;
+          azcopy login --identity;
           set -ex;
-          ls -1f /shared/results/BLASTDB_LENGTH.out | azcopy cp -I ${ELB_RESULTS}/metadata/;
+          ls -1f /shared/results/BLASTDB_LENGTH.out;
+          azcopy cp /shared/results/BLASTDB_LENGTH.out ${ELB_RESULTS}/metadata/;
           azcopy cp /shared/results/BLAST_RUNTIME-${JOB_NUM}.out ${ELB_RESULTS}/logs/;
           azcopy cp /shared/results/batch_${JOB_NUM}-${ELB_BLAST_PROGRAM}-${ELB_DB}.out.gz ${ELB_RESULTS}/;
           exit `cat /shared/results/BLAST_EXIT_CODE.out`;

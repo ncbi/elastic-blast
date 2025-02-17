@@ -536,13 +536,32 @@ def initialize_local_ssd(cfg: ElasticBlastConfig, query_files: List[str] = [], w
             taxdb_path = gcp_get_blastdb_latest_path(cfg.gcp.get_project_for_gcs_downloads()) + '/taxdb.*'
         elif cfg.cloud_provider.cloud == CSP.AZURE:
             taxdb_path = cfg.azure.get_latest_dir() + '/taxdb.*'
-
+            
+    if query_files:
+        # Case of QuerySplitMode.CLOUD_TWO_STAGE
+        # We have one file we need to pass to job init_pv/import-query-batches
+        # and signal the splitting is required
+        input_query = query_files[0]
+        copy_only = '0'
+    else:
+        # Case of QuerySplitMode.CLIENT
+        # We request copy of already split queries from $ELB_RESULTS/query_batches to
+        # persistent volume
+        # input_query is irrelevant in this case
+        input_query = 'None'
+        copy_only = '1'
+        
     subs = {
+        'INPUT_QUERY' : input_query,
+        'BATCH_LEN' : str(cfg.blast.batch_len),
+        'COPY_ONLY' : copy_only,
         'ELB_DB': db,
         'ELB_DB_PATH': db_path,
         'ELB_TAX_DB_PATH': taxdb_path,
         'ELB_DB_MOL_TYPE': str(ElbSupportedPrograms().get_db_mol_type(program)),
-        'ELB_BLASTDB_SRC': cfg.cluster.db_source.name,
+        'ELB_BLASTDB_SRC': 'NCBI' if cfg.cluster.db_source.name == 'AZURE' else cfg.cluster.db_source.name,
+        'ELB_TAXIDLIST'     : cfg.blast.taxidlist if cfg.blast.taxidlist is not None else '',
+        'ELB_RESULTS': results_bucket,
         'NODE_ORDINAL': '0',
         # 'ELB_DOCKER_IMAGE': ELB_DOCKER_IMAGE_GCP,
         'K8S_JOB_GET_BLASTDB' : K8S_JOB_GET_BLASTDB,
@@ -557,10 +576,12 @@ def initialize_local_ssd(cfg: ElasticBlastConfig, query_files: List[str] = [], w
     
     if cfg.cloud_provider.cloud == CSP.GCP:
         subs['ELB_DOCKER_IMAGE'] = ELB_DOCKER_IMAGE_GCP
+        subs['ELB_IMAGE_QS'] = ELB_QS_DOCKER_IMAGE_GCP
         subs['GCP_PROJECT_OPT'] = prj
         logging.debug(f"Initializing local SSD: {ELB_DOCKER_IMAGE_GCP} ")
     elif cfg.cloud_provider.cloud == CSP.AZURE:
         subs['ELB_DOCKER_IMAGE'] = ELB_DOCKER_IMAGE_AZURE
+        subs['ELB_IMAGE_QS'] = ELB_QS_DOCKER_IMAGE_AZURE
         logging.debug(f"Initializing local SSD: {ELB_DOCKER_IMAGE_AZURE}")
         
     # logging.debug(f"Initializing local SSD: {ELB_DOCKER_IMAGE_GCP}")
@@ -1031,7 +1052,7 @@ def submit_job_submission_job(cfg: ElasticBlastConfig):
     elif cfg.cloud_provider.cloud == CSP.AZURE:
         subs['ELB_DOCKER_IMAGE'] = ELB_CJS_DOCKER_IMAGE_AZURE
         subs['ELB_METADATA_DIR'] = ELB_METADATA_DIR
-        subs['ELB_AZURE_RESOURCEGROUP'] = cfg.azure.resourcegroup
+        subs['ELB_AZURE_RESOURCE_GROUP'] = cfg.azure.resourcegroup
        
         
     logging.debug(f"Submitting job submission job: {ELB_CJS_DOCKER_IMAGE_GCP}")

@@ -97,6 +97,14 @@ spec:
               exit_code=$?;
           fi;
           exit $exit_code;
+      - name: ${K8S_JOB_IMPORT_QUERY_BATCHES}
+        image: ${ELB_IMAGE_QS}
+        workingDir: /blast/queries
+        volumeMounts:
+        - name: blastdb
+          mountPath: /blast/queries
+          readOnly: false
+        command: ["run.sh", "-i", "${INPUT_QUERY}", "-o", "${ELB_RESULTS}", "-b", "${BATCH_LEN}", "-c", "${COPY_ONLY}", "-q", "/blast/queries/"]
       restartPolicy: Never
       nodeSelector:
         ordinal: "${NODE_ORDINAL}"

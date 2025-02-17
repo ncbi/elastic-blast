@@ -86,8 +86,23 @@ elif [[ $output_bucket =~ ^https:// ]]; then
   if [ $copy_only -eq 1 ]; then
     time azcopy cp "$output_bucket/query_batches/*" $local_output_dir --include-pattern "batch_*.fa"
   else
-    echo "Not Implemented"
-    exit 1
+    time fasta_split.py $input -l $batch_len -o $local_output_dir -c $TMP
+    num_batches=`find $local_output_dir -type f -name "batch_*.fa"|wc -l`
+    query_length=`cat $TMP`
+    if [ $num_batches -gt $k8s_job_limit ]; then
+      suggested_batch_len=$(( (query_length + k8s_job_limit - 1) / k8s_job_limit ))
+      echo "Your ElasticBLAST search has failed and its computing resources will be deleted.
+The batch size specified ($batch_len) led to creating $num_batches kubernetes jobs, which exceeds the limit on number of jobs ($k8s_job_limit).
+Please increase the batch-len parameter to at least $suggested_batch_len and repeat the search." >> msg
+      azcopy cp msg $output_bucket/metadata/FAILURE.txt 
+      rm msg
+      exit 0
+    else
+      time azcopy cp $TMP $output_bucket/metadata/query_length.txt
+      if [ $split_to_cloud -eq 1 ]; then
+        azcopy cp "$local_output_dir/batch_*.fa" $output_bucket/query_batches/
+      fi
+    fi
   fi
   find $local_output_dir -type f -name "batch_*.fa" | xargs -n1 basename > batch_list.txt
   time azcopy cp batch_list.txt $output_bucket/metadata/batch_list.txt
