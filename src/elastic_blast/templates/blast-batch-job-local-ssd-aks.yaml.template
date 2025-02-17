@@ -16,7 +16,8 @@ spec:
       volumes:
       - name: blast-dbs
         hostPath:
-          path: "/mnt/disks/ssd0"
+          path: "/workspace"
+          type: DirectoryOrCreate
       - name: shared-data
         emptyDir: {}
       #shareProcessNamespace: true

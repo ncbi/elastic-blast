@@ -39,8 +39,6 @@ RUN wget -O azcopy_v10.tar.gz https://aka.ms/downloadazcopy-v10-linux && \
     ls -al && \
     cp ./azcopy /usr/bin 
 
-RUN azcopy login --identity
-
 WORKDIR /root/
 RUN python3 -m pip install --no-cache-dir --upgrade pip && \
     python3 -m pip install --no-cache-dir -r requirements.txt && \
@@ -49,6 +47,8 @@ RUN python3 -m pip install --no-cache-dir --upgrade pip && \
 COPY splitq_download_db_search /blast/bin/
 RUN sed -i -e "s/\$VERSION/$version/" /blast/bin/splitq_download_db_search
 COPY fasta-split /blast/bin/
+
+WORKDIR /workspace
 
 CMD ["/bin/bash"]
 

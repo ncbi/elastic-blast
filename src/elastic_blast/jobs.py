@@ -34,7 +34,7 @@ from typing import Optional
 
 from .filehelper import open_for_read, open_for_write
 from .subst import substitute_params
-from .constants import ELB_DFLT_BLAST_JOB_TEMPLATE, ELB_LOCAL_SSD_BLAST_JOB_TEMPLATE
+from .constants import CSP, ELB_DFLT_BLAST_JOB_TEMPLATE, ELB_LOCAL_SSD_BLAST_JOB_TEMPLATE, ELB_LOCAL_SSD_BLAST_JOB_AKS_TEMPLATE
 from .elb_config import ElasticBlastConfig
 
 def read_job_template(template_name=ELB_DFLT_BLAST_JOB_TEMPLATE, cfg: Optional[ElasticBlastConfig] = None):
@@ -45,7 +45,7 @@ def read_job_template(template_name=ELB_DFLT_BLAST_JOB_TEMPLATE, cfg: Optional[E
         string with job template text
     """
     if cfg and cfg.cluster.use_local_ssd:
-        template_name = ELB_LOCAL_SSD_BLAST_JOB_TEMPLATE
+        template_name = ELB_LOCAL_SSD_BLAST_JOB_TEMPLATE if cfg.cloud_provider.cloud != CSP.AZURE else ELB_LOCAL_SSD_BLAST_JOB_AKS_TEMPLATE
     resource_prefix = 'resource:'
     resource_prefix_len = len(resource_prefix)
     if template_name[:resource_prefix_len] == resource_prefix:

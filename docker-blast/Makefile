@@ -30,7 +30,7 @@ GCP_IMG?=gcr.io/ncbi-sandbox-blast/${IMG}
 AWS_SERVER?=public.ecr.aws/i6v3i0i9
 AWS_IMG?=${AWS_SERVER}/elasticblast-elb
 AWS_REGION?=us-east-1
-VERSION?=1.3.2
+VERSION?=1.3.2.2
 AZURE_REGISTRY?=elbacr.azurecr.io
 
 ifeq (, $(shell which vmtouch 2>/dev/null))

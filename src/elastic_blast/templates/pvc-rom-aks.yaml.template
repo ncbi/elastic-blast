@@ -7,7 +7,7 @@ spec:
     name: blast-dbs-snapshot
     kind: VolumeSnapshot
     apiGroup: snapshot.storage.k8s.io
-  storageClassName: azure-disk-ssd
+  storageClassName: managed-csi
   accessModes:
     - ReadOnlyMany
   resources:

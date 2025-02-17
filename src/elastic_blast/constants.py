@@ -231,10 +231,10 @@ ELB_UNKNOWN_AZURE_STORAGE_ACCOUNT = 'elb-unknown-azure-storage-account'
 ELB_UNKNOWN_AZURE_STORAGE_ACCOUNT_CONTAINER = 'elb-unknown-azure-storage-account-container'
 ELB_UNKNOWN_AZURE_STORAGE_ACCOUNT_KEY = 'elb-unknown-azure-storage-account-key'
 
-ELB_DOCKER_VERSION = '1.3.2'    # ElasticBLAST 1.3.0 uses BLAST+ 2.16.0
+ELB_DOCKER_VERSION = '1.3.2.2'    # ElasticBLAST 1.3.0 uses BLAST+ 2.16.0
 ELB_QS_DOCKER_VERSION = '0.1.4'
 ELB_JANITOR_DOCKER_VERSION = '0.3.2'
-ELB_JOB_SUBMIT_DOCKER_VERSION = '4.0.3.3'
+ELB_JOB_SUBMIT_DOCKER_VERSION = '4.0.3.2'
 
 ELB_DOCKER_IMAGE_GCP = f'gcr.io/ncbi-sandbox-blast/ncbi/elb:{ELB_DOCKER_VERSION}'
 ELB_DOCKER_IMAGE_AWS = f'public.ecr.aws/ncbi-elasticblast/elasticblast-elb:{ELB_DOCKER_VERSION}'

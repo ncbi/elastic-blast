@@ -1,4 +1,37 @@
 ---
+apiVersion: apps/v1
+kind: DaemonSet
+metadata:
+  name: create-workspace
+  namespace: kube-system
+spec:
+  selector:
+    matchLabels:
+      name: create-workspace
+  template:
+    metadata:
+      labels:
+        name: create-workspace
+    spec:
+      containers:
+      - name: create-dir
+        image: busybox
+        command:
+        - sh
+        - -c
+        - "mkdir -p /workspace && chmod 777 /workspace && sleep infinity"
+        volumeMounts:
+        - name: host-workspace
+          mountPath: /workspace
+      volumes:
+      - name: host-workspace
+        hostPath:
+          path: /workspace
+          type: DirectoryOrCreate
+      nodeSelector:
+        kubernetes.io/os: linux
+
+---
 apiVersion: batch/v1
 kind: Job
 metadata:
@@ -14,7 +47,7 @@ spec:
       volumes:
       - name: blastdb
         hostPath:
-          path: "/mnt/disks/ssd0"
+          path: "/workspace"
       containers:
       - name: ${K8S_JOB_GET_BLASTDB}
         image: ${ELB_DOCKER_IMAGE}
@@ -29,6 +62,7 @@ spec:
         command: ["/bin/bash", "-c"]
         args:
         - echo "BASH version ${BASH_VERSION}";
+          echo "job-init-local-ssd-aks.yaml.template";
           start=`date +%s`;
           azcopy login --identity
           sleep 30;
@@ -38,8 +72,8 @@ spec:
             update_blastdb.pl ${ELB_DB} --decompress --source ${ELB_BLASTDB_SRC} --verbose --verbose --verbose --verbose --verbose --verbose;
             exit_code=$?;
           else
-            echo azcopy cp ${ELB_DB_PATH} .;
-            azcopy cp ${ELB_DB_PATH} .;
+            echo azcopy cp '${ELB_DB_PATH}' .;
+            azcopy cp '${ELB_DB_PATH}' .;
             exit_code=$?;
             [ $exit_code -eq 0 ] || exit $exit_code;
             [ -f ${ELB_DB}.tar.gz ] && tar xzf ${ELB_DB}.tar.gz;
@@ -59,7 +93,7 @@ spec:
           exit_code=$?;
           [ $exit_code -eq 0 ] || exit $exit_code;
           if [ ! -z "${ELB_TAXIDLIST}" ] ; then
-              azcopy cp ${ELB_TAXIDLIST} /blast/blastdb;
+              azcopy cp '${ELB_TAXIDLIST}' /blast/blastdb;
               exit_code=$?;
           fi;
           exit $exit_code;
