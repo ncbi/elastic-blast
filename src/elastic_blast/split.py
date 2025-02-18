@@ -115,6 +115,12 @@ class FASTAReader():
                 else:
                     self.seq_count += len(line) - 1
                 self.seq_buffer.append(line)
+            # check if the file ends with a .fa 
+            # if f.url.split('?')[0].endswith('.fa'):
+            #     self.seq_buffer.append('\n')
+            #     self.process_chunk()
+            #     return self.total_count, self.queries
+            
             if len(self.seq_buffer) and not self.seq_buffer[-1].endswith('\n'):
                 self.seq_buffer.append('\n')
         self.process_new_sequence()

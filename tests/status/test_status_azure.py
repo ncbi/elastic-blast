@@ -40,7 +40,7 @@ def test_status():
     "Using mock kubectl run our actual test"
     args = Namespace(cfg=INI)
     cfg = ElasticBlastConfig(configure(args), task = ElbCommand.STATUS)
-    cfg.cluster.name = cfg.cluster.name + f'-{os.environ["USER"]}' + '-25'
+    cfg.cluster.name = cfg.cluster.name + f'-{os.environ["USER"]}' + '-27'
     elastic_blast =  ElasticBlastAzure(cfg)
     status, counters, _ = elastic_blast.check_status()
     assert status == ElbStatus.FAILURE

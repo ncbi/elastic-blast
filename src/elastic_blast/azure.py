@@ -431,7 +431,8 @@ class ElasticBlastAzure(ElasticBlast):
             # FIXME: EB-210
             'ELB_BLAST_TIMEOUT': str(cfg.timeouts.blast_k8s * 60),
             'ELB_RESULTS': cfg.cluster.results,
-            'ELB_NUM_CPUS_REQ': str(cfg.cluster.num_cpus // 3),
+            'ELB_NUM_CPUS_REQ': str(cfg.cluster.num_cpus // 4),
+            # 'ELB_NUM_CPUS_REQ': str(cfg.cluster.num_cpus),
             'ELB_NUM_CPUS': str(cfg.cluster.num_cpus),
             'ELB_DB_MOL_TYPE': str(ElbSupportedPrograms().get_db_mol_type(blast_program)),
             'ELB_DOCKER_IMAGE': ELB_DOCKER_IMAGE_AZURE,
