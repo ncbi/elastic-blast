@@ -188,6 +188,17 @@ class ElasticBlastAzure(ElasticBlast):
 
         self.cleanup_stack.clear()
         self.cleanup_stack.append(lambda: kubernetes.collect_k8s_logs(self.cfg))
+    
+    def run_command(self, cmd: str) -> str:
+        """ Run a command in the context of the cluster """
+        k8s_ctx = self._get_aks_credentials()
+        context = f'--context={k8s_ctx}'
+        cmd = f'{cmd} {context}'
+        if self.dry_run:
+            logging.info(cmd)
+        else:
+            proc = safe_exec(shlex.split(cmd))
+            return handle_error(proc.stdout)
 
     def check_status(self, extended=False) -> Tuple[ElbStatus, Dict[str, int], Dict[str, str]]:
         """ Check execution status of ElasticBLAST search

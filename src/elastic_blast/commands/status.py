@@ -43,6 +43,8 @@ def create_arg_parser(subparser, common_opts_parser):
                         help='Detailed information about jobs')
     parser.add_argument('--exit-code', default=False, action='store_true',
                         help='Return status through exit code')
+    parser.add_argument('--command', default=False, action='store_true',
+                        help='Run kubectl command')
     parser.set_defaults(func=_status)
 
 FAILURE_MESSAGE = 'Your ElasticBLAST search failed, please help us improve ElasticBLAST by reporting this failure as described in https://blast.ncbi.nlm.nih.gov/doc/elastic-blast/support.html'

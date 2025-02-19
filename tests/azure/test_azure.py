@@ -11,6 +11,7 @@ import os
 from argparse import Namespace
 from unittest.mock import patch, MagicMock
 import pytest  # type: ignore
+from elastic_blast.azure import ElasticBlastAzure
 from elastic_blast import gcp
 from elastic_blast import azure
 from elastic_blast import kubernetes
@@ -26,6 +27,9 @@ from tests.utils import mocked_safe_exec, get_mocked_config
 from tests.utils import GCP_PROJECT, GCP_DISKS, GKE_PVS, GKE_CLUSTERS
 from tests.utils import GKEMock, gke_mock, GCP_REGIONS
 from elastic_blast.util import safe_exec
+
+DATA_DIR = os.path.join(os.path.dirname(__file__), 'data')
+INI = os.path.join(DATA_DIR, 'test-cfg-file.ini')
 
 # Mocked tests
 
@@ -46,6 +50,20 @@ def test_safe_exec():
     cmd.append('{"Environment":"Production","Owner":"TeamA"}')
     
     # safe_exec(cmd)
+    
+def test_run_cmd():
+    cmd = "kubectl get pods -A"
+    
+    args = Namespace(cfg=INI)
+    cfg = ElasticBlastConfig(config.configure(args), task = ElbCommand.STATUS)
+    cfg.cluster.name = cfg.cluster.name + f'-{os.environ["USER"]}' + '-28'
+    elastic_blast =  ElasticBlastAzure(cfg)
+    result = elastic_blast.run_command(cmd)
+    print(result)
+    assert result != None
+    
+    
+    # subprocess.run(cmd)
 
 @patch(target='elastic_blast.elb_config.gcp_get_regions', new=MagicMock(return_value=GCP_REGIONS))
 def test_get_disks(gke_mock):

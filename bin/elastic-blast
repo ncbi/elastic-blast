@@ -153,6 +153,7 @@ def create_arg_parser():
     csp_opts.add_argument("--gcp-project", help="GCP project to run ElasticBLAST")
     csp_opts.add_argument("--gcp-region", help="GCP region to run ElasticBLAST")
     csp_opts.add_argument("--gcp-zone", help="GCP zone to run ElasticBLAST")
+    csp_opts.add_argument("--azure-region", help="Azure region to run ElasticBLAST")
 
     elb_opts = common_opts_parser.add_argument_group('ElasticBLAST configuration options')
     elb_opts.add_argument("--cfg", metavar="FILE",
