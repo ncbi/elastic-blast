@@ -41,15 +41,19 @@ def get_azure_blob_client(account_url: str, tenant_id:str, client_id: str, clien
 
 def get_sas_token(storage_account: str, storage_account_container: str, storage_account_key: str) -> str:
     """ Get SAS token for Azure Blob Storage """
-    return generate_account_sas(
-        account_key=storage_account_key,
-        account_name=storage_account,
-        resource_types=ResourceTypes(container=True, object=True),
-        # container_name=storage_account_container,
-        permission=AccountSasPermissions(read=True, write=True, delete=True, create=True, add=True, list=True),
-        start=datetime.now(timezone.utc) - timedelta(hours=1), # allow 1 hour back
-        expiry=datetime.now(timezone.utc) + timedelta(hours=8)
-    )
+    try:
+        return generate_account_sas(
+            account_key=storage_account_key,
+            account_name=storage_account,
+            resource_types=ResourceTypes(container=True, object=True),
+            # container_name=storage_account_container,
+            permission=AccountSasPermissions(read=True, write=True, delete=True, create=True, add=True, list=True),
+            start=datetime.now(timezone.utc) - timedelta(hours=1), # allow 1 hour back
+            expiry=datetime.now(timezone.utc) + timedelta(hours=8)
+        )
+    except Exception as e:
+        logging.error(f'Error generating SAS token: {e}')
+    return ''
     
 def get_latest_dir(storage_account: str, storage_account_container: str, storage_account_key: str) -> str:
     """ Get the latest directory from Azure Blob Storage """
