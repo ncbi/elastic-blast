@@ -71,6 +71,7 @@ from .base import DBSource, MemoryStr
 from .elb_config import ElasticBlastConfig, sanitize_aws_tag
 from .elasticblast import ElasticBlast
 from . import VERSION
+from .util import handle_error
 
 
 CF_TEMPLATE = os.path.join(os.path.dirname(__file__), 'templates', 'elastic-blast-cf.yaml')
@@ -155,7 +156,7 @@ def check_auxiliary_versions():
     except:
         logging.debug('Could not check awscli version')
     else:
-        logging.debug(f'{":".join(p.stdout.decode().split())}')
+        logging.debug(f'{":".join(handle_error(p.stdout).split())}')
 
 
 class ElasticBlastAws(ElasticBlast):
