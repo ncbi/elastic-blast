@@ -236,10 +236,11 @@ class ElasticBlastAzure(ElasticBlast):
 
         # TODO: need to implement AKS status
         logging.debug(f'AKS status: {aks_status}')
-        if aks_status in [GKE_CLUSTER_STATUS_RECONCILING, GKE_CLUSTER_STATUS_PROVISIONING]:
+        
+        if aks_status in [AKS_PROVISIONING_STATE.UPDATING, AKS_PROVISIONING_STATE.CREATING, AKS_PROVISIONING_STATE.STARTING]:
             return ElbStatus.SUBMITTING, {}, {}
 
-        if aks_status == AKS_CLUSTER_STATUS_STOPPED:
+        if aks_status != AKS_PROVISIONING_STATE.SUCCEEDED:
             # TODO: This behavior is consistent with current tests, consider returning a value
             # as follows, and changing test in tests/app/test_elasticblast.py::test_cluster_error
             # return ElbStatus.DELETING, {}, ''
