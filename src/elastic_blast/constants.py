@@ -382,6 +382,25 @@ AKS_CLUSTER_STATUS_SUCCEEDED = 'Succeeded'
 AKS_CLUSTER_STATUS_FAILED = 'Failed'
 AKS_CLUSTER_STATUS_DELETING = 'Deleting'
 AKS_CLUSTER_STATUS_RUNNING = 'Running'
+AKS_CLUSTER_STATUS_STOPPED = 'Stopped'
+
+class AKS_PROVISIONING_STATE(Enum):
+    """ Defines the provisioning state of an Azure Kubernetes Service """
+    UNSPECIFIED = 'Unspecified'
+    CREATING = 'Creating'
+    UPDATING = 'Updating'
+    SCALING = 'Scaling'
+    FAILED = 'Failed'
+    SUCCEEDED = 'Succeeded'
+    DELETING = 'Deleting'
+    UPGRADING = 'Upgrading'
+    STOPPING = 'Stopping'
+    STARTING = 'Starting'
+    CANCELED = 'Canceled'
+    CANCELING = 'Canceling'
+    def __str__(self):
+        """ Convert value to a string """
+        return self.value
 
 # ACR
 AKS_ACR_NAME = 'elbacr'

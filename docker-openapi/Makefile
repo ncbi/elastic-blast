@@ -2,7 +2,7 @@
 
 SHELL=/bin/bash
 IMG?=elb-openapi
-VERSION?=0.3
+VERSION?=0.5
 AZURE_REGISTRY?=elbacr.azurecr.io
 
 ifeq (, $(shell which vmtouch 2>/dev/null))

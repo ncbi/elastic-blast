@@ -44,10 +44,12 @@ from .constants import ElbExecutionMode, ElbStatus
 from .constants import GKE_CLUSTER_STATUS_PROVISIONING, GKE_CLUSTER_STATUS_RECONCILING
 from .constants import GKE_CLUSTER_STATUS_RUNNING, GKE_CLUSTER_STATUS_RUNNING_WITH_ERROR
 from .constants import GKE_CLUSTER_STATUS_STOPPING, GKE_CLUSTER_STATUS_ERROR
+from .constants import AKS_PROVISIONING_STATE
 
 from .constants import AKS_CLUSTER_STATUS_CREATING, AKS_CLUSTER_STATUS_UPDATING
 from .constants import AKS_CLUSTER_STATUS_SUCCEEDED, AKS_CLUSTER_STATUS_FAILED
 from .constants import AKS_CLUSTER_STATUS_DELETING, AKS_CLUSTER_STATUS_RUNNING
+from .constants import AKS_CLUSTER_STATUS_STOPPED
 from .constants import AKS_ACR_NAME, AKS_ACR_RESOURCE_GROUP
 from .constants import STATUS_MESSAGE_ERROR
 
@@ -228,7 +230,7 @@ class ElasticBlastAzure(ElasticBlast):
         if status != ElbStatus.UNKNOWN:
             return status, self.cached_counts, {STATUS_MESSAGE_ERROR: self.cached_failure_message} if self.cached_failure_message else {}
 
-        aks_status = check_cluster(self.cfg)
+        aks_status : str = check_cluster(self.cfg)
         if not aks_status:
             return ElbStatus.UNKNOWN, {}, {STATUS_MESSAGE_ERROR: f'Cluster "{self.cfg.cluster.name}" was not found'}
 
@@ -237,7 +239,7 @@ class ElasticBlastAzure(ElasticBlast):
         if aks_status in [GKE_CLUSTER_STATUS_RECONCILING, GKE_CLUSTER_STATUS_PROVISIONING]:
             return ElbStatus.SUBMITTING, {}, {}
 
-        if aks_status == GKE_CLUSTER_STATUS_STOPPING:
+        if aks_status == AKS_CLUSTER_STATUS_STOPPED:
             # TODO: This behavior is consistent with current tests, consider returning a value
             # as follows, and changing test in tests/app/test_elasticblast.py::test_cluster_error
             # return ElbStatus.DELETING, {}, ''
@@ -681,7 +683,7 @@ def delete_cluster_with_cleanup(cfg: ElasticBlastConfig) -> None:
 
     # determine the course of action based on cluster status
     while True:
-        status = check_cluster(cfg)
+        status : str = check_cluster(cfg)
         if not status:
             msg = f'Cluster {cfg.cluster.name} was not found'
             if cfg.cluster.dry_run:
@@ -701,20 +703,21 @@ def delete_cluster_with_cleanup(cfg: ElasticBlastConfig) -> None:
                 
         logging.debug(f'Cluster status "{status}"')
 
-        if status == GKE_CLUSTER_STATUS_RUNNING or status == GKE_CLUSTER_STATUS_RUNNING_WITH_ERROR:
+        if status == AKS_PROVISIONING_STATE.SUCCEEDED:
             break
         # if error, there is something wrong with the cluster, kubernetes will
         # likely not work
-        if status == GKE_CLUSTER_STATUS_ERROR:
+        if status == AKS_PROVISIONING_STATE.FAILED or status == AKS_PROVISIONING_STATE.STOPPING or AKS_PROVISIONING_STATE.DELETING:
             try_kubernetes = False
             break
+        
         # if cluster is provisioning or undergoing software updates, wait
         # until it is active,
-        if status == GKE_CLUSTER_STATUS_PROVISIONING or status == GKE_CLUSTER_STATUS_RECONCILING:
+        if status ==  AKS_PROVISIONING_STATE.STARTING or status == AKS_PROVISIONING_STATE.UPDATING:
             time.sleep(10)
             continue
         # if cluster is already being deleted, nothing to do, exit with an error
-        if status == GKE_CLUSTER_STATUS_STOPPING:
+        if status == AKS_PROVISIONING_STATE.STOPPING:
             raise UserReportError(returncode=CLUSTER_ERROR,
                                   message=f"cluster '{cfg.cluster.name}' is already being deleted")
 
@@ -1006,7 +1009,7 @@ def set_role_assignment(cfg: ElasticBlastConfig):
         safe_exec(cmd)
 
 
-def check_cluster(cfg: ElasticBlastConfig):
+def check_cluster(cfg: ElasticBlastConfig) -> str:
     """ Check if cluster specified by configuration is running.
     Returns cluster status in AKS - Creating, Succeeded, Updating, Deleting, Failed, Canceled, Provisioning, Stopped, Stopping, Resuming -
     if there is such cluster, empty string otherwise.

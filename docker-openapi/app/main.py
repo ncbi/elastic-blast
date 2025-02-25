@@ -45,7 +45,7 @@ async def get_result_file(filename: str):
         cmd = f'azcopy cp https://stgelb.blob.core.windows.net/results/* . --include-pattern=*{filename}*'
         safe_exec(cmd)
         
-        cmd = f'zip {filename}.zip *{filename}*'
+        cmd = f'zip {filename}.zip \*{filename}\*'
         safe_exec(cmd)
     except Exception as e:
         return JSONResponse(content={"message": f"Error: {e}"}, status_code=500)
@@ -85,8 +85,8 @@ class Blast(BaseModel):
 @app.post('/submit')
 async def submit(Blast: Blast):
     try:
-        # cmd = 'azcopy login --identity'
-        # safe_exec(cmd)
+        cmd = 'azcopy login --identity'
+        safe_exec(cmd)
         
         # elg-cfg.ini 파일을 읽어서 Blast 에 설정된 값으로 replace 후 cfg.ini 파일로 저장
         # config = configparser.ConfigParser()
@@ -104,6 +104,7 @@ async def submit(Blast: Blast):
         # cmd = f'elastic-blast submit --cfg elastic-blast.ini'
         cmd = f'elastic-blast submit --cfg elb-cfg.ini'
         process = subprocess.Popen(cmd.split(' '), shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
+        process.communicate()
         
         return JSONResponse(content={"message": "submit job started"})
     except Exception as e:
@@ -112,8 +113,8 @@ async def submit(Blast: Blast):
     
 
 
-if __name__ == '__main__':
+# if __name__ == '__main__':
 
-    uvicorn.run(f"{Path(__file__).stem}:app", host="127.0.0.1", port=8000, reload=True)
+#     uvicorn.run(f"{Path(__file__).stem}:app", host="127.0.0.1", port=8000, reload=True)
 
     
