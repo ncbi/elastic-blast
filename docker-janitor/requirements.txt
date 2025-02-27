@@ -1,1 +1,1 @@
-elastic-blast
+git+https://github.com/dotnetpower/elastic-blast-azure.git

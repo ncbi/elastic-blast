@@ -59,7 +59,7 @@ from .constants import ELB_BLASTDB_MEMORY_MARGIN
 from .constants import CFG_CLOUD_PROVIDER
 from .constants import CFG_CP_GCP_PROJECT, CFG_CP_GCP_REGION, CFG_CP_GCP_ZONE
 from .constants import CFG_CP_GCP_NETWORK, CFG_CP_GCP_SUBNETWORK
-from .constants import CFG_CP_AZURE_TENANT_ID, CFG_CP_AZURE_CLIENT_ID, CFG_CP_AZURE_CLIENT_SECRET
+from .constants import CFG_CP_AZURE_ACR_RESOURCE_GROUP, CFG_CP_AZURE_ACR_NAME
 from .constants import CFG_CP_AZURE_RESOURCE_GROUP, CFG_CP_AZURE_REGION
 from .constants import CFG_CP_AZURE_STORAGE_ACCOUNT, CFG_CP_AZURE_STORAGE_ACCOUNT_CONTAINER, CFG_CP_AZURE_STORAGE_ACCOUNT_KEY
 from .constants import CFG_CP_AZURE_VNET, CFG_CP_AZURE_SUBNET
@@ -99,11 +99,14 @@ from .constants import AWS_ROLE_PREFIX, CFG_CP_AWS_AUTO_SHUTDOWN_ROLE
 from .constants import BLASTDB_ERROR, ELB_UNKNOWN, ELB_JANITOR_SCHEDULE
 from .constants import ELB_DFLT_GCP_REGION, ELB_DFLT_GCP_ZONE
 from .constants import ELB_DFLT_AWS_REGION, ELB_UNKNOWN_GCP_PROJECT
+from .constants import ELB_UNKNOWN_AZURE_ACR_RESOURCEGROUP, ELB_UNKNOWN_AZURE_ACR_NAME
 from .constants import ELB_DFLT_AZURE_REGION, ELB_UNKNOWN_AZURE_RESOURCEGROUP, ELB_UNKNOWN_AZURE_STORAGE_ACCOUNT
 from .constants import ELB_UNKNOWN_AZURE_STORAGE_ACCOUNT_CONTAINER, ELB_UNKNOWN_AZURE_STORAGE_ACCOUNT_KEY
 from .constants import ELB_DFLT_GCP_K8S_VERSION, ELB_DFLT_AZURE_K8S_VERSION
 from .constants import ELB_DFLT_MIN_QUERY_FILESIZE_TO_SPLIT_ON_CLIENT_COMPRESSED
 from .constants import ELB_DFLT_MIN_QUERY_FILESIZE_TO_SPLIT_ON_CLIENT_UNCOMPRESSED
+from .constants import ELB_DFLT_AKS_ACR_NAME, ELB_DFLT_AKS_ACR_RESOURCE_GROUP
+from .constants import ELB_DOCKER_IMAGE_AZURE, ELB_QS_DOCKER_IMAGE_AZURE, ELB_JANITOR_DOCKER_IMAGE_AZURE, ELB_CJS_DOCKER_IMAGE_AZURE
 from .util import validate_gcp_string, check_aws_region_for_invalid_characters
 from .util import validate_gke_cluster_name, ElbSupportedPrograms
 from .util import get_query_batch_size, get_gcp_project
@@ -282,10 +285,9 @@ class CloudProviderBaseConfig:
 @dataclass
 class AZUREConfig(CloudProviderBaseConfig, ConfigParserToDataclassMapper):
     """AZURE config for ElasticBLAST"""
-    tenant_id: Optional[str] = None
-    client_id: Optional[str] = None # service principal
-    client_secret: Optional[str] = None
     region: AzureRegion = AzureRegion(ELB_DFLT_AZURE_REGION)
+    acr_resourcegroup: str = ELB_UNKNOWN_AZURE_ACR_RESOURCEGROUP
+    acr_name: str = ELB_UNKNOWN_AZURE_ACR_NAME
     resourcegroup: str = ELB_UNKNOWN_AZURE_RESOURCEGROUP    
     storage_account: str = ELB_UNKNOWN_AZURE_STORAGE_ACCOUNT
     storage_account_container: str = ELB_UNKNOWN_AZURE_STORAGE_ACCOUNT_CONTAINER
@@ -294,31 +296,35 @@ class AZUREConfig(CloudProviderBaseConfig, ConfigParserToDataclassMapper):
     subnet: Optional[str] = None
     user: Optional[str] = None
     aks_version: Optional[str] = ELB_DFLT_AZURE_K8S_VERSION
-    # if True, Azure project will be passed to azcopy calls that download files
-    # from Azure Blob Storage and users will be charged for the downloads.
-    requester_pays: bool = False
+    elb_docker_image: str = ELB_DOCKER_IMAGE_AZURE
+    cjs_docker_image: str = ELB_CJS_DOCKER_IMAGE_AZURE
+    janitor_docker_image: str = ELB_JANITOR_DOCKER_IMAGE_AZURE
+    qs_docker_image: str = ELB_QS_DOCKER_IMAGE_AZURE
 
     # mapping to class attributes to ConfigParser parameters so that objects
     # can be initialized from ConfigParser objects
-    mapping = {'tenant_id': ParamInfo(CFG_CLOUD_PROVIDER, CFG_CP_AZURE_TENANT_ID),
-               'client_id': ParamInfo(CFG_CLOUD_PROVIDER, CFG_CP_AZURE_CLIENT_ID),
-               'client_secret': ParamInfo(CFG_CLOUD_PROVIDER, CFG_CP_AZURE_CLIENT_SECRET),
+    mapping = {'region': ParamInfo(CFG_CLOUD_PROVIDER, CFG_CP_AZURE_REGION),
+               'acr_resourcegroup': ParamInfo(CFG_CLOUD_PROVIDER, CFG_CP_AZURE_ACR_RESOURCE_GROUP),
+               'acr_name': ParamInfo(CFG_CLOUD_PROVIDER, CFG_CP_AZURE_ACR_NAME),
                'resourcegroup': ParamInfo(CFG_CLOUD_PROVIDER, CFG_CP_AZURE_RESOURCE_GROUP),
-               'region': ParamInfo(CFG_CLOUD_PROVIDER, CFG_CP_AZURE_REGION),
                'storage_account': ParamInfo(CFG_CLOUD_PROVIDER, CFG_CP_AZURE_STORAGE_ACCOUNT),
                'storage_account_container': ParamInfo(CFG_CLOUD_PROVIDER, CFG_CP_AZURE_STORAGE_ACCOUNT_CONTAINER),
                'storage_account_key': ParamInfo(CFG_CLOUD_PROVIDER, CFG_CP_AZURE_STORAGE_ACCOUNT_KEY),
-               'cloud': None,
-               'user': None,
                'network': ParamInfo(CFG_CLOUD_PROVIDER, CFG_CP_AZURE_VNET),
                'subnet': ParamInfo(CFG_CLOUD_PROVIDER, CFG_CP_AZURE_SUBNET),
                'aks_version': ParamInfo(CFG_CLOUD_PROVIDER, CFG_CP_AZURE_K8S_VERSION),
-               'requester_pays': None}
+               'elb_docker_image': None,
+               'cjs_docker_image': None,
+               'janitor_docker_image': None,
+               'qs_docker_image': None,
+               'cloud': None,
+               'user': None
+               }
  
     def __post_init__(self):
         self.cloud = CSP.AZURE
         self.user = ELB_UNKNOWN
-
+        
         # FIXME: need to pass dry-run to this method
         p = safe_exec('az account show --query user.name --output tsv')
         if p.stdout:
@@ -808,6 +814,12 @@ class ElasticBlastConfig:
 
         if self.cloud_provider.cloud == CSP.GCP:
             enable_gcp_api(self.gcp.project, self.cluster.dry_run)
+            
+        if self.cloud_provider.cloud == CSP.AZURE:
+            self.azure.elb_docker_image = self.azure.elb_docker_image.replace(ELB_DFLT_AKS_ACR_NAME, self.azure.acr_name)
+            self.azure.cjs_docker_image = self.azure.cjs_docker_image.replace(ELB_DFLT_AKS_ACR_NAME, self.azure.acr_name)
+            self.azure.janitor_docker_image = self.azure.janitor_docker_image.replace(ELB_DFLT_AKS_ACR_NAME, self.azure.acr_name)
+            self.azure.qs_docker_image = self.azure.qs_docker_image.replace(ELB_DFLT_AKS_ACR_NAME, self.azure.acr_name)
 
         # TODO: comment out for now
         # try:

@@ -1,5 +1,7 @@
 # Warning! This repository is still a work in progress, DO NOT USE IT.
 
+# [Read Me](./docs/azure-prereq.md)
+
 ElasticBLAST
 ============
 

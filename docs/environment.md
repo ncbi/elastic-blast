@@ -60,24 +60,18 @@ python -m pip install --user -U virtualenv
 
 # AWS cli install
 
-download AWS CLI Installer
 ```bash
+#download AWS CLI Installer
 curl "https://awscli.amazonaws.com/awscli-exe-linux-x86_64.zip" -o "awscliv2.zip"
-```
 
-install unzip package & unzip
-```bash
+# install unzip package & unzip
 sudo apt install unzip
 unzip awscliv2.zip
-```
 
-run Installer
-```bash
+# run Installer
 sudo ./aws/install
-```
 
-verify the installation
-```bash
+# verify the installation
 aws --version
 ```
 
@@ -91,7 +85,7 @@ sudo snap install google-cloud-cli --classic
 curl -sL https://aka.ms/InstallAzureCLIDeb | sudo bash
 ```
 
-install kubectl using snap
+option) install kubectl using snap
 ```bash
 sudo snap install kubectl --classic
 ```
@@ -108,8 +102,10 @@ pip uninstall elastic-blast -y; python setup.py sdist bdist_wheel; pip install d
 ```
 
 
-# azcopy - https://gist.github.com/aessing/76f1200c9f5b2b9671937b3b0ed5fd6f
+# install azcopy 
+ref: https://gist.github.com/aessing/76f1200c9f5b2b9671937b3b0ed5fd6f
 
+```bash
 # Download and extract
 wget https://aka.ms/downloadazcopy-v10-linux
 tar -xvf downloadazcopy-v10-linux
@@ -123,7 +119,10 @@ sudo chmod 755 /usr/bin/azcopy
 rm -f downloadazcopy-v10-linux
 rm -rf ./azcopy_linux_amd64_*/
 
+```
+
 # install docker
+If you are using Docker Desktop and have installed Ubuntu via WSL, do not install Docker separately; use the Docker Desktop environment instead.
 ```bash
 sudo apt update
 sudo apt install -y apt-transport-https ca-certificates curl software-properties-common

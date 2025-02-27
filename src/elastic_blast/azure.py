@@ -43,7 +43,7 @@ from .constants import ELB_DOCKER_IMAGE_AZURE, ELB_QUERY_LENGTH, INPUT_ERROR
 from .constants import ElbExecutionMode, ElbStatus
 from .constants import AKS_PROVISIONING_STATE
 
-from .constants import AKS_ACR_NAME, AKS_ACR_RESOURCE_GROUP
+from .constants import ELB_DFLT_AKS_ACR_NAME, ELB_DFLT_AKS_ACR_RESOURCE_GROUP
 from .constants import STATUS_MESSAGE_ERROR
 
 from .constants import ELB_DFLT_BLAST_JOB_AKS_TEMPLATE, ELB_LOCAL_SSD_BLAST_JOB_AKS_TEMPLATE
@@ -942,9 +942,9 @@ def set_role_assignment(cfg: ElasticBlastConfig):
     # get acr id
     cmd: List[str] = 'az acr show'.split()
     cmd.append('--name')
-    cmd.append(AKS_ACR_NAME)
+    cmd.append(ELB_DFLT_AKS_ACR_NAME)
     cmd.append('--resource-group')
-    cmd.append(AKS_ACR_RESOURCE_GROUP)
+    cmd.append(ELB_DFLT_AKS_ACR_RESOURCE_GROUP)
     cmd.append('--query')
     cmd.append('id')
     cmd.append('-o')

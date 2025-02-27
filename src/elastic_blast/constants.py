@@ -226,6 +226,8 @@ ELB_DFLT_GCP_ZONE = 'us-east4-b'
 ELB_DFLT_AWS_REGION = 'us-east-1'
 ELB_DFLT_AZURE_REGION = 'eastus'
 ELB_UNKNOWN_GCP_PROJECT = 'elb-unknown-gcp-project'
+ELB_UNKNOWN_AZURE_ACR_RESOURCEGROUP = 'elb-unknown-azure-acr-resourcegroup'
+ELB_UNKNOWN_AZURE_ACR_NAME = 'elb-unknown-azure-acr-name'
 ELB_UNKNOWN_AZURE_RESOURCEGROUP = 'elb-unknown-azure-resourcegroup'
 ELB_UNKNOWN_AZURE_STORAGE_ACCOUNT = 'elb-unknown-azure-storage-account'
 ELB_UNKNOWN_AZURE_STORAGE_ACCOUNT_CONTAINER = 'elb-unknown-azure-storage-account-container'
@@ -236,20 +238,24 @@ ELB_QS_DOCKER_VERSION = '0.1.4.1'
 ELB_JANITOR_DOCKER_VERSION = '0.3.2'
 ELB_JOB_SUBMIT_DOCKER_VERSION = '4.0.3.4'
 
+# ACR
+ELB_DFLT_AKS_ACR_NAME = 'elbacr'
+ELB_DFLT_AKS_ACR_RESOURCE_GROUP = 'rg-elbacr'
+
 ELB_DOCKER_IMAGE_GCP = f'gcr.io/ncbi-sandbox-blast/ncbi/elb:{ELB_DOCKER_VERSION}'
 ELB_DOCKER_IMAGE_AWS = f'public.ecr.aws/ncbi-elasticblast/elasticblast-elb:{ELB_DOCKER_VERSION}'
-ELB_DOCKER_IMAGE_AZURE = f'elbacr.azurecr.io/ncbi/elb:{ELB_DOCKER_VERSION}' # TODO: it will be replaced using ACR
+ELB_DOCKER_IMAGE_AZURE = f'{ELB_DFLT_AKS_ACR_NAME}.azurecr.io/ncbi/elb:{ELB_DOCKER_VERSION}' # TODO: it will be replaced using ACR
 
 ELB_QS_DOCKER_IMAGE_GCP = f'gcr.io/ncbi-sandbox-blast/ncbi/elasticblast-query-split:{ELB_QS_DOCKER_VERSION}'
 ELB_QS_DOCKER_IMAGE_AWS = f'public.ecr.aws/ncbi-elasticblast/elasticblast-query-split:{ELB_QS_DOCKER_VERSION}'
-ELB_QS_DOCKER_IMAGE_AZURE = f'elbacr.azurecr.io/ncbi/elasticblast-query-split:{ELB_QS_DOCKER_VERSION}' # TODO: it will be replaced using ACR
+ELB_QS_DOCKER_IMAGE_AZURE = f'{ELB_DFLT_AKS_ACR_NAME}.azurecr.io/ncbi/elasticblast-query-split:{ELB_QS_DOCKER_VERSION}' # TODO: it will be replaced using ACR
 
 ELB_JANITOR_DOCKER_IMAGE_GCP = f'gcr.io/ncbi-sandbox-blast/ncbi/elasticblast-janitor:{ELB_JANITOR_DOCKER_VERSION}'
-ELB_JANITOR_DOCKER_IMAGE_AZURE = '' # TODO: it will be replaced using ACR
+ELB_JANITOR_DOCKER_IMAGE_AZURE = f'{ELB_DFLT_AKS_ACR_NAME}.azurecr.io/ncbi/elasticblast-janitor:{ELB_JANITOR_DOCKER_VERSION}'
 
 ELB_CJS_DOCKER_IMAGE_GCP = f'gcr.io/ncbi-sandbox-blast/ncbi/elasticblast-job-submit:{ELB_JOB_SUBMIT_DOCKER_VERSION}'
 ELB_CJS_DOCKER_IMAGE_AWS = f'public.ecr.aws/ncbi-elasticblast/elasticblast-job-submit:{ELB_JOB_SUBMIT_DOCKER_VERSION}'
-ELB_CJS_DOCKER_IMAGE_AZURE = f'elbacr.azurecr.io/ncbi/elasticblast-job-submit:{ELB_JOB_SUBMIT_DOCKER_VERSION}' # TODO: it will be replaced using ACR
+ELB_CJS_DOCKER_IMAGE_AZURE = f'{ELB_DFLT_AKS_ACR_NAME}.azurecr.io/ncbi/elasticblast-job-submit:{ELB_JOB_SUBMIT_DOCKER_VERSION}' # TODO: it will be replaced using ACR
 
 ELB_DFLT_AWS_DISK_TYPE = 'gp3'
 ELB_DFLT_AWS_PD_SIZE = '1000G'
@@ -293,9 +299,11 @@ CFG_CP_AWS_JANITOR_EXECUTION_ROLE = 'aws-janitor-execution-role'
 CFG_CP_AWS_JANITOR_COPY_ZIPS_ROLE = 'aws-janitor-copy-zips-role'
 
 # Azure congiguration
-CFG_CP_AZURE_TENANT_ID = 'azure-tenant-id'
-CFG_CP_AZURE_CLIENT_ID = 'azure-client-id'
-CFG_CP_AZURE_CLIENT_SECRET = 'azure-client-secret'
+# CFG_CP_AZURE_TENANT_ID = 'azure-tenant-id'
+# CFG_CP_AZURE_CLIENT_ID = 'azure-client-id'
+# CFG_CP_AZURE_CLIENT_SECRET = 'azure-client-secret'
+CFG_CP_AZURE_ACR_RESOURCE_GROUP = 'azure-acr-resource-group'
+CFG_CP_AZURE_ACR_NAME = 'azure-acr-name'
 CFG_CP_AZURE_RESOURCE_GROUP = 'azure-resource-group'
 CFG_CP_AZURE_REGION = 'azure-region'
 CFG_CP_AZURE_STORAGE_ACCOUNT = 'azure-storage-account'
@@ -402,9 +410,6 @@ class AKS_PROVISIONING_STATE(Enum):
         """ Convert value to a string """
         return self.value
 
-# ACR
-AKS_ACR_NAME = 'elbacr'
-AKS_ACR_RESOURCE_GROUP = 'rg-elbacr'
 
 # File names of the sentinel files which indicate status reported by janitor
 ELB_STATUS_SUCCESS = "SUCCESS.txt"

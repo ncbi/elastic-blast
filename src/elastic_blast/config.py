@@ -38,7 +38,7 @@ from .util import check_positive_int, get_query_batch_size
 from .util import ElbSupportedPrograms
 from .util import validate_gcp_string, validate_gke_cluster_name
 from .constants import APP_STATE, CFG_BLAST, CFG_BLAST_BATCH_LEN, CFG_BLAST_DB, CFG_BLAST_DB_MEM_MARGIN, CFG_BLAST_DB_SRC, CFG_BLAST_MEM_LIMIT, CFG_BLAST_MEM_REQUEST, CFG_BLAST_OPTIONS, CFG_BLAST_PROGRAM, CFG_BLAST_QUERY, CFG_BLAST_RESULTS, CFG_CLOUD_PROVIDER, CFG_CLUSTER, CFG_CLUSTER_BID_PERCENTAGE, CFG_CLUSTER_DISK_TYPE, CFG_CLUSTER_DRY_RUN, CFG_CLUSTER_EXP_USE_LOCAL_SSD, CFG_CLUSTER_MACHINE_TYPE, CFG_CLUSTER_NAME, CFG_CLUSTER_NUM_CPUS, CFG_CLUSTER_NUM_NODES, CFG_CLUSTER_PD_SIZE, CFG_CLUSTER_PROVISIONED_IOPS, CFG_CLUSTER_USE_PREEMPTIBLE, CFG_CP_AWS_REGION, CFG_CP_GCP_NETWORK, CFG_CP_GCP_PROJECT, CFG_CP_GCP_REGION, CFG_CP_GCP_SUBNETWORK, CFG_CP_GCP_ZONE, CFG_CP_NAME, CFG_TIMEOUTS, CFG_TIMEOUT_BLAST_K8S_JOB, CFG_TIMEOUT_INIT_PV, CFG_CLUSTER_REUSE
-from .constants import CFG_CP_AZURE_TENANT_ID, CFG_CP_AZURE_CLIENT_ID, CFG_CP_AZURE_CLIENT_SECRET
+from .constants import CFG_CP_AZURE_ACR_RESOURCE_GROUP, CFG_CP_AZURE_ACR_NAME 
 from .constants import CFG_CP_AZURE_RESOURCE_GROUP, CFG_CP_AZURE_REGION
 from .constants import CFG_CP_AZURE_STORAGE_ACCOUNT, CFG_CP_AZURE_STORAGE_ACCOUNT_CONTAINER, CFG_CP_AZURE_STORAGE_ACCOUNT_KEY
 from .constants import ELB_DFLT_OUTFMT, ELB_BLASTDB_MEMORY_MARGIN, ELB_DFLT_USE_PREEMPTIBLE
@@ -92,16 +92,14 @@ def _load_config_from_environment(cfg: configparser.ConfigParser) -> None:
         cfg[CFG_CLUSTER][CFG_CLUSTER_BID_PERCENTAGE] = os.environ['ELB_BID_PERCENTAGE']
         
     # AZURE specific environment variables
-    if 'ELB_AZURE_RESOURCE_GROUP' in os.environ:
+    if 'AZURE_ACR_RESOURCE_GROUP' in os.environ:
+        cfg[CFG_CLOUD_PROVIDER][CFG_CP_AZURE_ACR_RESOURCE_GROUP] = os.environ['AZURE_ACR_RESOURCE_GROUP']
+    if 'AZURE_ACR_NAME' in os.environ:
+        cfg[CFG_CLOUD_PROVIDER][CFG_CP_AZURE_RESOURCE_GROUP] = os.environ['AZURE_ACR_NAME']
+    if 'AZURE_RESOURCE_GROUP' in os.environ:
         cfg[CFG_CLOUD_PROVIDER][CFG_CP_AZURE_RESOURCE_GROUP] = os.environ['AZURE_RESOURCE_GROUP']
-    if 'ELB_AZURE_REGION' in os.environ:
+    if 'AZURE_REGION' in os.environ:
         cfg[CFG_CLOUD_PROVIDER][CFG_CP_AZURE_REGION] = os.environ['AZURE_REGION']
-    if 'AZURE_TENANT_ID' in os.environ:
-        cfg[CFG_CLOUD_PROVIDER][CFG_CP_AZURE_TENANT_ID] = os.environ['AZURE_TENANT_ID']
-    if 'AZURE_CLIENT_ID' in os.environ:
-        cfg[CFG_CLOUD_PROVIDER][CFG_CP_AZURE_CLIENT_ID] = os.environ['AZURE_CLIENT_ID']
-    if 'AZURE_CLIENT_SECRET' in os.environ:
-        cfg[CFG_CLOUD_PROVIDER][CFG_CP_AZURE_CLIENT_SECRET] = os.environ['AZURE_CLIENT_SECRET']
     if 'AZURE_STORAGE_ACCOUNT' in os.environ:
         cfg[CFG_CLOUD_PROVIDER][CFG_CP_AZURE_STORAGE_ACCOUNT] = os.environ['AZURE_STORAGE_ACCOUNT']
     if 'AZURE_STORAGE_ACCOUNT_CONTAINER' in os.environ:
@@ -167,6 +165,10 @@ def configure(args: argparse.Namespace) -> configparser.ConfigParser:
         retval[CFG_CLOUD_PROVIDER][CFG_CP_GCP_REGION] = args.gcp_region
     if hasattr(args, 'gcp_zone') and args.gcp_zone:
         retval[CFG_CLOUD_PROVIDER][CFG_CP_GCP_ZONE] = args.gcp_zone
+    if hasattr(args, 'azure_acr_resource_group') and args.azure_acr_resource_group:
+        retval[CFG_CLOUD_PROVIDER][CFG_CP_AZURE_ACR_RESOURCE_GROUP] = args.azure_acr_resource_group
+    if hasattr(args, 'azure_acr_name') and args.azure_acr_name:
+        retval[CFG_CLOUD_PROVIDER][CFG_CP_AZURE_ACR_NAME] = args.azure_acr_name
     if hasattr(args, 'azure_resource_group') and args.azure_resource_group:
         retval[CFG_CLOUD_PROVIDER][CFG_CP_AZURE_RESOURCE_GROUP] = args.azure_resource_group
     
