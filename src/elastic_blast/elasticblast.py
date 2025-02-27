@@ -100,6 +100,7 @@ class ElasticBlast(metaclass=ABCMeta):
         """ Upload workfiles - query batches, taxidslist etc to their
             appropriate places in the results bucket """
         self.cleanup_stack.append(lambda: logging.debug('Before copying split jobs to bucket'))
+        print(f'\033[33m Upload workfiles\033[0m')
         if not self.cloud_job_submission:
             self.cleanup_stack.append(cleanup_temp_bucket_dirs)
             

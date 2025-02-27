@@ -81,6 +81,7 @@ def get_query_split_mode(cfg: ElasticBlastConfig, query_files):
                 cfg.blast.min_qsize_to_split_on_client_compressed if is_compressed else \
                 cfg.blast.min_qsize_to_split_on_client_uncompressed
         logging.debug(f"get_query_mode: fsize={fsize} min_fsize_to_split_on_client={min_fsize_to_split_on_client}")
+        print(f'\033[33m get_query_mode: fsize={fsize} min_fsize_to_split_on_client={min_fsize_to_split_on_client}\033[0m')
         if fsize < min_fsize_to_split_on_client:
             return QuerySplitMode.CLIENT
         else:
@@ -111,6 +112,7 @@ def write_config_to_metadata(cfg: ElasticBlastConfig):
     # FIXME: refactor this code into object_storage_utils
     cfg_text = cfg.to_json()
     dst = os.path.join(cfg.cluster.results, ELB_METADATA_DIR, ELB_META_CONFIG_FILE)
+    print(f'\033[33m[1/5] Writing configuration to {dst}\033[0m')
     sas_token = cfg.azure.get_sas_token() if cfg.cloud_provider.cloud == CSP.AZURE else None
     with open_for_write_immediate(dst, sas_token=sas_token) as f:
         f.write(cfg_text)
@@ -179,8 +181,8 @@ def submit(args, cfg: ElasticBlastConfig, clean_up_stack):
             queries = qs_res.query_batches
             query_length = qs_res.query_length
 
-    # update config file in metadata
-    write_config_to_metadata(cfg)
+    # update config file in metadata / no need
+    # write_config_to_metadata(cfg)
     # job submission
     elastic_blast.submit(queries, query_length, query_split_mode == QuerySplitMode.CLOUD_ONE_STAGE)
     return 0
@@ -255,6 +257,7 @@ def split_query(query_files: List[str], cfg: ElasticBlastConfig) -> Tuple[List[s
     """
     dry_run = cfg.cluster.dry_run
     logging.info('Splitting queries into batches')
+    print(f'\033[33m Splitting queries into batches\033[0m')
     num_concurrent_blast_jobs = cfg.get_max_number_of_concurrent_blast_jobs()
     logging.debug(f'Maximum number of concurrent BLAST jobs: {num_concurrent_blast_jobs}')
     batch_len = cfg.blast.batch_len

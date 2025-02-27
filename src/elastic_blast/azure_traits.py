@@ -109,28 +109,5 @@ def get_instance_type_offerings(region: str) -> List[any]:
         logging.error(f'Error getting instance types in region {region}: {e.stderr}')
         raise UserReportError(returncode=DEPENDENCY_ERROR, message=f'Error getting instance types in region {region}')
     
-    return
 
 
-def enable_azure_api(project: str, dry_run: bool):
-    raise NotImplementedError('Azure API enabling is not implemented')
-
-    """ Enable GCP APIs if they are not already enabled
-    parameters:
-        project: GCP project
-        dry_run: True for dry run
-    raises:
-        SafeExecError if there is an error checking or trying to enable APIs
-    """
-    for api in GCP_APIS:
-        cmd = 'gcloud services list --enabled --format=value(config.name) '
-        cmd += f'--filter=config.name={api}.googleapis.com '
-        cmd += f'--project {project}'
-        if dry_run:
-            logging.info(cmd)
-        else:
-            p = safe_exec(cmd)
-            if not p.stdout:
-                cmd = f'gcloud services enable {api}.googleapis.com '
-                cmd += f'--project {project}'
-                p = safe_exec(cmd)

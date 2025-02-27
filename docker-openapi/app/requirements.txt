@@ -6,4 +6,5 @@ boto3==1.34.141
 botocore==1.34.141
 ec2_metadata==2.4.0
 requests>=2.31.0
+pyopenssl==25.0.0
 git+https://github.com/dotnetpower/elastic-blast-azure.git

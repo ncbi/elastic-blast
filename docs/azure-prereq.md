@@ -18,7 +18,7 @@ az account show
 ```
 This will display information about your current subscription, including the name, ID, and state.
 
-### 4. Creating an Azure AD Application
+### 4. Creating an Azure AD Application - no need
 
 ```bash
 subscription_id=$(az account show --query id -o tsv)
@@ -38,4 +38,9 @@ This command will create a service principal and assign the Contributor role to 
 According to our findings, the `appId` should be assigned to the environment variable `AZURE_CLIENT_ID` within the .env file. Similarly, the `password` should be set as the value for `AZURE_CLIENT_SECRET` and the `tenant` should be set as the value for `AZURE_TENANT_ID`.
 
 We are currently using app registration to generate SAS tokens for accessing storage. This approach allows our application to authenticate and authorize access to storage resources. However, we anticipate transitioning to managed identities in the future to streamline the authentication process and enhance security.
+
+
+to avoid `azure.storage.blob._shared.authentication.AzureSigningError: Invalid base64-encoded string: number of data characters (41) cannot be 1 more than a multiple of 4` error, you need set the env variable. not using .env file.
+export AZURE_STORAGE_ACCOUNT_KEY=<your storage account key>
+
 

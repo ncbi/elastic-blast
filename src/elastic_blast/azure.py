@@ -28,7 +28,7 @@ from .subst import substitute_params
 
 from .filehelper import open_for_write_immediate
 from .jobs import read_job_template, write_job_files
-from .util import ElbSupportedPrograms, safe_exec, UserReportError, SafeExecError
+from .util import ElbSupportedPrograms, safe_exec, UserReportError, SafeExecError, safe_exec_print
 from .util import validate_gcp_disk_name, get_blastdb_info, get_usage_reporting
 from .util import is_newer_version, handle_error
 
@@ -41,15 +41,8 @@ from .constants import K8S_JOB_BLAST, K8S_JOB_GET_BLASTDB, K8S_JOB_IMPORT_QUERY_
 from .constants import K8S_JOB_LOAD_BLASTDB_INTO_RAM, K8S_JOB_RESULTS_EXPORT, K8S_UNINITIALIZED_CONTEXT
 from .constants import ELB_DOCKER_IMAGE_AZURE, ELB_QUERY_LENGTH, INPUT_ERROR
 from .constants import ElbExecutionMode, ElbStatus
-from .constants import GKE_CLUSTER_STATUS_PROVISIONING, GKE_CLUSTER_STATUS_RECONCILING
-from .constants import GKE_CLUSTER_STATUS_RUNNING, GKE_CLUSTER_STATUS_RUNNING_WITH_ERROR
-from .constants import GKE_CLUSTER_STATUS_STOPPING, GKE_CLUSTER_STATUS_ERROR
 from .constants import AKS_PROVISIONING_STATE
 
-from .constants import AKS_CLUSTER_STATUS_CREATING, AKS_CLUSTER_STATUS_UPDATING
-from .constants import AKS_CLUSTER_STATUS_SUCCEEDED, AKS_CLUSTER_STATUS_FAILED
-from .constants import AKS_CLUSTER_STATUS_DELETING, AKS_CLUSTER_STATUS_RUNNING
-from .constants import AKS_CLUSTER_STATUS_STOPPED
 from .constants import AKS_ACR_NAME, AKS_ACR_RESOURCE_GROUP
 from .constants import STATUS_MESSAGE_ERROR
 
@@ -123,6 +116,7 @@ class ElasticBlastAzure(ElasticBlast):
         """ Save query length in a metadata file in GS """
         if query_length <= 0: return
         fname = os.path.join(self.cfg.cluster.results, ELB_METADATA_DIR, ELB_QUERY_LENGTH)
+        print(f'\033[33m[2/5] Upload query length file: {fname}\033[0m')
         sas_token = self.cfg.azure.get_sas_token()
         with open_for_write_immediate(fname, sas_token=sas_token) as f:
             f.write(str(query_length))
@@ -341,6 +335,8 @@ class ElasticBlastAzure(ElasticBlast):
         pd_size = MemoryStr(cfg.cluster.pd_size).asGB()
         # disk_limit, disk_usage = self.get_disk_quota()
         
+        print(f'\033[33m[3/5] Initialize cluster\033[0m')
+        
         # TODO: need to implement get_disk_quota
         disk_limit, disk_usage = 1e9, 0.0
         
@@ -364,7 +360,8 @@ class ElasticBlastAzure(ElasticBlast):
             with open_for_write_immediate(bucket_job_template, sas_token=sas_token) as f:
                 f.write(s)
         # test comment !!!
-        if not cfg.cluster.reuse:
+        aks_status = check_cluster(cfg)
+        if not cfg.cluster.reuse or aks_status == '':
             start_cluster(cfg)
         clean_up_stack.append(lambda: logging.debug('After creating cluster'))
 
@@ -373,12 +370,13 @@ class ElasticBlastAzure(ElasticBlast):
         self._label_nodes()
         
         # test comment !!!
-        if not cfg.cluster.reuse:
+        if not cfg.cluster.reuse or aks_status == '':
             set_role_assignment(cfg)
 
         if self.cloud_job_submission or self.auto_shutdown:
             kubernetes.enable_service_account(cfg)
 
+        print(f'\033[33m[4/5] Initializing storage\033[0m')
         logging.info('Initializing storage')
         clean_up_stack.append(lambda: logging.debug('Before initializing storage'))
         
@@ -390,6 +388,7 @@ class ElasticBlastAzure(ElasticBlast):
             logging.debug('Disabling janitor')
         else:
             # TODO: need to implement submit_janitor_cronjob
+            print(f'\033[33m[5/5] Done\033[0m')
             pass
             # kubernetes.submit_janitor_cronjob(cfg)
 
@@ -408,7 +407,8 @@ class ElasticBlastAzure(ElasticBlast):
         kubectl = f'kubectl --context={k8s_ctx}'
         if use_local_ssd:
             # Label nodes in the cluster for affinity
-            cmd = kubectl + " get nodes -o jsonpath={.items[*]['metadata.name']}"
+            # cmd = kubectl + " get nodes -o jsonpath={.items[*]['metadata.name']}"
+            cmd = kubectl + " get nodes -o jsonpath='{.items[*].metadata.name}'"
             if dry_run:
                 logging.info(cmd)
                 res = ' '.join([f'gke-node-{i}' for i in range(self.cfg.cluster.num_nodes)])
@@ -416,11 +416,11 @@ class ElasticBlastAzure(ElasticBlast):
                 proc = safe_exec(cmd)
                 res = handle_error(proc.stdout)
             for i, name in enumerate(res.split()):
-                cmd = f'{kubectl} label nodes {name} ordinal={i}'
+                cmd = f'{kubectl} label nodes {name} ordinal={i} --overwrite'
                 if dry_run:
                     logging.info(cmd)
                 else:
-                    safe_exec(cmd)
+                    safe_exec(shlex.split(cmd))
 
     def job_substitutions(self) -> Dict[str, str]:
         """ Prepare substitution dictionary for job generation """
@@ -1079,20 +1079,22 @@ def start_cluster(cfg: ElasticBlastConfig):
     actual_params = ["az", "aks", "create"]
     actual_params.append('--auto-upgrade-channel')
     actual_params.append('none')
-    #actual_params.append('--no-enable-ip-alias')
     actual_params.append('--resource-group')
     actual_params.append(f'{cfg.azure.resourcegroup}')
     actual_params.append('--name')
     actual_params.append(f'{cluster_name}')
     actual_params.append('--generate-ssh-keys')
-    # actual_params.append('--zone')
-    # actual_params.append(f'{cfg.gcp.zone}')
 
     actual_params.append('--node-vm-size')
     actual_params.append(machine_type)
 
     actual_params.append('--node-count')
     actual_params.append(str(num_nodes))
+    actual_params.append('--min-count')
+    actual_params.append(str(num_nodes))
+    actual_params.append('--max-count')
+    actual_params.append(str(num_nodes*3))
+    actual_params.append('--enable-cluster-autoscaler')
     
     actual_params.append('--node-osdisk-type')
     actual_params.append('Managed') # Managed | Ephemeral, Premium SSD LRS
@@ -1146,10 +1148,8 @@ def start_cluster(cfg: ElasticBlastConfig):
     else:
         logging.info('create aks cluster: ' + ' '.join(actual_params))
         safe_exec(actual_params, timeout=1800) # 30 minutes
-        # proc = subprocess.Popen(actual_params,
-        #         stdin=subprocess.PIPE, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-        #         universal_newlines=True)
-        # proc.communicate()
+        # safe_exec_print(actual_params)
+        
     end = timer()
     logging.debug(f'RUNTIME cluster-create {end-start} seconds')
     
