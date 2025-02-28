@@ -10,7 +10,7 @@ You can install Azure CLI on various operating systems. Refer to the official do
 curl -sL https://aka.ms/InstallAzureCLIDeb | sudo bash
 ```
 
-option) install kubectl using snap
+install kubectl using snap
 ```bash
 sudo snap install kubectl --classic
 ```
@@ -139,6 +139,14 @@ Now that the database and config file are ready, you can submit the job followin
 ```bash
 sudo apt-get install openssh-server
 sudo apt-get install sshfs
+```
+
+## Run ElasticBlast
+```bash
+cd elastic-blast-azure
+virtualenv venv
+source venv/bin/activate
+elastic-blast submit --cfg filename.ini
 ```
 
 ## Known Issues

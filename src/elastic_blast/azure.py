@@ -943,9 +943,9 @@ def set_role_assignment(cfg: ElasticBlastConfig):
     # get acr id
     cmd: List[str] = 'az acr show'.split()
     cmd.append('--name')
-    cmd.append(ELB_DFLT_AKS_ACR_NAME)
+    cmd.append(cfg.azure.acr_name)
     cmd.append('--resource-group')
-    cmd.append(ELB_DFLT_AKS_ACR_RESOURCE_GROUP)
+    cmd.append(cfg.azure.acr_resourcegroup)
     cmd.append('--query')
     cmd.append('id')
     cmd.append('-o')
@@ -1222,11 +1222,13 @@ def remove_split_query(cfg: ElasticBlastConfig) -> None:
     _remove_ancillary_data(cfg, ELB_QUERY_BATCH_DIR)
 
 
+# TODO: implement this function
 def _remove_ancillary_data(cfg: ElasticBlastConfig, bucket_prefix: str) -> None:
     """ Removes ancillary data from the end user's result bucket
     cfg: Configuration object
     bucket_prefix: path that follows the users' bucket name (looks like a file system directory)
     """
+    return
     dry_run = cfg.cluster.dry_run
     out_path = os.path.join(cfg.cluster.results, bucket_prefix, '*')
     cmd = f'gsutil -mq rm {out_path}'
