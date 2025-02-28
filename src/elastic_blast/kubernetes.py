@@ -508,7 +508,7 @@ def initialize_local_ssd(cfg: ElasticBlastConfig, query_files: List[str] = [], w
             subs['ELB_IMAGE_QS'] = ELB_QS_DOCKER_IMAGE_GCP
         elif cfg.cloud_provider.cloud == CSP.AZURE:
             logging.debug('Starting Azure cloud split job')
-            subs['ELB_IMAGE_QS'] = ELB_QS_DOCKER_IMAGE_AZURE
+            subs['ELB_IMAGE_QS'] = cfg.azure.qs_docker_image
             
         with TemporaryDirectory() as d:
             ref = files('elastic_blast').joinpath(f'templates/{job_template}')
@@ -580,9 +580,9 @@ def initialize_local_ssd(cfg: ElasticBlastConfig, query_files: List[str] = [], w
         subs['GCP_PROJECT_OPT'] = prj
         logging.debug(f"Initializing local SSD: {ELB_DOCKER_IMAGE_GCP} ")
     elif cfg.cloud_provider.cloud == CSP.AZURE:
-        subs['ELB_DOCKER_IMAGE'] = ELB_DOCKER_IMAGE_AZURE
-        subs['ELB_IMAGE_QS'] = ELB_QS_DOCKER_IMAGE_AZURE
-        logging.debug(f"Initializing local SSD: {ELB_DOCKER_IMAGE_AZURE}")
+        subs['ELB_DOCKER_IMAGE'] = cfg.azure.elb_docker_image
+        subs['ELB_IMAGE_QS'] = cfg.azure.qs_docker_image
+        logging.debug(f"Initializing local SSD: {cfg.azure.elb_docker_image}")
         
     # logging.debug(f"Initializing local SSD: {ELB_DOCKER_IMAGE_GCP}")
     with TemporaryDirectory() as d:
@@ -738,10 +738,10 @@ def initialize_persistent_disk(cfg: ElasticBlastConfig, query_files: List[str] =
         subs['GCP_PROJECT_OPT'] = prj
         logging.debug(f"Initializing persistent volume: {ELB_DOCKER_IMAGE_GCP} {ELB_QS_DOCKER_IMAGE_GCP}")
     elif cfg.cloud_provider.cloud == CSP.AZURE:
-        subs['ELB_IMAGE_QS'] = ELB_QS_DOCKER_IMAGE_AZURE
-        subs['ELB_DOCKER_IMAGE'] = ELB_DOCKER_IMAGE_AZURE
+        subs['ELB_IMAGE_QS'] = cfg.azure.qs_docker_image
+        subs['ELB_DOCKER_IMAGE'] = cfg.azure.elb_docker_image
         subs['ELB_SC_NAME'] = 'managed-csi' #'azure-disk-ssd'
-        logging.debug(f"Initializing persistent volume: {ELB_DOCKER_IMAGE_AZURE} {ELB_QS_DOCKER_IMAGE_AZURE}")
+        logging.debug(f"Initializing persistent volume: {cfg.azure.elb_docker_image} {cfg.azure.qs_docker_image}")
         
 
     
@@ -1050,12 +1050,12 @@ def submit_job_submission_job(cfg: ElasticBlastConfig):
         subs['ELB_GCP_PROJECT'] = cfg.gcp.project
         subs['ELB_GCP_ZONE'] = cfg.gcp.zone
     elif cfg.cloud_provider.cloud == CSP.AZURE:
-        subs['ELB_DOCKER_IMAGE'] = ELB_CJS_DOCKER_IMAGE_AZURE
+        subs['ELB_DOCKER_IMAGE'] = cfg.azure.cjs_docker_image
         subs['ELB_METADATA_DIR'] = ELB_METADATA_DIR
         subs['ELB_AZURE_RESOURCE_GROUP'] = cfg.azure.resourcegroup
        
         
-    logging.debug(f"Submitting job submission job: {ELB_CJS_DOCKER_IMAGE_GCP}")
+    logging.debug(f"Submitting job submission job: {subs['ELB_DOCKER_IMAGE']}")
     with TemporaryDirectory() as d:
         job_yaml = os.path.join(d, 'job-submit-jobs.yaml')
         with open(job_yaml, 'wt') as f:

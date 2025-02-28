@@ -416,11 +416,12 @@ class ElasticBlastAzure(ElasticBlast):
                 proc = safe_exec(cmd)
                 res = handle_error(proc.stdout)
             for i, name in enumerate(res.split()):
+                name = name.replace("'","")
                 cmd = f'{kubectl} label nodes {name} ordinal={i} --overwrite'
                 if dry_run:
                     logging.info(cmd)
                 else:
-                    safe_exec(shlex.split(cmd))
+                    safe_exec(cmd)
 
     def job_substitutions(self) -> Dict[str, str]:
         """ Prepare substitution dictionary for job generation """
@@ -449,7 +450,7 @@ class ElasticBlastAzure(ElasticBlast):
             # 'ELB_NUM_CPUS_REQ': str(cfg.cluster.num_cpus),
             'ELB_NUM_CPUS': str(cfg.cluster.num_cpus),
             'ELB_DB_MOL_TYPE': str(ElbSupportedPrograms().get_db_mol_type(blast_program)),
-            'ELB_DOCKER_IMAGE': ELB_DOCKER_IMAGE_AZURE,
+            'ELB_DOCKER_IMAGE': cfg.azure.elb_docker_image,
             'ELB_TIMEFMT': '%s%N',  # timestamp in nanoseconds
             'BLAST_ELB_JOB_ID': uuid.uuid4().hex,
             'BLAST_ELB_VERSION': VERSION,

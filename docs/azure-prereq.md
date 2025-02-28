@@ -18,7 +18,7 @@ sudo snap install kubectl --classic
 ### 2. Logging into Azure
 To log in to your Azure account, use the following command:
 ```bash
-az login
+az login --use-device-code
 ```
 ### 3. Checking Your Azure Subscription
 ```bash
@@ -134,6 +134,12 @@ Now that the database and config file are ready, you can submit the job followin
 
 > [!Note]
 > Run the command `export AZURE_STORAGE_ACCOUNT_KEY=<your storage account key>` before executing the submit command.
+
+## VSCode remote configuration
+```bash
+sudo apt-get install openssh-server
+sudo apt-get install sshfs
+```
 
 ## Known Issues
 
