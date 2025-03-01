@@ -1116,6 +1116,10 @@ def start_cluster(cfg: ElasticBlastConfig):
     #     actual_params.append(str(cfg.cluster.num_nodes))
     # else:
     #     actual_params.append(str(ELB_DFLT_MIN_NUM_NODES))
+    
+    # https://learn.microsoft.com/en-us/azure/aks/azure-blob-csi?tabs=NFS#before-you-begin
+    if not use_local_ssd:
+        actual_params.append('--enable-blob-driver')
 
     if use_preemptible:
         actual_params.append('--preemptible')
@@ -1148,6 +1152,7 @@ def start_cluster(cfg: ElasticBlastConfig):
         logging.info(' '.join(actual_params))
     else:
         logging.info('create aks cluster: ' + ' '.join(actual_params))
+        print(f'\e[32m create aks cluster: {" ".join(actual_params)}\e[0m')
         safe_exec(actual_params, timeout=1800) # 30 minutes
         # safe_exec_print(actual_params)
         

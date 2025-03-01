@@ -14,7 +14,7 @@ spec:
       volumes:
       - name: blastdb
         persistentVolumeClaim:
-            claimName: blast-dbs-pvc-rwo
+            claimName: blast-dbs-pvc-rwm
             readOnly: false
       containers:
       - name: ${K8S_JOB_GET_BLASTDB}

@@ -749,19 +749,22 @@ def initialize_persistent_disk(cfg: ElasticBlastConfig, query_files: List[str] =
         
         ref = files('elastic_blast') / 'templates/storage-gcp-ssd.yaml'
         
-        if cfg.cloud_provider.cloud == CSP.AZURE:
-            ref = files('elastic_blast') / 'templates/storage-aks-ssd.yaml'
-            
-        with as_file(ref) as storage_yaml:
-            cmd = f"kubectl --context={k8s_ctx} apply -f {storage_yaml}"
-            if dry_run:
-                logging.info(cmd)
-            else:
-                safe_exec(cmd)
+        if cfg.cloud_provider.cloud != CSP.AZURE:
+            # ref = files('elastic_blast') / 'templates/storage-aks-ssd.yaml'
+                
+            with as_file(ref) as storage_yaml:
+                cmd = f"kubectl --context={k8s_ctx} apply -f {storage_yaml}"
+                if dry_run:
+                    logging.info(cmd)
+                else:
+                    safe_exec(cmd)
 
         pvc_yaml = os.path.join(d, 'pvc-rwo.yaml')
         with open(pvc_yaml, 'wt') as f:
             ref = files('elastic_blast').joinpath('templates/pvc-rwo.yaml.template')
+            if cfg.cloud_provider.cloud == CSP.AZURE:
+                ref = files('elastic_blast').joinpath('templates/pvc-rwm-aks.yaml.template')
+                
             f.write(substitute_params(ref.read_text(), subs))
         cmd = f"kubectl --context={k8s_ctx} apply -f {pvc_yaml}"
         if dry_run:
@@ -783,7 +786,10 @@ def initialize_persistent_disk(cfg: ElasticBlastConfig, query_files: List[str] =
 
         # wait for the disk to be provisioned
         try:
-            wait_for_pvc(k8s_ctx, 'blast-dbs-pvc-rwo', dry_run=dry_run)
+            if cfg.cloud_provider.cloud == CSP.AZURE:
+                wait_for_pvc(k8s_ctx, 'blast-dbs-pvc-rwm', dry_run=dry_run)
+            else:
+                wait_for_pvc(k8s_ctx, 'blast-dbs-pvc-rwo', dry_run=dry_run)
         except TimeoutError:
             logging.warning('Timed out waiting for PVC to bind')
         disks = get_persistent_disks(k8s_ctx, dry_run)

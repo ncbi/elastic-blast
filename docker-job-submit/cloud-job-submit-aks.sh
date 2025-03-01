@@ -97,41 +97,46 @@ for pod in $pods; do
 done 
 
 
-# no need to deal with persistent disks and snapshots if a local SSD is used
+# # no need to deal with persistent disks and snapshots if a local SSD is used
+# if ! $ELB_USE_LOCAL_SSD ; then
+
+#     # Create a volume snapshot
+#     ${KUBECTL} apply -f /templates/volume-snapshot-class-aks.yaml
+#     ${KUBECTL} apply -f /templates/volume-snapshot.yaml
+#     sleep 5
+
+#     # Wait for the snapshot to be ready
+#     while true; do
+#         st=$(${KUBECTL} get volumesnapshot blast-dbs-snapshot -o jsonpath='{.status.readyToUse}')
+#         [ $? -ne 0 ] && echo "ERROR: Getting volume snapshot status" && exit 1
+#         [ $st == true ] && break
+#         echo "Volume snapshot status: $st"
+#         sleep 30
+#     done
+
+#     # save writable disk id
+#     export pv_rwo=$(${KUBECTL} get pvc blast-dbs-pvc-rwo -o jsonpath='{.spec.volumeName}')
+
+#     # Delete the job to unmount ReadWrite blastdb volume
+#     ${KUBECTL} delete job init-pv
+#     # Wait for disk to be unmounted
+#     echo Waiting for $ELB_PAUSE_AFTER_INIT_PV sec to unmount PV disk
+#     sleep $ELB_PAUSE_AFTER_INIT_PV
+
+#     # Delete ReadWriteOnce PVC
+#     ${KUBECTL} delete pvc blast-dbs-pvc-rwo
+
+#     # Create ReadOnlyMany PVC
+#     echo Create ReadOnlyMany PVC
+#     envsubst '${ELB_PD_SIZE}' </templates/pvc-rom-aks.yaml.template >pvc-rom.yaml
+#     ${KUBECTL} apply -f pvc-rom.yaml
+# fi
 if ! $ELB_USE_LOCAL_SSD ; then
-
-    # Create a volume snapshot
-    ${KUBECTL} apply -f /templates/volume-snapshot-class-aks.yaml
-    ${KUBECTL} apply -f /templates/volume-snapshot.yaml
-    sleep 5
-
-    # Wait for the snapshot to be ready
-    while true; do
-        st=$(${KUBECTL} get volumesnapshot blast-dbs-snapshot -o jsonpath='{.status.readyToUse}')
-        [ $? -ne 0 ] && echo "ERROR: Getting volume snapshot status" && exit 1
-        [ $st == true ] && break
-        echo "Volume snapshot status: $st"
-        sleep 30
-    done
-
-    # save writable disk id
-    export pv_rwo=$(${KUBECTL} get pvc blast-dbs-pvc-rwo -o jsonpath='{.spec.volumeName}')
-
-    # Delete the job to unmount ReadWrite blastdb volume
-    ${KUBECTL} delete job init-pv
-    # Wait for disk to be unmounted
-    echo Waiting for $ELB_PAUSE_AFTER_INIT_PV sec to unmount PV disk
-    sleep $ELB_PAUSE_AFTER_INIT_PV
-
-    # Delete ReadWriteOnce PVC
-    ${KUBECTL} delete pvc blast-dbs-pvc-rwo
-
     # Create ReadOnlyMany PVC
-    echo Create ReadOnlyMany PVC
-    envsubst '${ELB_PD_SIZE}' </templates/pvc-rom-aks.yaml.template >pvc-rom.yaml
-    ${KUBECTL} apply -f pvc-rom.yaml
+    echo Create ReadWriteMany PVC
+    envsubst '${ELB_PD_SIZE}' </templates/pvc-rwm-aks.yaml.template >pvc-rwm-aks.yaml
+    ${KUBECTL} apply -f pvc-rwm-aks.yaml
 fi
-
 
 # Debug job fail - set env variable ELB_DEBUG_SUBMIT_JOB_FAIL to non empty value
 [ -n "${ELB_DEBUG_SUBMIT_JOB_FAIL:-}" ] && echo Job submit job failed for debug && exit 1
@@ -199,7 +204,7 @@ fi
 
 # wait for PVC to bind
 while true; do
-    st=$(${KUBECTL} get -f pvc-rom.yaml -o jsonpath='{.status.phase}')
+    st=$(${KUBECTL} get -f pvc-rwm-aks.yaml -o jsonpath='{.status.phase}')
     [ $? -ne 0 ] && echo "ERROR: Getting PVC bind state" && exit 1
     [ $st == Bound ] && break
     echo "PVC status: $st"
@@ -207,16 +212,16 @@ while true; do
 done
 
 # label the new persistent disk
-export pv=$(${KUBECTL} get -f pvc-rom.yaml -o jsonpath='{.spec.volumeName}')
-export vs=snapshot-$(${KUBECTL} get -f /templates/volume-snapshot.yaml -o jsonpath='{.metadata.uid}')
-echo "PV: $pv"
-echo "Volume snapshot: $vs"
-jq -n --arg dd $pv --arg ss $vs '{"disks": [$dd], "snapshots": [$ss]}' | gsutil -qm cp - ${ELB_RESULTS}/${ELB_METADATA_DIR}/$ELB_DISK_ID_FILE
-az disk update --resource-group ${ELB_AKS_RESOURCE_GROUP} --name $pv --set tags.elastic-blast-disk-id=$ELB_DISK_ID_FILE
-# gcloud compute disks update $pv --update-labels ${ELB_LABELS} --zone ${ELB_GCP_ZONE} --project ${ELB_GCP_PROJECT}
+# export pv=$(${KUBECTL} get -f pvc-rwm-aks.yaml -o jsonpath='{.spec.volumeName}')
+# # export vs=snapshot-$(${KUBECTL} get -f /templates/volume-snapshot.yaml -o jsonpath='{.metadata.uid}')
+# echo "PV: $pv"
+# echo "Volume snapshot: $vs"
+# jq -n --arg dd $pv --arg ss $vs '{"disks": [$dd], "snapshots": [$ss]}' | gsutil -qm cp - ${ELB_RESULTS}/${ELB_METADATA_DIR}/$ELB_DISK_ID_FILE
+# az disk update --resource-group ${ELB_AKS_RESOURCE_GROUP} --name $pv --set tags.elastic-blast-disk-id=$ELB_DISK_ID_FILE
+
 
 # delete snapshot
-${KUBECTL} delete volumesnapshot --all
+# ${KUBECTL} delete volumesnapshot --all
 
 echo exit
 exit 0;

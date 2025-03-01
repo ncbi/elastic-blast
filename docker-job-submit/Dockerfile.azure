@@ -29,9 +29,7 @@ LABEL Vendor="Microsoft"
 LABEL Maintainer=moonchoi@microsoft.com
 
 COPY cloud-job-submit-aks.sh /usr/bin/
-COPY templates/volume-snapshot-class-aks.yaml /templates/
-COPY templates/volume-snapshot.yaml /templates/
-COPY templates/pvc-rom-aks.yaml.template /templates/
+COPY templates/pvc-rwm-aks.yaml.template /templates/
 
 RUN chmod +x /usr/bin/cloud-job-submit-aks.sh && \
     apk -U upgrade && \

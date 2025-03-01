@@ -16,7 +16,7 @@ spec:
       volumes:
       - name: blast-dbs
         persistentVolumeClaim:
-            claimName: blast-dbs-pvc
+            claimName: blast-dbs-pvc-rwm
             readOnly: true
       - name: shared-data
         emptyDir: {}

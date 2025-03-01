@@ -1,0 +1,11 @@
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: blast-dbs-pvc-rwm
+spec:
+  accessModes:
+    - ReadWriteMany
+  storageClassName: azureblob-nfs-premium
+  resources:
+    requests:
+      storage: ${ELB_PD_SIZE}
