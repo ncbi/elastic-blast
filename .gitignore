@@ -4,7 +4,6 @@ job-copy-queries.yaml
 job-init-pv.yaml
 blast-batch-*.yaml
 *.out
-.vscode/
 kubectl
 *.asn
 __pycache__
