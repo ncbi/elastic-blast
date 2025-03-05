@@ -28,7 +28,8 @@ AZURE_HPC_MACHINES = {
     'Standard_E32s_v3': {'cpu': 32, 'memory': 256},  # 32 vCPU, 256 GB RAM
     'Standard_E64s_v3': {'cpu': 64, 'memory': 432},  # 64 vCPU, 432 GB RAM
     'Standard_E64is_v3': {'cpu': 64, 'memory': 504},  # 64 vCPU, 504 GB RAM
-    
+    'Standard_D8s_v3': {'cpu': 8, 'memory': 32},  # 8 vCPU, 32 GB RAM
+
 }
 
 MIN_PROCESSORS = 8
