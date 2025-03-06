@@ -16,11 +16,8 @@ spec:
       volumes:
       - name: blast-dbs
         persistentVolumeClaim:
-            claimName: blast-dbs-pvc-rwm
-            readOnly: true
-      - name: shared-data
-        emptyDir: {}
-      #shareProcessNamespace: true
+          claimName: blast-dbs-pvc-rwm
+          readOnly: false      
       activeDeadlineSeconds: ${ELB_BLAST_TIMEOUT}
       initContainers:
       - name: ${K8S_JOB_LOAD_BLASTDB_INTO_RAM}
@@ -29,13 +26,14 @@ spec:
         volumeMounts:
         - name: blast-dbs
           mountPath: /blast/blastdb
-          readOnly: true
+          readOnly: false
         command: ["/bin/bash", "-co", "pipefail"]
         args:
         - echo "BASH version ${BASH_VERSION}";
           start=`date +%s`;
           log() { ts=`date +'%F %T'`; printf '%s RUNTIME %s %f seconds\n' "$ts" "$1" "$2"; };
           blastdb_path -dbtype ${ELB_DB_MOL_TYPE} -db ${ELB_DB} -getvolumespath | tr ' ' '\n' | parallel vmtouch -tqm 5G;
+          mkdir -p results;
           exit_code=$?;
           end=`date +%s`;
           log "cache-blastdbs-to-ram" $(($end-$start));
@@ -54,9 +52,7 @@ spec:
         volumeMounts:
         - name: blast-dbs
           mountPath: /blast/blastdb
-          readOnly: true
-        - name: shared-data
-          mountPath: /blast/results
+          readOnly: false
         env:
         - name: BLAST_USAGE_REPORT
           value: "${BLAST_USAGE_REPORT}"
@@ -73,11 +69,11 @@ spec:
           BLAST_RUNTIME=`mktemp`;
           ERROR_FILE=`mktemp`;
           DATE_NOW=`date -u +${ELB_TIMEFMT}`;
-          blastdbcmd -info -db ${ELB_DB} | awk '/total/ {print $3}' | tr -d , > /blast/results/BLASTDB_LENGTH.out;
+          blastdbcmd -info -db ${ELB_DB} | awk '/total/ {print $3}' | tr -d , > /blast/blastdb/results/BLASTDB_LENGTH.out;
           start=`date +%s`;
           echo run start ${JOB_NUM} ${ELB_BLAST_PROGRAM} ${ELB_DB};
-          echo ${ELB_BLAST_PROGRAM} -db ${ELB_DB} -query /blast/blastdb/batch_${JOB_NUM}.fa -out /blast/results/batch_${JOB_NUM}-${ELB_BLAST_PROGRAM}-${ELB_DB}.out -num_threads ${ELB_NUM_CPUS} ${ELB_BLAST_OPTIONS};
-          TIME="${DATE_NOW} run start ${JOB_NUM} ${ELB_BLAST_PROGRAM} ${ELB_DB} %e %U %S %P" \time -o ${BLAST_RUNTIME} ${ELB_BLAST_PROGRAM} -db ${ELB_DB} -query /blast/blastdb/batch_${JOB_NUM}.fa -out /blast/results/batch_${JOB_NUM}-${ELB_BLAST_PROGRAM}-${ELB_DB}.out -num_threads ${ELB_NUM_CPUS} ${ELB_BLAST_OPTIONS} 2>$ERROR_FILE;
+          echo ${ELB_BLAST_PROGRAM} -db ${ELB_DB} -query /blast/blastdb/batch_${JOB_NUM}.fa -out /blast/blastdb/results/batch_${JOB_NUM}-${ELB_BLAST_PROGRAM}-${ELB_DB}.out -num_threads ${ELB_NUM_CPUS} ${ELB_BLAST_OPTIONS};
+          TIME="${DATE_NOW} run start ${JOB_NUM} ${ELB_BLAST_PROGRAM} ${ELB_DB} %e %U %S %P" \time -o ${BLAST_RUNTIME} ${ELB_BLAST_PROGRAM} -db ${ELB_DB} -query /blast/blastdb/batch_${JOB_NUM}.fa -out /blast/blastdb/results/batch_${JOB_NUM}-${ELB_BLAST_PROGRAM}-${ELB_DB}.out -num_threads ${ELB_NUM_CPUS} ${ELB_BLAST_OPTIONS} 2>$ERROR_FILE;
           BLAST_EXIT_CODE=$?;
           end=`date +%s`;
           cat $ERROR_FILE;
@@ -85,30 +81,30 @@ spec:
           echo run end ${JOB_NUM} ${BLAST_EXIT_CODE};
           echo `date -u +${ELB_TIMEFMT}` run exitCode ${JOB_NUM} ${BLAST_EXIT_CODE}>> ${BLAST_RUNTIME};
           echo `date -u +${ELB_TIMEFMT}` run end ${JOB_NUM}>> ${BLAST_RUNTIME};
-          gzip /blast/results/batch_${JOB_NUM}-${ELB_BLAST_PROGRAM}-${ELB_DB}.out;
-          cp $BLAST_RUNTIME /blast/results/BLAST_RUNTIME-${JOB_NUM}.out;
-          echo $BLAST_EXIT_CODE > /blast/results/BLAST_EXIT_CODE.out;
+          gzip /blast/blastdb/results/batch_${JOB_NUM}-${ELB_BLAST_PROGRAM}-${ELB_DB}.out;
+          cp $BLAST_RUNTIME /blast/blastdb/results/BLAST_RUNTIME-${JOB_NUM}.out;
+          echo $BLAST_EXIT_CODE > /blast/blastdb/results/BLAST_EXIT_CODE.out;
           if [[ $BLAST_EXIT_CODE -ne 0 ]] ; then
              if ! azcopy cp ${ELB_RESULTS}/metadata/FAILURE.txt - ; then
              azcopy cp $ERROR_FILE ${ELB_RESULTS}/metadata/FAILURE.txt;
              fi;
           fi;
       - name: ${K8S_JOB_RESULTS_EXPORT}
-        image: google/cloud-sdk:slim
+        image: ${ELB_DOCKER_IMAGE}
         command: ["/bin/bash", "-c"]
         args:
-        - until [ -s /result/BLAST_EXIT_CODE.out ] ; do
+        - until [ -s /blast/blastdb/results/BLAST_EXIT_CODE.out ] ; do
             sleep 1;
           done;
           azcopy login --identity;
           set -ex;
-          ls -1f /result/BLASTDB_LENGTH.out 
-          azcopy cp /result/BLASTDB_LENGTH.out ${ELB_RESULTS}/metadata/;
-          azcopy cp /result/BLAST_RUNTIME-${JOB_NUM}.out ${ELB_RESULTS}/logs/;
-          azcopy cp /result/batch_${JOB_NUM}-${ELB_BLAST_PROGRAM}-${ELB_DB}.out.gz ${ELB_RESULTS}/;
-          exit `cat /result/BLAST_EXIT_CODE.out`;
+          ls -1f /blast/blastdb/results/BLASTDB_LENGTH.out; 
+          azcopy cp /blast/blastdb/results/BLASTDB_LENGTH.out ${ELB_RESULTS}/metadata/;
+          azcopy cp /blast/blastdb/results/BLAST_RUNTIME-${JOB_NUM}.out ${ELB_RESULTS}/logs/;
+          azcopy cp /blast/blastdb/results/batch_${JOB_NUM}-${ELB_BLAST_PROGRAM}-${ELB_DB}.out.gz ${ELB_RESULTS}/;
+          exit `cat /blast/blastdb/results/BLAST_EXIT_CODE.out`;
         volumeMounts:
-          - name: shared-data
-            mountPath: /result
+          - name: blast-dbs
+            mountPath: /blast/blastdb
       restartPolicy: OnFailure
   backoffLimit: 5

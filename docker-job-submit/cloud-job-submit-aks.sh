@@ -189,11 +189,11 @@ if ${AZCOPY_COPY} ${ELB_RESULTS}/${ELB_METADATA_DIR}/job.yaml.template . &&
     fi
     echo Submitted $num_jobs jobs
     echo $num_jobs | "$num_jobs" >> num_jobs | ${AZCOPY_COPY} num_jobs ${ELB_RESULTS}/${ELB_METADATA_DIR}/${ELB_NUM_JOBS_SUBMITTED}
-    if [ ${ELB_NUM_NODES} -ne 1 ] ; then
+    # if [ ${ELB_NUM_NODES} -ne 1 ] ; then
         # echo Reconfiguring cluster to auto-scale to ${ELB_NUM_NODES} nodes
         # az login --identity
         # az aks update --resource-group ${ELB_AZURE_RESOURCE_GROUP} --name ${ELB_CLUSTER_NAME} --min-count 0 --max-count ${ELB_NUM_NODES}
-    fi
+    # fi
     copy_job_logs_to_results_bucket submit "${K8S_JOB_SUBMIT_JOBS}"
     echo Done
 else
