@@ -150,7 +150,7 @@ class ElasticBlastAzure(ElasticBlast):
             self._check_job_number_limit(query_batches, query_length)
             self.query_files = []  # No cloud split
             logging.debug("Initialize cluster with NO cloud split")
-            self._initialize_cluster()
+            self._initialize_cluster(query_batches)
             self.cluster_initialized = True
         if self.cloud_job_submission:
             kubernetes.submit_job_submission_job(self.cfg)
@@ -328,7 +328,7 @@ class ElasticBlastAzure(ElasticBlast):
         enable_gcp_api(self.cfg.gcp.project, self.cfg.cluster.dry_run)
         delete_cluster_with_cleanup(self.cfg)
 
-    def _initialize_cluster(self):
+    def _initialize_cluster(self, queries: Optional[List[str]]):
         """ Creates a k8s cluster, connects to it and initializes the persistent disk """
         cfg, query_files, clean_up_stack = self.cfg, self.query_files, self.cleanup_stack
         pd_size = MemoryStr(cfg.cluster.pd_size).asGB()
@@ -349,7 +349,7 @@ class ElasticBlastAzure(ElasticBlast):
         clean_up_stack.append(lambda: delete_cluster_with_cleanup(cfg))
         clean_up_stack.append(lambda: kubernetes.collect_k8s_logs(cfg))
         if self.cloud_job_submission:
-            subs = self.job_substitutions()            
+            subs = self.job_substitutions(queries)            
             
             template_name = ELB_LOCAL_SSD_BLAST_JOB_AKS_TEMPLATE if cfg.cluster.use_local_ssd else ELB_DFLT_BLAST_JOB_AKS_TEMPLATE
             job_template = read_job_template(template_name=template_name, cfg=cfg)
@@ -421,8 +421,8 @@ class ElasticBlastAzure(ElasticBlast):
                     logging.info(cmd)
                 else:
                     safe_exec(cmd)
-
-    def job_substitutions(self) -> Dict[str, str]:
+    
+    def job_substitutions(self, query_batches) -> Dict[str, str]:
         """ Prepare substitution dictionary for job generation """
         cfg = self.cfg
         usage_reporting = get_usage_reporting()
@@ -432,6 +432,11 @@ class ElasticBlastAzure(ElasticBlast):
 
         blast_program = cfg.blast.program
         
+        # get optimized cpu
+        if len(query_batches) == self.cfg.cluster.num_nodes:
+            num_cpu_req = self.cfg.cluster.num_cpus - 1
+        else:
+            num_cpu_req = ((self.cfg.cluster.num_nodes * self.cfg.cluster.num_cpus) // 4) - 1
 
         # prepare substitution for current template
         # TODO consider template using cfg variables directly as, e.g. ${blast.program}
@@ -445,8 +450,8 @@ class ElasticBlastAzure(ElasticBlast):
             # FIXME: EB-210
             'ELB_BLAST_TIMEOUT': str(cfg.timeouts.blast_k8s * 60),
             'ELB_RESULTS': os.path.join(cfg.cluster.results, cfg.azure.elb_job_id),
-            'ELB_NUM_CPUS_REQ': str(cfg.cluster.num_cpus // 4),
-            # 'ELB_NUM_CPUS_REQ': str(cfg.cluster.num_cpus),
+            # 'ELB_NUM_CPUS_REQ': str(cfg.cluster.num_cpus // 4), 
+            'ELB_NUM_CPUS_REQ': str(num_cpu_req),
             'ELB_NUM_CPUS': str(cfg.cluster.num_cpus),
             'ELB_DB_MOL_TYPE': str(ElbSupportedPrograms().get_db_mol_type(blast_program)),
             'ELB_DOCKER_IMAGE': cfg.azure.elb_docker_image,
@@ -1100,6 +1105,8 @@ def start_cluster(cfg: ElasticBlastConfig):
     actual_params.append('--node-osdisk-type')
     actual_params.append('Managed') # Managed | Ephemeral, Premium SSD LRS
     
+    #service mesh
+    # actual_params.append('--enable-azure-service-mesh')
     
     #enable managed identity
     actual_params.append('--enable-managed-identity')
@@ -1152,7 +1159,7 @@ def start_cluster(cfg: ElasticBlastConfig):
         logging.info(' '.join(actual_params))
     else:
         logging.info('create aks cluster: ' + ' '.join(actual_params))
-        print(f'\e[32m create aks cluster: {" ".join(actual_params)}\e[0m')
+        print(f'\033[32m create aks cluster: {" ".join(actual_params)}\033[0m')
         safe_exec(actual_params, timeout=1800) # 30 minutes
         # safe_exec_print(actual_params)
         

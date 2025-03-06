@@ -620,8 +620,8 @@ class ClusterConfig(ConfigParserToDataclassMapper):
 
         # default machine type and pd size
         if cloud_provider == CSP.AZURE:
-            if not self.pd_size:
-                self.pd_size = ELB_DFLT_AZURE_PD_SIZE if not self.use_local_ssd else ELB_DFLT_AZURE_PD_SIZE_BIG
+            # if not self.pd_size:
+            self.pd_size = ELB_DFLT_AZURE_PD_SIZE if not self.use_local_ssd else ELB_DFLT_AZURE_PD_SIZE_BIG
         elif cloud_provider == CSP.GCP:
             if not self.pd_size:
                 self.pd_size = ELB_DFLT_GCP_PD_SIZE
