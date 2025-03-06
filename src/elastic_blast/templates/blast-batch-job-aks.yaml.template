@@ -69,6 +69,7 @@ spec:
         command: ["/bin/bash", "-c"]
         args:
         - echo "BASH version ${BASH_VERSION}";
+          azcopy login --identity;
           BLAST_RUNTIME=`mktemp`;
           ERROR_FILE=`mktemp`;
           DATE_NOW=`date -u +${ELB_TIMEFMT}`;
@@ -99,8 +100,10 @@ spec:
         - until [ -s /result/BLAST_EXIT_CODE.out ] ; do
             sleep 1;
           done;
+          azcopy login --identity;
           set -ex;
-          ls -1f /result/BLASTDB_LENGTH.out | gsutil -qm cp -I ${ELB_RESULTS}/metadata/;
+          ls -1f /result/BLASTDB_LENGTH.out 
+          azcopy cp /result/BLASTDB_LENGTH.out ${ELB_RESULTS}/metadata/;
           azcopy cp /result/BLAST_RUNTIME-${JOB_NUM}.out ${ELB_RESULTS}/logs/;
           azcopy cp /result/batch_${JOB_NUM}-${ELB_BLAST_PROGRAM}-${ELB_DB}.out.gz ${ELB_RESULTS}/;
           exit `cat /result/BLAST_EXIT_CODE.out`;
@@ -108,4 +111,4 @@ spec:
           - name: shared-data
             mountPath: /result
       restartPolicy: OnFailure
-  backoffLimit: 3
+  backoffLimit: 5

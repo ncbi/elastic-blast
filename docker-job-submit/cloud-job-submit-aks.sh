@@ -51,6 +51,7 @@ copy_job_logs_to_results_bucket() {
 
 TEST=${ELB_LOCAL_TEST:-}
 if [ "x$TEST" == "x1" ]; then
+echo "Running in test mode"
 AZCOPY_COPY='cp'
 GCLOUD='echo gcloud'
 KUBECTL='echo kubectl'
@@ -153,6 +154,10 @@ if ${AZCOPY_COPY} ${ELB_RESULTS}/${ELB_METADATA_DIR}/job.yaml.template . &&
             export JOB_NUM=${BASH_REMATCH[1]}
             export BLAST_ELB_BATCH_NUM=$i
             envsubst '${JOB_NUM} ${BLAST_ELB_BATCH_NUM}' <job.yaml.template >$job_dir/job_${JOB_NUM}.yaml
+
+            echo "DEBUG: Job $i: $job_dir/job_${JOB_NUM}.yaml"
+            echo "----------------------------------------------"
+            cat $job_dir/job_${JOB_NUM}.yaml
         fi
         i=$[i + 1]
         j=$[j + 1]
@@ -183,10 +188,11 @@ if ${AZCOPY_COPY} ${ELB_RESULTS}/${ELB_METADATA_DIR}/job.yaml.template . &&
         printf "SPEED to submit-jobs %f jobs/second\n" $(( $num_jobs/($end-$start) ))
     fi
     echo Submitted $num_jobs jobs
-    echo $num_jobs | $num_jobs >> num_jobs | ${AZCOPY_COPY} num_jobs ${ELB_RESULTS}/${ELB_METADATA_DIR}/${ELB_NUM_JOBS_SUBMITTED}
+    echo $num_jobs | "$num_jobs" >> num_jobs | ${AZCOPY_COPY} num_jobs ${ELB_RESULTS}/${ELB_METADATA_DIR}/${ELB_NUM_JOBS_SUBMITTED}
     if [ ${ELB_NUM_NODES} -ne 1 ] ; then
-        echo Reconfiguring cluster to auto-scale to ${ELB_NUM_NODES} nodes
-        az aks update --resource-group ${ELB_AZURE_RESOURCE_GROUP} --name ${ELB_CLUSTER_NAME} --min-count 0 --max-count ${ELB_NUM_NODES}
+        # echo Reconfiguring cluster to auto-scale to ${ELB_NUM_NODES} nodes
+        # az login --identity
+        # az aks update --resource-group ${ELB_AZURE_RESOURCE_GROUP} --name ${ELB_CLUSTER_NAME} --min-count 0 --max-count ${ELB_NUM_NODES}
     fi
     copy_job_logs_to_results_bucket submit "${K8S_JOB_SUBMIT_JOBS}"
     echo Done

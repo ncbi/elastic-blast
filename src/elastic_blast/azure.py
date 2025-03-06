@@ -1004,7 +1004,8 @@ def set_role_assignment(cfg: ElasticBlastConfig):
     cmd.append('--assignee')
     cmd.append(aks_kubelet_id)
     cmd.append('--scope')
-    cmd.append(f'/subscriptions/{subscription_id}/resourceGroups/{node_resourcegroup}')
+    # cmd.append(f'/subscriptions/{subscription_id}/resourceGroups/{node_resourcegroup}')
+    cmd.append(f'/subscriptions/{subscription_id}')
     if cfg.cluster.dry_run:
         logging.info(cmd)
     else:
