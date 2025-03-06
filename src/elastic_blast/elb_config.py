@@ -28,6 +28,7 @@ Created: Tue 09 Feb 2021 03:52:31 PM EDT
 import os
 from dataclasses import dataclass
 from dataclasses import InitVar, field, fields, asdict
+import uuid
 from dataclasses_json import dataclass_json, LetterCase, config
 from dataclasses_json import DataClassJsonMixin
 import getpass
@@ -49,7 +50,7 @@ from . import VERSION
 from .constants import CSP, ElbCommand
 from .constants import ELB_DFLT_NUM_NODES
 from .constants import ELB_DFLT_USE_PREEMPTIBLE
-from .constants import ELB_DFLT_GCP_PD_SIZE, ELB_DFLT_AWS_PD_SIZE, ELB_DFLT_AZURE_PD_SIZE
+from .constants import ELB_DFLT_GCP_PD_SIZE, ELB_DFLT_AWS_PD_SIZE, ELB_DFLT_AZURE_PD_SIZE, ELB_DFLT_AZURE_PD_SIZE_BIG
 from .constants import ELB_DFLT_GCP_MACHINE_TYPE, ELB_DFLT_AWS_MACHINE_TYPE
 from .constants import ELB_DFLT_AZURE_MACHINE_TYPE
 from .constants import ELB_DFLT_INIT_PV_TIMEOUT, ELB_DFLT_BLAST_K8S_TIMEOUT
@@ -300,6 +301,7 @@ class AZUREConfig(CloudProviderBaseConfig, ConfigParserToDataclassMapper):
     cjs_docker_image: str = ELB_CJS_DOCKER_IMAGE_AZURE
     janitor_docker_image: str = ELB_JANITOR_DOCKER_IMAGE_AZURE
     qs_docker_image: str = ELB_QS_DOCKER_IMAGE_AZURE
+    elb_job_id: str = 'job-' + uuid.uuid4().hex
 
     # mapping to class attributes to ConfigParser parameters so that objects
     # can be initialized from ConfigParser objects
@@ -318,7 +320,8 @@ class AZUREConfig(CloudProviderBaseConfig, ConfigParserToDataclassMapper):
                'janitor_docker_image': None,
                'qs_docker_image': None,
                'cloud': None,
-               'user': None
+               'user': None,
+               'elb_job_id': None
                }
  
     def __post_init__(self):
@@ -618,7 +621,7 @@ class ClusterConfig(ConfigParserToDataclassMapper):
         # default machine type and pd size
         if cloud_provider == CSP.AZURE:
             if not self.pd_size:
-                self.pd_size = ELB_DFLT_AZURE_PD_SIZE
+                self.pd_size = ELB_DFLT_AZURE_PD_SIZE if not self.use_local_ssd else ELB_DFLT_AZURE_PD_SIZE_BIG
         elif cloud_provider == CSP.GCP:
             if not self.pd_size:
                 self.pd_size = ELB_DFLT_GCP_PD_SIZE

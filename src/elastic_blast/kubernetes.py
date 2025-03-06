@@ -679,6 +679,8 @@ def initialize_persistent_disk(cfg: ElasticBlastConfig, query_files: List[str] =
     results_bucket = cfg.cluster.results
     dry_run = cfg.cluster.dry_run
     query_batches = os.path.join(results_bucket, ELB_QUERY_BATCH_DIR)
+    if cfg.cloud_provider.cloud == CSP.AZURE:
+        query_batches = os.path.join(results_bucket, cfg.azure.elb_job_id, ELB_QUERY_BATCH_DIR)
 
     if query_files:
         # Case of QuerySplitMode.CLOUD_TWO_STAGE
@@ -721,7 +723,7 @@ def initialize_persistent_disk(cfg: ElasticBlastConfig, query_files: List[str] =
         'ELB_TAX_DB_PATH': taxdb_path,
         'ELB_DB_MOL_TYPE': str(ElbSupportedPrograms().get_db_mol_type(program)),
         'ELB_BLASTDB_SRC': cfg.cluster.db_source.name,
-        'ELB_RESULTS': results_bucket,
+        'ELB_RESULTS': results_bucket if cfg.cloud_provider.cloud != CSP.AZURE else os.path.join(results_bucket, cfg.azure.elb_job_id),
         # 'ELB_DOCKER_IMAGE': ELB_DOCKER_IMAGE_GCP,
         'ELB_TAXIDLIST'     : cfg.blast.taxidlist if cfg.blast.taxidlist is not None else '',
         # Container names
@@ -797,6 +799,9 @@ def initialize_persistent_disk(cfg: ElasticBlastConfig, query_files: List[str] =
             logging.debug(f'disk IDs {disks}')
             cfg.appstate.resources.disks += disks
             dest = os.path.join(cfg.cluster.results, ELB_METADATA_DIR, ELB_STATE_DISK_ID_FILE)
+            if cfg.cloud_provider.cloud == CSP.AZURE:
+                dest = os.path.join(cfg.cluster.results, cfg.azure.elb_job_id, ELB_METADATA_DIR, ELB_STATE_DISK_ID_FILE)
+                
             with open_for_write_immediate(dest, sas_token=sas_token) as f:
                 f.write(cfg.appstate.resources.to_json())
         elif not dry_run:
@@ -1018,7 +1023,7 @@ def submit_janitor_cronjob(cfg: ElasticBlastConfig):
         'ELB_GCP_PROJECT'       : cfg.gcp.project,
         'ELB_GCP_REGION'        : cfg.gcp.region,
         'ELB_GCP_ZONE'          : cfg.gcp.zone,
-        'ELB_RESULTS'           : cfg.cluster.results,
+        'ELB_RESULTS'           : cfg.cluster.results if cfg.cloud_provider.cloud != CSP.AZURE else os.path.join(cfg.cluster.results, cfg.azure.elb_job_id),
         'ELB_CLUSTER_NAME'      : cfg.cluster.name,
         'ELB_JANITOR_SCHEDULE'  : janitor_schedule
     }
@@ -1042,7 +1047,7 @@ def submit_job_submission_job(cfg: ElasticBlastConfig):
     subs = {
         'K8S_JOB_SUBMIT_JOBS'  : K8S_JOB_SUBMIT_JOBS,
         # 'ELB_DOCKER_IMAGE'     : ELB_CJS_DOCKER_IMAGE_GCP,
-        'ELB_RESULTS'          : cfg.cluster.results,
+        'ELB_RESULTS'          : cfg.cluster.results if cfg.cloud_provider.cloud != CSP.AZURE else os.path.join(cfg.cluster.results, cfg.azure.elb_job_id),
         'ELB_CLUSTER_NAME'     : cfg.cluster.name,
         'ELB_PD_SIZE'          : cfg.cluster.pd_size,
         'ELB_LABELS'           : cfg.cluster.labels,

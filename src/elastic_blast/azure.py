@@ -115,7 +115,7 @@ class ElasticBlastAzure(ElasticBlast):
     def upload_query_length(self, query_length: int) -> None:
         """ Save query length in a metadata file in GS """
         if query_length <= 0: return
-        fname = os.path.join(self.cfg.cluster.results, ELB_METADATA_DIR, ELB_QUERY_LENGTH)
+        fname = os.path.join(self.cfg.cluster.results, self.cfg.azure.elb_job_id, ELB_METADATA_DIR, ELB_QUERY_LENGTH)
         print(f'\033[33m[2/5] Upload query length file: {fname}\033[0m')
         sas_token = self.cfg.azure.get_sas_token()
         with open_for_write_immediate(fname, sas_token=sas_token) as f:
@@ -173,7 +173,7 @@ class ElasticBlastAzure(ElasticBlast):
                 disk_ids = kubernetes.get_persistent_disks(self.cfg.appstate.k8s_ctx)
                 logging.debug(f'New persistent disk id: {disk_ids}')
                 self.cfg.appstate.resources.disks += disk_ids
-                dest = os.path.join(self.cfg.cluster.results, ELB_METADATA_DIR,
+                dest = os.path.join(self.cfg.cluster.results, self.cfg.azure.elb_job_id, ELB_METADATA_DIR,
                                     ELB_STATE_DISK_ID_FILE)
                 sas_token = self.cfg.azure.get_sas_token()
                 with open_for_write_immediate(dest) as f:
@@ -228,7 +228,6 @@ class ElasticBlastAzure(ElasticBlast):
         if not aks_status:
             return ElbStatus.UNKNOWN, {}, {STATUS_MESSAGE_ERROR: f'Cluster "{self.cfg.cluster.name}" was not found'}
 
-        # TODO: need to implement AKS status
         logging.debug(f'AKS status: {aks_status}')
         
         if aks_status in [AKS_PROVISIONING_STATE.UPDATING, AKS_PROVISIONING_STATE.CREATING, AKS_PROVISIONING_STATE.STARTING]:
@@ -350,12 +349,12 @@ class ElasticBlastAzure(ElasticBlast):
         clean_up_stack.append(lambda: delete_cluster_with_cleanup(cfg))
         clean_up_stack.append(lambda: kubernetes.collect_k8s_logs(cfg))
         if self.cloud_job_submission:
-            subs = self.job_substitutions()
+            subs = self.job_substitutions()            
             
             template_name = ELB_LOCAL_SSD_BLAST_JOB_AKS_TEMPLATE if cfg.cluster.use_local_ssd else ELB_DFLT_BLAST_JOB_AKS_TEMPLATE
             job_template = read_job_template(template_name=template_name, cfg=cfg)
             s = substitute_params(job_template, subs)
-            bucket_job_template = os.path.join(cfg.cluster.results, ELB_METADATA_DIR, 'job.yaml.template')
+            bucket_job_template = os.path.join(cfg.cluster.results, self.cfg.azure.elb_job_id, ELB_METADATA_DIR, 'job.yaml.template')
             sas_token = self.cfg.azure.get_sas_token()
             with open_for_write_immediate(bucket_job_template, sas_token=sas_token) as f:
                 f.write(s)
@@ -445,14 +444,14 @@ class ElasticBlastAzure(ElasticBlast):
             'ELB_BLAST_OPTIONS': cfg.blast.options,
             # FIXME: EB-210
             'ELB_BLAST_TIMEOUT': str(cfg.timeouts.blast_k8s * 60),
-            'ELB_RESULTS': cfg.cluster.results,
+            'ELB_RESULTS': os.path.join(cfg.cluster.results, cfg.azure.elb_job_id),
             'ELB_NUM_CPUS_REQ': str(cfg.cluster.num_cpus // 4),
             # 'ELB_NUM_CPUS_REQ': str(cfg.cluster.num_cpus),
             'ELB_NUM_CPUS': str(cfg.cluster.num_cpus),
             'ELB_DB_MOL_TYPE': str(ElbSupportedPrograms().get_db_mol_type(blast_program)),
             'ELB_DOCKER_IMAGE': cfg.azure.elb_docker_image,
             'ELB_TIMEFMT': '%s%N',  # timestamp in nanoseconds
-            'BLAST_ELB_JOB_ID': uuid.uuid4().hex,
+            'BLAST_ELB_JOB_ID': cfg.azure.elb_job_id, #uuid.uuid4().hex,
             'BLAST_ELB_VERSION': VERSION,
             'BLAST_USAGE_REPORT': str(usage_reporting).lower(),
             'K8S_JOB_GET_BLASTDB' : K8S_JOB_GET_BLASTDB,
@@ -499,7 +498,7 @@ class ElasticBlastAzure(ElasticBlast):
                 
             sas_token = self.cfg.azure.get_sas_token()
             # Signal janitor job to start checking for results
-            with open_for_write_immediate(os.path.join(cfg.cluster.results, ELB_METADATA_DIR, ELB_NUM_JOBS_SUBMITTED), sas_token=sas_token) as f:
+            with open_for_write_immediate(os.path.join(cfg.cluster.results, self.cfg.azure.elb_job_id, ELB_METADATA_DIR, ELB_NUM_JOBS_SUBMITTED), sas_token=sas_token) as f:
                 f.write(str(len(job_names)))
 
 
@@ -632,7 +631,7 @@ def _get_resource_ids(cfg: ElasticBlastConfig) -> ResourceIds:
         # no need to get disk id from GS if we already have it
         return retval
 
-    disk_id_on_gcs = os.path.join(cfg.cluster.results, ELB_METADATA_DIR, ELB_STATE_DISK_ID_FILE)
+    disk_id_on_gcs = os.path.join(cfg.cluster.results, cfg.azure.elb_job_id, ELB_METADATA_DIR, ELB_STATE_DISK_ID_FILE)
     cmd = f'gsutil -q stat {disk_id_on_gcs}'
     try:
         safe_exec(cmd)

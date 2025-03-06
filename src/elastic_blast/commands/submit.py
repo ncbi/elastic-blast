@@ -111,7 +111,10 @@ def write_config_to_metadata(cfg: ElasticBlastConfig):
         return
     # FIXME: refactor this code into object_storage_utils
     cfg_text = cfg.to_json()
-    dst = os.path.join(cfg.cluster.results, ELB_METADATA_DIR, ELB_META_CONFIG_FILE)
+    dst = os.path.join(cfg.cluster.results, ELB_METADATA_DIR, ELB_META_CONFIG_FILE) 
+    if cfg.cloud_provider.cloud == CSP.AZURE:
+        dst = os.path.join(cfg.cluster.results, cfg.azure.elb_job_id, ELB_METADATA_DIR, ELB_META_CONFIG_FILE) 
+        
     print(f'\033[33m[1/5] Writing configuration to {dst}\033[0m')
     sas_token = cfg.azure.get_sas_token() if cfg.cloud_provider.cloud == CSP.AZURE else None
     with open_for_write_immediate(dst, sas_token=sas_token) as f:
@@ -262,6 +265,9 @@ def split_query(query_files: List[str], cfg: ElasticBlastConfig) -> Tuple[List[s
     logging.debug(f'Maximum number of concurrent BLAST jobs: {num_concurrent_blast_jobs}')
     batch_len = cfg.blast.batch_len
     out_path = os.path.join(cfg.cluster.results, ELB_QUERY_BATCH_DIR)
+    if cfg.cloud_provider.cloud == CSP.AZURE:
+        out_path = os.path.join(cfg.cluster.results, cfg.azure.elb_job_id, ELB_QUERY_BATCH_DIR)
+        
     start = timer()
     query_length = 0
     if dry_run:
