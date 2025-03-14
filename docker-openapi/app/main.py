@@ -1,18 +1,30 @@
+import configparser
+import glob
+import json
 import os
+import socket
+import subprocess
+import zipfile
 from pathlib import Path
+
+import uvicorn
 from fastapi import FastAPI
 from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel
-import uvicorn
 from util import safe_exec
-import subprocess
-import configparser
 
-app = FastAPI()
+app = FastAPI(
+    title="ElasticBlast on Azure OpenAPI",
+    description="Elastic Blast API for running elastic blast jobs",
+    version="1.0.0",
+    docs_url="/docs",
+    redoc_url="/redoc",
+    openapi_url="/openapi.json"
+)
 
 @app.get("/")
 async def read_root():
-    return {"message": "Hello, FastAPI with Nginx!"}
+    return {"message": "ElasticBlast on Azure OpenAPI"}
 
 @app.get('/ping')
 async def ping():
@@ -24,6 +36,12 @@ async def get_aks_status():
     proc = str(safe_exec(cmd).stdout)
     proc = proc.replace('\\n', '<br>')
     return {"message": proc}
+
+@app.get('/pod_status')
+async def pod_status():
+    cmd = 'kubectl get pod -o json'
+    proc = str(safe_exec(cmd).stdout)
+    return JSONResponse(json.loads(proc))
 
 @app.get('/elb_status')
 async def elb_status():
@@ -39,14 +57,19 @@ FILE_DIRECTORY = "/app"
 async def get_result_file(filename: str):
     
     try:
-        cmd = 'azcopy login --identity'
+        cmd = 'azcopy login --identity'        
         safe_exec(cmd)
             
         cmd = f'azcopy cp https://stgelb.blob.core.windows.net/results/* . --include-pattern=*{filename}*'
         safe_exec(cmd)
         
-        cmd = f'zip {filename}.zip \*{filename}\*'
-        safe_exec(cmd)
+        zip_filename = f'{filename}.zip'
+        with zipfile.ZipFile(zip_filename, 'w', zipfile.ZIP_DEFLATED) as zipf:
+            for file in glob.glob('*{filename}*'):
+                zipf.write(file)
+                print(f"Added: {file}")        
+        # cmd = f'zip {filename}.zip \*{filename}\*'
+        # safe_exec(cmd)
     except Exception as e:
         return JSONResponse(content={"message": f"Error: {e}"}, status_code=500)
     
@@ -85,24 +108,24 @@ class Blast(BaseModel):
 @app.post('/submit')
 async def submit(Blast: Blast):
     try:
-        cmd = 'azcopy login --identity'
-        safe_exec(cmd)
+        # cmd = 'azcopy login --identity'
+        # safe_exec(cmd)
         
         # elg-cfg.ini 파일을 읽어서 Blast 에 설정된 값으로 replace 후 cfg.ini 파일로 저장
-        # config = configparser.ConfigParser()
-        # config.read("elb-cfg.ini", encoding='utf-8')
+        config = configparser.ConfigParser()
+        config.read(os.path.join(os.path.dirname(__file__), "elb-cfg.ini"), encoding='utf-8')
         
         
-        # config['blast']['program'] = Blast.program
-        # config['blast']['db'] = Blast.db
-        # config['blast']['queries'] = Blast.queries
-        # config['blast']['results'] = Blast.results
-        # config['blast']['options'] = Blast.options
-        # with open("elastic-blast.ini", "w") as configfile:
-        #     config.write(configfile)
+        config['blast']['program'] = Blast.program
+        config['blast']['db'] = Blast.db
+        config['blast']['queries'] = Blast.queries
+        config['blast']['results'] = Blast.results
+        config['blast']['options'] = Blast.options
+        with open(os.path.join(os.path.dirname(__file__), "elastic-blast.ini"), "w") as configfile:
+            config.write(configfile)
                     
-        # cmd = f'elastic-blast submit --cfg elastic-blast.ini'
-        cmd = f'elastic-blast submit --cfg elb-cfg.ini'
+        cmd = f'elastic-blast submit --cfg elastic-blast.ini'
+        # cmd = f'elastic-blast submit --cfg elb-cfg.ini'
         process = subprocess.Popen(cmd.split(' '), shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
         process.communicate()
         
@@ -113,8 +136,8 @@ async def submit(Blast: Blast):
     
 
 
-# if __name__ == '__main__':
+if __name__ == '__main__':
 
-#     uvicorn.run(f"{Path(__file__).stem}:app", host="127.0.0.1", port=8000, reload=True)
+    uvicorn.run(f"{Path(__file__).stem}:app", host="127.0.0.1", port=8000, reload=True)
 
     

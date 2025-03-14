@@ -561,7 +561,7 @@ def initialize_local_ssd(cfg: ElasticBlastConfig, query_files: List[str] = [], w
         'ELB_DB_MOL_TYPE': str(ElbSupportedPrograms().get_db_mol_type(program)),
         'ELB_BLASTDB_SRC': 'NCBI' if cfg.cluster.db_source.name == 'AZURE' else cfg.cluster.db_source.name,
         'ELB_TAXIDLIST'     : cfg.blast.taxidlist if cfg.blast.taxidlist is not None else '',
-        'ELB_RESULTS': results_bucket,
+        'ELB_RESULTS': results_bucket if cfg.cloud_provider.cloud != CSP.AZURE else os.path.join(results_bucket, cfg.azure.elb_job_id),
         'NODE_ORDINAL': '0',
         # 'ELB_DOCKER_IMAGE': ELB_DOCKER_IMAGE_GCP,
         'K8S_JOB_GET_BLASTDB' : K8S_JOB_GET_BLASTDB,

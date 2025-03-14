@@ -71,8 +71,9 @@ def test_get_query_split_mode(gke_mock):
 def test_submit():
     args = Namespace(cfg=INI_CLOUD_SPLIT)
     cfg = ElasticBlastConfig(configure(args), task = ElbCommand.SUBMIT)
-    cfg.cluster.name = cfg.cluster.name + f'-{os.environ["USER"]}' + '-34'
+    cfg.cluster.name = cfg.cluster.name + f'-{os.environ["USER"]}' + '-35'
     cfg.cluster.reuse = True
+    cfg.cluster.use_local_ssd = True
     
     submit(args, cfg, [])
 

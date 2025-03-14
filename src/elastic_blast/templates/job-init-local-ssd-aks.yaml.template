@@ -64,7 +64,7 @@ spec:
         - echo "BASH version ${BASH_VERSION}";
           echo "job-init-local-ssd-aks.yaml.template";
           start=`date +%s`;
-          azcopy login --identity
+          azcopy login --identity;
           sleep 30;
           log() { ts=`date +'%F %T'`; printf '%s RUNTIME %s %f seconds\n' "$ts" "$1" "$2"; };
           if [ -z '${ELB_DB_PATH}' ]; then

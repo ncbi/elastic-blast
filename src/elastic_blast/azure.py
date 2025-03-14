@@ -434,9 +434,9 @@ class ElasticBlastAzure(ElasticBlast):
         
         # get optimized cpu
         if len(query_batches) == self.cfg.cluster.num_nodes:
-            num_cpu_req = self.cfg.cluster.num_cpus - 1
+            num_cpu_req = self.cfg.cluster.num_cpus - 2
         else:
-            num_cpu_req = ((self.cfg.cluster.num_nodes * self.cfg.cluster.num_cpus) // 4) - 1
+            num_cpu_req = ((self.cfg.cluster.num_nodes * self.cfg.cluster.num_cpus) // 4) - 2
 
         # prepare substitution for current template
         # TODO consider template using cfg variables directly as, e.g. ${blast.program}
