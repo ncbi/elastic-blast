@@ -41,7 +41,7 @@ from .constants import MolType, GCS_DFLT_BUCKET
 from .constants import DEPENDENCY_ERROR, AWS_MAX_TAG_LENGTH, GCP_MAX_LABEL_LENGTH
 from .constants import AWS_MAX_JOBNAME_LENGTH, CSP, ELB_GCS_PREFIX
 from .constants import ELB_DFLT_LOGLEVEL, ELB_DFLT_LOGFILE
-from .constants import INPUT_ERROR
+from .constants import INPUT_ERROR, UNKNOWN_ERROR
 from .constants import ELB_S3_PREFIX
 from .base import DBSource
 
@@ -244,11 +244,14 @@ def safe_exec(cmd: Union[List[str], str], env: Optional[Dict[str, str]] = None) 
         msg = f'The command "{" ".join(e.cmd)}" returned with exit code {e.returncode}\n{e.stderr.decode()}\n{e.stdout.decode()}'
         if e.output is not None:
             '\n'.join([msg, f'{e.output.decode()}'])
-            raise SafeExecError(e.returncode, msg)
+            error_code = UNKNOWN_ERROR if e.returncode is None else e.returncode
+            raise SafeExecError(error_code, msg)
     except PermissionError as e:
-        raise SafeExecError(e.errno, str(e))
+        error_code = UNKNOWN_ERROR if e.errno is None else e.errno
+        raise SafeExecError(error_code, str(e))
     except FileNotFoundError as e:
-        raise SafeExecError(e.errno, e.strerror)
+        error_code = UNKNOWN_ERROR if e.errno is None else e.errno
+        raise SafeExecError(error_code, str(e))
     return p
 
 

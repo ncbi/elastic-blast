@@ -73,9 +73,9 @@ while true; do
     sleep 30
 done
 
-s=`${KUBECTL} get jobs -l app=setup -o jsonpath='{.items[*].status.conditions[*].type}'`
+s=`${KUBECTL} get jobs -l app=setup -o jsonpath="{.items[*].status.conditions[?(@.type=='Complete')].type}"`
 if [[ "$s" != Complete*( Complete) ]]; then
-    echo "Setup job(s) failed:" `${KUBECTL} get jobs -l app=setup -o jsonpath='{.items[?(@.status.failed)].metadata.name}'` 
+    echo "Setup job(s) failed:" `${KUBECTL} get jobs -l app=setup -o json`
     copy_job_logs_to_results_bucket setup "${K8S_JOB_GET_BLASTDB}"
     copy_job_logs_to_results_bucket setup "${K8S_JOB_IMPORT_QUERY_BATCHES}"
     exit 1

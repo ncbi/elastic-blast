@@ -29,7 +29,7 @@ import configparser
 import re
 from dataclasses import dataclass, field, Field, fields, _MISSING_TYPE
 from enum import Enum, auto
-from typing import Dict, List, Union, Optional, NamedTuple
+from typing import Dict, List, Union, Optional, NamedTuple, get_origin, get_args
 
 @dataclass(frozen=True)
 class InstanceProperties:
@@ -317,10 +317,8 @@ class ConfigParserToDataclassMapper:
             If fieds.type is a Union, then the first type that is not None,
             otherwise field.type"""
         ftype = field.type
-        # FIXME: in python3.8 this can be done via typing.get_origin()
-        if getattr(ftype, '__origin__', None) is not None and \
-               ftype.__origin__ == Union:
-            ftype = [t for t in ftype.__args__ if t != type(None)][0]
+        if get_origin(ftype) is not None and get_origin(ftype) == Union:
+            ftype = [t for t in get_args(ftype) if t != type(None)][0]
         return ftype
 
 

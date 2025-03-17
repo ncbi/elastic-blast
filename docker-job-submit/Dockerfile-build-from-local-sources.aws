@@ -30,8 +30,8 @@ COPY submit_jobs.py /usr/bin/
 
 RUN chmod +x /usr/bin/submit_jobs.py && \
     apk -U upgrade && \
-    apk add --no-cache bash python3 py3-pip py3-wheel && \
-    pip3 install --no-cache-dir --upgrade --break-system-packages pip && \
+    apk add --no-cache bash python3 py3-pip py3-wheel curl unzip && \
+    pip3 install --no-cache-dir --upgrade pip && \
     mkdir -p /var/elastic-blast && \
     rm -rf /var/cache/apk/*
 
@@ -43,6 +43,8 @@ COPY setup.cfg_cloud /var/elastic-blast/setup.cfg
 
 WORKDIR /var/elastic-blast
 
-RUN pip3 install . -r requirements/base.txt --break-system-packages
+RUN python3 -m venv /var/elastic-blast/.venv && \
+    source /var/elastic-blast/.venv && \
+    pip3 install . -r requirements/base.txt --no-cache-dir
 
 CMD ["/usr/bin/submit_jobs.py", "--help"]

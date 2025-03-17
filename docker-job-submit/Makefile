@@ -28,7 +28,7 @@ SHELL=/bin/bash
 .PHONY: all pre-check check clean build publish gcp-build gcp-check gcp-clean
 
 IMG?=ncbi/elasticblast-job-submit
-VERSION?=4.0.3
+VERSION?=4.1.0
 ELB_VERSION?=$(shell git describe --tags --abbrev=0)
 GCP_PROJECT?=$(shell gcloud config get-value project 2>/dev/null)
 GCP_TEST_BUCKET?=gs://elasticblast-test/cloud-job-submission
@@ -64,6 +64,7 @@ check:
 gcp-build:
 	rsync -a ../src/elastic_blast/templates ${PWD}/
 	gcloud builds submit --config cloudbuild.yaml --substitutions _VERSION=${VERSION},_IMG=${IMG}
+	rm -fr templates
 
 .PHONY: aws-build
 aws-build:

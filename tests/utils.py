@@ -366,7 +366,7 @@ def mocked_safe_exec(cmd: Union[List[str], str], env: Optional[Dict[str, str]] =
     elif cmd[0] == 'kubectl' and 'get pods -o custom-columns=STATUS' in ' '.join(cmd):
         return MockedCompletedProcess('\n'.join(['STATUS'] + ['Running' for i in K8S_JOB_STATUS if i == 'Running']))
 
-    elif cmd[0] == 'kubectl' and 'get jobs -o custom-columns=STATUS' in ' '.join(cmd):
+    elif cmd[0] == 'kubectl' and 'get jobs' in ' '.join(cmd):
         switcher = {'Failed': 'Failed',
                     'Succeeded': 'Complete',
                     'Running': '<none>',

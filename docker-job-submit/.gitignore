@@ -1,0 +1,6 @@
+templates/
+src/
+bin/
+requirements/
+setup.cfg_cloud
+setup.py

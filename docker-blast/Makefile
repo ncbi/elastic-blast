@@ -26,7 +26,8 @@
 
 SHELL=/bin/bash
 IMG?=ncbi/elb
-GCP_IMG?=gcr.io/ncbi-sandbox-blast/${IMG}
+GCP_PROJECT?=$(shell gcloud config get-value project 2>/dev/null)
+GCP_IMG?=gcr.io/${GCP_PROJECT}/${IMG}
 AWS_SERVER?=public.ecr.aws/i6v3i0i9
 AWS_IMG?=${AWS_SERVER}/elasticblast-elb
 AWS_REGION?=us-east-1

@@ -1,14 +1,13 @@
 -r base.txt
 
-pytest==8.2.2
-pytest-cov==5.0.0
+pytest==8.3.5
+pytest-cov==6.0.0
 pytest-mock==3.14.0
-teamcity-messages==1.32
-mypy==1.10.1
-pylint==2.7.4
+teamcity-messages==1.33
+mypy==1.15.0
+pylint==3.3.5
 tox==4.4.12
-virtualenv==20.24.5
-yamllint==1.35.1
+yamllint==1.36.0
 moto==4.2.14
 docker==7.1.0
-cfn-lint==1.5.1
+cfn-lint==1.30.0

@@ -245,9 +245,7 @@ class ElasticBlastGcp(ElasticBlast):
         selector = 'app=blast'
         kubectl = f'kubectl --context={k8s_ctx}'
 
-        # if we need name of the job in the future add NAME:.metadata.name to custom-columns
-        # get status of jobs (pending/running, succeeded, failed)
-        cmd = f'{kubectl} get jobs -o custom-columns=STATUS:.status.conditions[0].type -l {selector}'.split()
+        cmd = f'{kubectl} get jobs -l {selector} -o custom-columns=STATUS:.status.conditions[*].type'.split()
         if self.dry_run:
             logging.debug(cmd)
         else:
@@ -255,9 +253,9 @@ class ElasticBlastGcp(ElasticBlast):
             for line in proc.stdout.decode().split('\n'):
                 if not line or line.startswith('STATUS'):
                     continue
-                if line.startswith('Complete'):
+                if 'Complete' in line:
                     counts['succeeded'] += 1
-                elif line.startswith('Failed'):
+                elif 'Failed' in line:
                     counts['failed'] += 1
                 else:
                     counts['pending'] += 1
@@ -303,7 +301,8 @@ class ElasticBlastGcp(ElasticBlast):
         selector = f'app={app}'
         k8s_ctx = self._get_gke_credentials()
         kubectl = f'kubectl --context={k8s_ctx}'
-        cmd = f'{kubectl} get jobs -o custom-columns=STATUS:.status.conditions[0].type -l {selector}'.split()
+        cmd = f'{kubectl} get jobs -l {selector} -o custom-columns=STATUS:.status.conditions[*].type'
+        cmd = cmd.split()
         if self.dry_run:
             logging.debug(cmd)
         else:
@@ -315,9 +314,9 @@ class ElasticBlastGcp(ElasticBlast):
             for line in proc.stdout.decode().split('\n'):
                 if not line or line.startswith('STATUS'):
                     continue
-                if line.startswith('Complete'):
+                if 'Complete' in line:
                     succeeded += 1
-                elif line.startswith('Failed'):
+                elif 'Failed' in line:
                     failed += 1
                 else:
                     pending += 1

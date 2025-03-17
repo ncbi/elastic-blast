@@ -344,7 +344,10 @@ def _job_succeeded(k8s_ctx: str, k8s_job_file: pathlib.Path, dry_run: bool = Fal
 
     final_status = ''
     if 'conditions' in json_output['status'] and len(json_output['status']['conditions']) > 0:
-        final_status = json_output['status']['conditions'][0]['type']
+        final_status = 'Failed' # assume failure
+        for condition in json_output['status']['conditions']:
+            if 'type' in condition and condition['type'] in ('Complete', 'Failed'):
+                final_status = condition['type']
 
     if final_status == 'Complete' and 'succeeded' in json_output['status']:
         retval = json_output['status']['succeeded']

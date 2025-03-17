@@ -156,7 +156,7 @@ ELB_DFLT_BLAST_JOB_TEMPLATE = 'resource:templates/blast-batch-job.yaml.template'
 ELB_LOCAL_SSD_BLAST_JOB_TEMPLATE = 'resource:templates/blast-batch-job-local-ssd.yaml.template'
 GCS_DFLT_BUCKET = 'gs://blast-db'
 
-GCP_APIS = ['compute', 'serviceusage', 'container', 'storage-api', 'storage-component']
+GCP_APIS = ['compute', 'serviceusage', 'artifactregistry', 'container', 'storage-api', 'storage-component']
 # https://cloud.google.com/kubernetes-engine/docs/how-to/creating-managing-labels#requirements
 GCP_MAX_NUM_LABELS = 64
 # https://cloud.google.com/kubernetes-engine/docs/how-to/creating-managing-labels#requirements
@@ -212,8 +212,8 @@ ELB_UNKNOWN_GCP_PROJECT = 'elb-unknown-gcp-project'
 
 ELB_DOCKER_VERSION = '1.3.2'    # ElasticBLAST 1.3.0 uses BLAST+ 2.16.0
 ELB_QS_DOCKER_VERSION = '0.1.4'
-ELB_JANITOR_DOCKER_VERSION = '0.3.2'
-ELB_JOB_SUBMIT_DOCKER_VERSION = '4.0.3'
+ELB_JANITOR_DOCKER_VERSION = '0.4.0'
+ELB_JOB_SUBMIT_DOCKER_VERSION = '4.1.0'
 
 ELB_DOCKER_IMAGE_GCP = f'gcr.io/ncbi-sandbox-blast/ncbi/elb:{ELB_DOCKER_VERSION}'
 ELB_DOCKER_IMAGE_AWS = f'public.ecr.aws/ncbi-elasticblast/elasticblast-elb:{ELB_DOCKER_VERSION}'
