@@ -4,7 +4,7 @@ import subprocess
 from typing import List, Union, Callable, Optional, Dict
 
 
-def safe_exec(cmd: Union[List[str], str], env: Optional[Dict[str, str]] = None, timeout: Optional[float] = 60) -> subprocess.CompletedProcess:
+def safe_exec(cmd: Union[List[str], str], env: Optional[Dict[str, str]] = None, timeout: Optional[float] = 600) -> subprocess.CompletedProcess:
     """Wrapper around subprocess.run that raises SafeExecError on errors from
     command line with error messages assembled from all available information
 

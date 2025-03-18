@@ -28,7 +28,7 @@ SHELL=/bin/bash
 .PHONY: all pre-check check clean build publish gcp-build gcp-check gcp-clean azure-build
 
 IMG?=ncbi/elasticblast-job-submit
-VERSION?=4.0.3.1
+VERSION?=4.0.3.2
 ELB_VERSION?=$(shell git describe --tags --abbrev=0)
 GCP_PROJECT?=$(shell gcloud config get-value project 2>/dev/null)
 GCP_TEST_BUCKET?=gs://elasticblast-test/cloud-job-submission

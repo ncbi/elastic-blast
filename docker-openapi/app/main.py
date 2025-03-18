@@ -2,6 +2,8 @@ import configparser
 import glob
 import json
 import os
+import re
+import shlex
 import socket
 import subprocess
 import zipfile
@@ -12,6 +14,8 @@ from fastapi import FastAPI
 from fastapi.responses import FileResponse, JSONResponse
 from pydantic import BaseModel
 from util import safe_exec
+
+CLUSTER_NAME = 'elastic-blast-on-azure'
 
 app = FastAPI(
     title="ElasticBlast on Azure OpenAPI",
@@ -98,6 +102,18 @@ async def get_elb_config():
         return JSONResponse(content={"message": f"Error: {e}"}, status_code=500)
 
 class Blast(BaseModel):
+    """
+    Blast model representing a BLAST search configuration.
+
+    Attributes:
+        cluster_name (str): The name of the cluster to use for the BLAST search. Default is None.
+        program (str): The BLAST program to use (e.g., 'blastn', 'blastp'). Default is 'blastn'.
+        db (str): The database to search against.
+        queries (str): The query sequences to search with.
+        results (str): The file path to store the search results.
+        options (str): Additional options for the BLAST search.
+    """
+    cluster_name: str = None
     program: str = 'blastn'
     db: str
     queries: str
@@ -114,10 +130,36 @@ async def submit(Blast: Blast):
         cmd = 'azcopy login --identity'
         safe_exec(cmd)
         
-        # elg-cfg.ini 파일을 읽어서 Blast 에 설정된 값으로 replace 후 cfg.ini 파일로 저장
+        # get aks list
+        cluster_name = CLUSTER_NAME
+        if Blast.cluster_name is None:
+            try:
+                cmd = 'az aks list --query "[].{name:name, tags:tags}"'
+                proc = safe_exec(shlex.split(cmd))
+                json_result = json.loads(proc.stdout)
+                
+                list_aks = []
+                
+                for cluster in json_result:
+                    if cluster['tags'] is not None:
+                        json_tags = json.loads(str(cluster['tags']).replace("'",'"')[2:-6])
+                        list_aks.append({'name': cluster['name'], 'created': json_tags['created']})
+                        
+                # sort decending by created date
+                list_aks.sort(key=lambda x: x['created'], reverse=True)
+                cluster_name = list_aks[0]['name']
+                print(f"Found AKS cluster: {cluster_name}")
+                
+            except Exception as e:
+                print(f"Error: {e}")
+                print(f'No AKS cluster found, creating new cluster: {CLUSTER_NAME}')
+                
+               
+        # Read the elb-cfg.ini file and replace the values with those set in Blast, then save it as cfg.ini
         config = configparser.ConfigParser()
         config.read(os.path.join(os.path.dirname(__file__), "elb-cfg.ini"), encoding='utf-8')
         
+        config['cluster']['name'] = cluster_name if Blast.cluster_name is None else Blast.cluster_name
         
         config['blast']['program'] = Blast.program
         config['blast']['db'] = Blast.db
@@ -129,12 +171,17 @@ async def submit(Blast: Blast):
                     
         cmd = f'elastic-blast submit --cfg {os.path.join(os.path.dirname(__file__), "elastic-blast.ini")}'
         # cmd = f'elastic-blast submit --cfg elb-cfg.ini'
-        safe_exec(cmd)
-        # process = subprocess.Popen(cmd.split(' '), stdout=subprocess.PIPE, stderr=subprocess.PIPE, start_new_session=True)
-        # stdout, stderr = process.communicate()
-        # print(stdout.decode())
-        # print(stderr.decode())
-        return JSONResponse(content={"message": "submit job started"})
+        result = safe_exec(cmd)
+        job_id = ''
+        
+        if result.returncode == 0 and result.stdout:
+            print(f"stdout: {result.stdout}")
+            match = re.search(r"job-([a-f0-9]+)", result.stdout)
+            if match:
+                job_id = match.group(1)
+                print(f"Job ID: {job_id}")
+        
+        return JSONResponse(content={"message": "Job submission started", "job_id": job_id}, status_code=200)
     except Exception as e:
         return JSONResponse(content={"message": f"Error: {e}"}, status_code=500)
 
