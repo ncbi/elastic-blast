@@ -48,3 +48,4 @@ docker-job-submit/templates/
 tests/submit/data/260_part_aa.ini
 bin/elastic-blast
 
+docker-openapi/app/elastic-blast.ini

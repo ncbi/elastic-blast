@@ -108,8 +108,11 @@ class Blast(BaseModel):
 @app.post('/submit')
 async def submit(Blast: Blast):
     try:
-        # cmd = 'azcopy login --identity'
-        # safe_exec(cmd)
+        cmd = 'az login --identity'
+        safe_exec(cmd)
+        
+        cmd = 'azcopy login --identity'
+        safe_exec(cmd)
         
         # elg-cfg.ini 파일을 읽어서 Blast 에 설정된 값으로 replace 후 cfg.ini 파일로 저장
         config = configparser.ConfigParser()
@@ -124,11 +127,13 @@ async def submit(Blast: Blast):
         with open(os.path.join(os.path.dirname(__file__), "elastic-blast.ini"), "w") as configfile:
             config.write(configfile)
                     
-        cmd = f'elastic-blast submit --cfg elastic-blast.ini'
+        cmd = f'elastic-blast submit --cfg {os.path.join(os.path.dirname(__file__), "elastic-blast.ini")}'
         # cmd = f'elastic-blast submit --cfg elb-cfg.ini'
-        process = subprocess.Popen(cmd.split(' '), shell=True, stdout=subprocess.PIPE, stderr=subprocess.PIPE)
-        process.communicate()
-        
+        safe_exec(cmd)
+        # process = subprocess.Popen(cmd.split(' '), stdout=subprocess.PIPE, stderr=subprocess.PIPE, start_new_session=True)
+        # stdout, stderr = process.communicate()
+        # print(stdout.decode())
+        # print(stderr.decode())
         return JSONResponse(content={"message": "submit job started"})
     except Exception as e:
         return JSONResponse(content={"message": f"Error: {e}"}, status_code=500)
