@@ -212,7 +212,7 @@ def check_running_cluster(cfg: ElasticBlastConfig) -> bool:
         return False
 
 
-def check_submit_data(query_files: List[str], cfg: ElasticBlastConfig) -> None:
+def check_submit_data(query_files: list[str], cfg: ElasticBlastConfig) -> None:
     """ Check that the query files are present and readable and that results bucket is writeable
         Parameters:
            query_files - list of query files
@@ -232,7 +232,7 @@ def check_submit_data(query_files: List[str], cfg: ElasticBlastConfig) -> None:
         raise UserReportError(PERMISSIONS_ERROR, f'Cannot write into bucket {bucket}')
 
 
-def split_query(query_files: List[str], cfg: ElasticBlastConfig) -> Tuple[List[str], int]:
+def split_query(query_files: list[str], cfg: ElasticBlastConfig) -> tuple[list[str], int]:
     """ Split query and provide callback for clean up of the intermediate split queries
         Parameters:
            query_fies - A list of query files
@@ -267,7 +267,7 @@ def split_query(query_files: List[str], cfg: ElasticBlastConfig) -> Tuple[List[s
     return (queries, query_length)
 
 
-def assemble_query_file_list(cfg: ElasticBlastConfig) -> List[str]:
+def assemble_query_file_list(cfg: ElasticBlastConfig) -> list[str]:
     """Assemble a list of query files. cfg.blast.queries_arg is a list of
     space-separated files. if a file has extension constants.QUERY_LIST_EXT, it
     is considered a list of files, otherwise it is a FASTA file with queries."""

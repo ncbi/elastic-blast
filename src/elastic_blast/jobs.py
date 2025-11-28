@@ -37,7 +37,7 @@ from .subst import substitute_params
 from .constants import ELB_DFLT_BLAST_JOB_TEMPLATE, ELB_LOCAL_SSD_BLAST_JOB_TEMPLATE
 from .elb_config import ElasticBlastConfig
 
-def read_job_template(template_name=ELB_DFLT_BLAST_JOB_TEMPLATE, cfg: Optional[ElasticBlastConfig] = None):
+def read_job_template(template_name=ELB_DFLT_BLAST_JOB_TEMPLATE, cfg: ElasticBlastConfig | None = None):
     """ Read job template file or resource
     Parameters:
         template_name - name of file to read or default resource
@@ -99,7 +99,7 @@ def _write_job_file(job_path, job_prefix, job_template, query_fqn, njob, **subs)
     return job_file_name
 
 
-def write_job_files(job_path: str, job_prefix: str, job_template: str, queries: List[str], **subs):
+def write_job_files(job_path: str, job_prefix: str, job_template: str, queries: list[str], **subs):
     """ Write YAML job files from template making substitutions
     Parameters:
         job_path: path to which write job files

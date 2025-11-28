@@ -40,7 +40,8 @@ from random import sample
 from timeit import default_timer as timer
 from contextlib import contextmanager
 from tenacity import retry, stop_after_attempt, wait_exponential
-from typing import Dict, IO, Tuple, Iterable, Generator, TextIO, List, Optional
+from typing import Dict, IO, Tuple, TextIO, List, Optional
+from collections.abc import Iterable, Generator
 
 import boto3  # type: ignore
 from botocore.exceptions import ClientError  # type: ignore
@@ -56,11 +57,11 @@ from .constants import ELB_QUERY_BATCH_FILE_PREFIX, ELB_HTTP_PREFIX
 from .constants import ELB_DFLT_FSIZE_FOR_TESTING
 
 
-def harvest_query_splitting_results(bucket_name: str, dry_run: bool = False, boto_cfg: Config = None, gcp_project: Optional[str] = None) -> QuerySplittingResults:
+def harvest_query_splitting_results(bucket_name: str, dry_run: bool = False, boto_cfg: Config = None, gcp_project: str | None = None) -> QuerySplittingResults:
     """ Retrieves the results for query splitting from bucket, used in 2-stage cloud
     query splitting """
     qlen = 0
-    query_batches : List[str] = []
+    query_batches : list[str] = []
     if dry_run:
         logging.debug(f'dry-run: would have retrieved query splitting results from {bucket_name}')
         return QuerySplittingResults(query_length=qlen, query_batches=query_batches)
@@ -102,7 +103,7 @@ def upload_file_to_gcs(filename: str, gcs_location: str, dry_run: bool = False) 
 
 # Write GS files to temp directory, then gsutil -mq cp temp_dir/* gs://chunks_path
 # mapping from gs bucket place to temp dir created by open_for_write
-bucket_temp_dirs: Dict[str, str] = {}
+bucket_temp_dirs: dict[str, str] = {}
 
 def copy_to_bucket(dry_run: bool = False):
     """ Copy files open in temp local dirs to corresponding places in gs.
@@ -301,13 +302,13 @@ def open_for_write(fname):
             tempdir = tempfile.mkdtemp()
             logging.debug(f'Create tempdir {tempdir} for bucket {bucket_dir}')
             bucket_temp_dirs[bucket_dir] = tempdir
-        return open(os.path.join(tempdir, filename), 'wt')
+        return open(os.path.join(tempdir, filename), 'w')
     # file on a regular filesystem
     last_sep = fname.rfind('/')
     if last_sep > 0:
         path = fname[:last_sep]
         os.makedirs(path, exist_ok=True)
-    return open(fname, 'wt')
+    return open(fname, 'w')
 
 
 def tar_reader(tar):
@@ -321,8 +322,7 @@ def tar_reader(tar):
         # Add missing function for TextIOWrapper
         f.seekable = lambda : False
         f = io.TextIOWrapper(f)
-        for line in f:
-            yield line
+        yield from f
 
 
 class TarMerge(io.TextIOWrapper):
@@ -359,7 +359,7 @@ class TarMerge(io.TextIOWrapper):
 # are typing problems, which may indicate incompatibility between classes.
 # We need tests checking downstream logic for these different return types.
 # (EB-340)
-def unpack_stream(s:Optional[IO], gzipped:bool, tarred:bool) -> IO:
+def unpack_stream(s:IO | None, gzipped:bool, tarred:bool) -> IO:
     """ Helper function which inserts uncompressing/unarchiving
     transformers as needed depending on detected file type
     """
@@ -372,7 +372,7 @@ def unpack_stream(s:Optional[IO], gzipped:bool, tarred:bool) -> IO:
 
 
 def check_for_read(fname: str, dry_run : bool = False, print_file_size: bool = False,
-                   gcp_prj: Optional[str] = None) -> None:
+                   gcp_prj: str | None = None) -> None:
     """ Check that path on local, GS, AWS S3 or URL-available filesystem can be read from.
     raises FileNotFoundError if there is no such file
     """
@@ -431,10 +431,10 @@ def check_for_read(fname: str, dry_run : bool = False, print_file_size: bool = F
         try: logging.debug(f'{fname} size {os.path.getsize(fname)}')
         except:
             raise FileNotFoundError()
-    open(fname, 'r')
+    open(fname)
 
 
-def get_length(fname: str, dry_run: bool = False, gcp_prj: Optional[str] = None) -> int:
+def get_length(fname: str, dry_run: bool = False, gcp_prj: str | None = None) -> int:
     """ Get length of a path on local, GS, AWS S3, or URL-available filesystem.
     raises FileNotFoundError if there is no such file
     """
@@ -479,7 +479,7 @@ def get_length(fname: str, dry_run: bool = False, gcp_prj: Optional[str] = None)
 
 error_report_funcs = {}
 
-def open_for_read(fname: str, gcp_prj: Optional[str] = None):
+def open_for_read(fname: str, gcp_prj: str | None = None):
     """ Open path for read on local, GS, URL-available filesystem defined by prefix,
     or stdin. File can be gzipped, and archived with tar.
     """
@@ -527,7 +527,7 @@ def open_for_read(fname: str, gcp_prj: Optional[str] = None):
     return unpack_stream(f, gzipped, tarred)
 
 
-def open_for_read_iter(fnames: Iterable[str], gcp_prj: Optional[str] = None) -> Generator[TextIO, None, None]:
+def open_for_read_iter(fnames: Iterable[str], gcp_prj: str | None = None) -> Generator[TextIO]:
     """Generator function that Iterates over paths/uris and open them for
     reading.
 
@@ -548,7 +548,7 @@ def get_error(fileobj):
     return ''
 
 
-def parse_bucket_name_key(fname: str) -> Tuple[str, str]:
+def parse_bucket_name_key(fname: str) -> tuple[str, str]:
     """ Parse S3 or GS uri name into bucket and key.
     Parameters:
         fname - S3 or GS full name with possible s3:// or gs:// prefix,

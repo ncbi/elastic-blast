@@ -34,7 +34,7 @@ from .constants import ELB_DFLT_AWS_REGION, INPUT_ERROR, PERMISSIONS_ERROR
 from .constants import DEPENDENCY_ERROR, ELB_DFLT_AWS_REGION
 
 
-def create_aws_config(region: Optional[str] = None) -> Config:
+def create_aws_config(region: str | None = None) -> Config:
     """Create boto3 config object using application config parameters"""
     retval = None
     if region:
@@ -44,7 +44,7 @@ def create_aws_config(region: Optional[str] = None) -> Config:
     return retval
 
 
-def get_regions(boto_cfg: Config = None) -> List[str]:
+def get_regions(boto_cfg: Config = None) -> list[str]:
     """ Retrieves a list of available AWS region names """
     ec2 = boto3.client('ec2') if boto_cfg == None else boto3.client('ec2', config=boto_cfg)
     try:
@@ -54,7 +54,7 @@ def get_regions(boto_cfg: Config = None) -> List[str]:
     return []
 
 
-def get_availability_zones_for(region: str) -> List[str]:
+def get_availability_zones_for(region: str) -> list[str]:
     """ Get a list of availability zones for the given region """
     check_aws_region_for_invalid_characters(region)
     ec2 = boto3.client('ec2', region_name=region)
@@ -89,7 +89,7 @@ def get_machine_properties(instance_type: str, boto_cfg: Config = None) -> Insta
     return InstanceProperties(ncpus, nram)
 
 
-def get_instance_type_offerings(region: str) -> List[str]:
+def get_instance_type_offerings(region: str) -> list[str]:
     """Get a list of instance types offered in an AWS region"""
     boto_cfg = create_aws_config(region)
     ec2 = boto3.client('ec2', config=boto_cfg)
@@ -114,8 +114,8 @@ def get_instance_type_offerings(region: str) -> List[str]:
 
 def get_suitable_instance_types(min_memory: MemoryStr,
                                 min_cpus: PositiveInteger,
-                                instance_types: Optional[List[str]] = None,
-                                region: str = ELB_DFLT_AWS_REGION) -> List[Any]:
+                                instance_types: list[str] | None = None,
+                                region: str = ELB_DFLT_AWS_REGION) -> list[Any]:
     """Get a list of instance type descriptions with at least min_memory and
     number of CPUs
 

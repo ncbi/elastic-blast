@@ -78,7 +78,7 @@ def get_maximum_number_of_allowed_k8s_jobs(dry_run: bool = False) -> int:
     return retval
 
 
-def get_persistent_volumes(k8s_ctx: str) -> List[str]:
+def get_persistent_volumes(k8s_ctx: str) -> list[str]:
     """Return a list of persistent volume ids for a kubernetes cluster.
     Kubeconfig file determines the cluster that will be contacted.
 
@@ -99,7 +99,7 @@ def get_persistent_volumes(k8s_ctx: str) -> List[str]:
     return [i['metadata']['name'] for i in dvols['items']]
 
 
-def get_persistent_disks(k8s_ctx: str, dry_run: bool = False) -> List[str]:
+def get_persistent_disks(k8s_ctx: str, dry_run: bool = False) -> list[str]:
     """Return a list of persistent disks for a kubernetes cluster.
     Kubeconfig file determines the cluster that will be contacted.
 
@@ -117,7 +117,7 @@ def get_persistent_disks(k8s_ctx: str, dry_run: bool = False) -> List[str]:
     return list()
 
 
-def get_volume_snapshots(k8s_ctx: str, dry_run: bool = False) -> List[str]:
+def get_volume_snapshots(k8s_ctx: str, dry_run: bool = False) -> list[str]:
     """Return a list of volume snapshot ids for a kubernetes cluster.
     Kubeconfig file determines the cluster that will be contacted.
 
@@ -136,12 +136,12 @@ def get_volume_snapshots(k8s_ctx: str, dry_run: bool = False) -> List[str]:
 
 
 @retry( stop=(stop_after_delay(ELB_K8S_JOB_SUBMISSION_TIMEOUT) | stop_after_attempt(ELB_K8S_JOB_SUBMISSION_MAX_RETRIES)), wait=wait_random(min=ELB_K8S_JOB_SUBMISSION_MIN_WAIT, max=ELB_K8S_JOB_SUBMISSION_MAX_WAIT)) # type: ignore
-def submit_jobs_with_retries(k8s_ctx: str, path: pathlib.Path, dry_run=False) -> List[str]:
+def submit_jobs_with_retries(k8s_ctx: str, path: pathlib.Path, dry_run=False) -> list[str]:
     """ Retry kubernetes job submissions with the parameters specified in the decorator """
     return submit_jobs(k8s_ctx, path, dry_run)
 
 
-def submit_jobs(k8s_ctx: str, path: pathlib.Path, dry_run=False) -> List[str]:
+def submit_jobs(k8s_ctx: str, path: pathlib.Path, dry_run=False) -> list[str]:
     """Submit kubernetes jobs using yaml files in the provided path.
 
     Arguments:
@@ -184,7 +184,7 @@ def submit_jobs(k8s_ctx: str, path: pathlib.Path, dry_run=False) -> List[str]:
     return retval
 
 
-def delete_all(k8s_ctx: str, dry_run: bool = False) -> List[str]:
+def delete_all(k8s_ctx: str, dry_run: bool = False) -> list[str]:
     """Delete all kubernetes jobs, persistent volume claims, and persistent volumes.
 
     Arguments:
@@ -201,7 +201,7 @@ def delete_all(k8s_ctx: str, dry_run: bool = False) -> List[str]:
                  f'kubectl --context={k8s_ctx} delete pv --all --force=true',
                  f'kubectl --context={k8s_ctx} delete volumesnapshots --all --ignore-not-found=true --force=true']
 
-    def run_commands(commands: List[str], dry_run: bool) -> List[str]:
+    def run_commands(commands: list[str], dry_run: bool) -> list[str]:
         """ Run the commands in the argument list and return the names of the relevant k8s objects.
         This function is specific to delete_all.
         """
@@ -279,7 +279,7 @@ def delete_volume_snapshots(k8s_ctx: str, dry_run: bool = False):
     safe_exec(cmd)
 
 
-def get_jobs(k8s_ctx: str, selector: Optional[str] = None, dry_run: bool = False) -> List[str]:
+def get_jobs(k8s_ctx: str, selector: str | None = None, dry_run: bool = False) -> list[str]:
     """Return a list of kubernetes jobs
 
     Arguments:
@@ -468,7 +468,7 @@ def wait_for_pvc(k8s_ctx: str, pvc_name: str, attempts: int = 30, secs2wait: int
         raise TimeoutError(f'Waiting for PVC {pvc_name} timed out')
 
 
-def initialize_storage(cfg: ElasticBlastConfig, query_files: List[str] = [], wait=ElbExecutionMode.WAIT) -> None:
+def initialize_storage(cfg: ElasticBlastConfig, query_files: list[str] = [], wait=ElbExecutionMode.WAIT) -> None:
     """ Initialize storage for ElasticBLAST cluster """
     use_local_ssd = cfg.cluster.use_local_ssd
     if use_local_ssd:
@@ -477,7 +477,7 @@ def initialize_storage(cfg: ElasticBlastConfig, query_files: List[str] = [], wai
         initialize_persistent_disk(cfg, query_files, wait)
 
 
-def initialize_local_ssd(cfg: ElasticBlastConfig, query_files: List[str] = [], wait=ElbExecutionMode.WAIT) -> None:
+def initialize_local_ssd(cfg: ElasticBlastConfig, query_files: list[str] = [], wait=ElbExecutionMode.WAIT) -> None:
     """ Initialize local SSDs for ElasticBLAST cluster """
     db, db_path, _ = get_blastdb_info(cfg.blast.db, cfg.gcp.get_project_for_gcs_downloads())
     if not db:
@@ -600,7 +600,7 @@ def initialize_local_ssd(cfg: ElasticBlastConfig, query_files: List[str] = [], w
                 safe_exec(cmd)
 
 
-def initialize_persistent_disk(cfg: ElasticBlastConfig, query_files: List[str] = [], wait=ElbExecutionMode.WAIT) -> None:
+def initialize_persistent_disk(cfg: ElasticBlastConfig, query_files: list[str] = [], wait=ElbExecutionMode.WAIT) -> None:
     """ Initialize Persistent Disk for ElasticBLAST execution
     Arguments:
         cfg - configuration to get parameters from
@@ -689,7 +689,7 @@ def initialize_persistent_disk(cfg: ElasticBlastConfig, query_files: List[str] =
                 safe_exec(cmd)
 
         pvc_yaml = os.path.join(d, 'pvc-rwo.yaml')
-        with open(pvc_yaml, 'wt') as f:
+        with open(pvc_yaml, 'w') as f:
             ref = files('elastic_blast').joinpath('templates/pvc-rwo.yaml.template')
             f.write(substitute_params(ref.read_text(), subs))
         cmd = f"kubectl --context={k8s_ctx} apply -f {pvc_yaml}"
@@ -796,7 +796,7 @@ def initialize_persistent_disk(cfg: ElasticBlastConfig, query_files: List[str] =
         # Create a new ReadOnlyMany PVC
         logging.debug('Creating ReadOnlyMany PVC from snapshot')
         cloned_pvc_yaml = os.path.join(d, 'pvc-rom.yaml')
-        with open(cloned_pvc_yaml, 'wt') as f:
+        with open(cloned_pvc_yaml, 'w') as f:
             ref = files('elastic_blast').joinpath('templates/pvc-rom.yaml.template')
             f.write(substitute_params(ref.read_text(), subs))
         cmd = f"kubectl --context={k8s_ctx} apply -f {cloned_pvc_yaml}"
@@ -852,7 +852,7 @@ def check_server(k8s_ctx: str, dry_run: bool = False):
         safe_exec(cmd)
 
 
-def get_logs(k8s_ctx: str, label: str, containers: List[str], dry_run: bool = False):
+def get_logs(k8s_ctx: str, label: str, containers: list[str], dry_run: bool = False):
     """ Collect logs from Kubernetes.
       Parameters:
         label - Kubernetes label to specify log source
@@ -946,7 +946,7 @@ def submit_janitor_cronjob(cfg: ElasticBlastConfig):
     logging.debug(f"Submitting ElasticBLAST janitor cronjob: {ELB_JANITOR_DOCKER_IMAGE_GCP}")
     with TemporaryDirectory() as d:
         cronjob_yaml = os.path.join(d, 'elb-cronjob.yaml')
-        with open(cronjob_yaml, 'wt') as f:
+        with open(cronjob_yaml, 'w') as f:
             ref = files('elastic_blast').joinpath('templates/elb-janitor-cronjob.yaml.template')
             f.write(substitute_params(ref.read_text(), subs))
         cmd = f"kubectl --context={cfg.appstate.k8s_ctx} apply -f {cronjob_yaml}"
@@ -976,7 +976,7 @@ def submit_job_submission_job(cfg: ElasticBlastConfig):
     logging.debug(f"Submitting job submission job: {ELB_CJS_DOCKER_IMAGE_GCP}")
     with TemporaryDirectory() as d:
         job_yaml = os.path.join(d, 'job-submit-jobs.yaml')
-        with open(job_yaml, 'wt') as f:
+        with open(job_yaml, 'w') as f:
             ref = files('elastic_blast').joinpath('templates/job-submit-jobs.yaml.template')
             f.write(substitute_params(ref.read_text(), subs))
         cmd = f"kubectl --context={cfg.appstate.k8s_ctx} apply -f {job_yaml}"

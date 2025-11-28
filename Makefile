@@ -69,7 +69,8 @@ elastic-blast3.7: ${PYTHON_SRC} ${YAML_TEMPLATES} ${VENV} validate-cf-templates
 
 ${VENV}: requirements/base.txt requirements/test.txt
 	[ -d ${VENV} ] || virtualenv -p python3 $@
-	source ${VENV}/bin/activate && pip3 install -qe . -r requirements/test.txt
+	${VENV}/bin/pip install packit
+	source ${VENV}/bin/activate && pip3 install -qe . -r requirements/test.txt --use-pep517
 	source ${VENV}/bin/activate && python3 setup.py install_data
 
 #############################################################################

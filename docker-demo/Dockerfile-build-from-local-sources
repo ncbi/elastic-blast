@@ -33,6 +33,7 @@ USER root
 
 RUN apt-get -y -m update && \
     apt-get install -y python3 python3-distutils kubectl && \
+    python3 -m venv /.venv && source /.venv/bin/activate && \
     pip3 install --no-cache-dir --upgrade pip && \
     pip3 install --no-cache-dir awscli && \
     rm -rf /var/lib/apt/lists/*
@@ -44,6 +45,7 @@ RUN groupadd -r ${grpname} && \
 
 USER ${username}
 WORKDIR /home/${username}
+ENV PATH="/.venv/bin:${PATH}"
 
 COPY src/ /home/${username}/src/
 COPY bin/ /home/${username}/bin/

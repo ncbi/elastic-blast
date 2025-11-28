@@ -230,10 +230,10 @@ class GCPConfig(CloudProviderBaseConfig, ConfigParserToDataclassMapper):
     region: GCPString = GCPString(ELB_DFLT_GCP_REGION)
     project: GCPString = GCPString(ELB_UNKNOWN_GCP_PROJECT)
     zone: GCPString = GCPString(ELB_DFLT_GCP_ZONE)
-    network: Optional[str] = None
-    subnet: Optional[str] = None
-    user: Optional[str] = None
-    gke_version: Optional[str] = ELB_DFLT_GCP_K8S_VERSION
+    network: str | None = None
+    subnet: str | None = None
+    user: str | None = None
+    gke_version: str | None = ELB_DFLT_GCP_K8S_VERSION
     # if True, GCP project will be passed to gsutil calls that download files
     # from GCS and users will be charged for the downloads.
     requester_pays: bool = False
@@ -266,12 +266,12 @@ class GCPConfig(CloudProviderBaseConfig, ConfigParserToDataclassMapper):
         else:
             self.requester_pays = True
 
-    def validate(self, errors: List[str], task: ElbCommand):
+    def validate(self, errors: list[str], task: ElbCommand):
         """Validate config"""
         if bool(self.network) != bool(self.subnet):
             errors.append('Both gcp-network and gcp-subnetwork need to be specified if one of them is specified')
 
-    def get_project_for_gcs_downloads(self) -> Optional[str]:
+    def get_project_for_gcs_downloads(self) -> str | None:
         """Get GCP project for downloads from GCS buckets. Returns GCP project
         if requester_pays is True, otherwise None. If GCP project is provided
         to the gsutil call, then a user is paying for this download."""
@@ -283,18 +283,18 @@ class GCPConfig(CloudProviderBaseConfig, ConfigParserToDataclassMapper):
 class AWSConfig(CloudProviderBaseConfig, ConfigParserToDataclassMapper):
     """AWS config for ElasticBLAST"""
     region: AWSRegion = AWSRegion(ELB_DFLT_AWS_REGION)
-    vpc: Optional[str] = None
-    subnet: Optional[str] = None
-    security_group: Optional[str] = None
-    key_pair: Optional[str] = None
-    job_role: Optional[str] = None
-    instance_role: Optional[str] = None
-    batch_service_role: Optional[str] = None
-    spot_fleet_role: Optional[str] = None
-    auto_shutdown_role: Optional[str] = None
-    janitor_execution_role: Optional[str] = None
-    janitor_copy_zips_role: Optional[str] = None
-    user : Optional[str] = None
+    vpc: str | None = None
+    subnet: str | None = None
+    security_group: str | None = None
+    key_pair: str | None = None
+    job_role: str | None = None
+    instance_role: str | None = None
+    batch_service_role: str | None = None
+    spot_fleet_role: str | None = None
+    auto_shutdown_role: str | None = None
+    janitor_execution_role: str | None = None
+    janitor_copy_zips_role: str | None = None
+    user : str | None = None
 
     mapping = {'region': ParamInfo(CFG_CLOUD_PROVIDER, CFG_CP_AWS_REGION),
                'vpc': ParamInfo(CFG_CLOUD_PROVIDER, CFG_CP_AWS_VPC),
@@ -316,7 +316,7 @@ class AWSConfig(CloudProviderBaseConfig, ConfigParserToDataclassMapper):
         self.cloud = CSP.AWS
         self.user = boto3.client('sts').get_caller_identity()['Arn']
 
-    def validate(self, errors: List[str], task: ElbCommand):
+    def validate(self, errors: list[str], task: ElbCommand):
         """Validate config"""
         # All roles must begin with AWS_ROLE_PREFIX
         if self.instance_role and not str(self.instance_role).startswith(AWS_ROLE_PREFIX):
@@ -342,16 +342,16 @@ class BlastConfig(ConfigParserToDataclassMapper):
     db: str
     queries_arg: str
     batch_len: PositiveInteger = PositiveInteger(ELB_NOT_INITIALIZED_NUM)
-    queries: List[str] = field(default_factory=list, init=False)
+    queries: list[str] = field(default_factory=list, init=False)
     options: str = f'-outfmt {ELB_DFLT_OUTFMT}'
-    taxidlist: Optional[str] = None
+    taxidlist: str | None = None
     db_mem_margin: float = ELB_BLASTDB_MEMORY_MARGIN
     user_provided_batch_len: bool = False
     min_qsize_to_split_on_client_compressed: PositiveInteger = PositiveInteger(ELB_DFLT_MIN_QUERY_FILESIZE_TO_SPLIT_ON_CLIENT_COMPRESSED)
     min_qsize_to_split_on_client_uncompressed: PositiveInteger = PositiveInteger(ELB_DFLT_MIN_QUERY_FILESIZE_TO_SPLIT_ON_CLIENT_UNCOMPRESSED)
 
     # database metadata, not part of config
-    db_metadata: Optional[DbMetadata] = None
+    db_metadata: DbMetadata | None = None
 
     mapping = {'program': ParamInfo(CFG_BLAST, CFG_BLAST_PROGRAM),
                'db': ParamInfo(CFG_BLAST, CFG_BLAST_DB),
@@ -373,12 +373,12 @@ class BlastConfig(ConfigParserToDataclassMapper):
             self.options += f' -outfmt {ELB_DFLT_OUTFMT}'
 
 
-    def validate(self, errors: List[str], task: ElbCommand):
+    def validate(self, errors: list[str], task: ElbCommand):
         """Validate config"""
         if task != ElbCommand.SUBMIT:
             return
 
-        UNSUPPORTED_OPTIONS = set([
+        UNSUPPORTED_OPTIONS = {
             '-remote',
             '-seqidlist',
             '-negative_seqidlist',
@@ -390,7 +390,7 @@ class BlastConfig(ConfigParserToDataclassMapper):
             '-in_pssm',
             '-entrez_query',
             '-in_msa'
-        ])
+        }
         for query_file in self.queries_arg.split():
             if query_file.startswith(ELB_S3_PREFIX) or query_file.startswith(ELB_GCS_PREFIX):
                 try:
@@ -424,11 +424,11 @@ class ClusterConfig(ConfigParserToDataclassMapper):
     num_cpus: PositiveInteger = PositiveInteger(ELB_NOT_INITIALIZED_NUM)
     # This field is required only when machine-type == optimal.
     mem_limit: MemoryStr = MemoryStr(ELB_NOT_INITIALIZED_MEM)
-    mem_request: Optional[MemoryStr] = None
+    mem_request: MemoryStr | None = None
     num_nodes: PositiveInteger = PositiveInteger(ELB_DFLT_NUM_NODES)
     use_preemptible: bool = ELB_DFLT_USE_PREEMPTIBLE
     disk_type: str = ELB_DFLT_AWS_DISK_TYPE
-    iops: Optional[int] = None
+    iops: int | None = None
     bid_percentage: Percentage = Percentage(ELB_DFLT_AWS_SPOT_BID_PERCENTAGE)
     labels: str = ''
     db_source: DBSource = field(init=False)
@@ -436,7 +436,7 @@ class ClusterConfig(ConfigParserToDataclassMapper):
     enable_stackdriver: bool = False
     dry_run: bool = False
     num_cores_per_instance: int = -1
-    instance_memory: Optional[MemoryStr] = None
+    instance_memory: MemoryStr | None = None
 
     mapping = {'results': ParamInfo(CFG_BLAST, CFG_BLAST_RESULTS),
                'name': ParamInfo(CFG_CLUSTER, CFG_CLUSTER_NAME),
@@ -508,7 +508,7 @@ class ClusterConfig(ConfigParserToDataclassMapper):
             self.num_nodes = 1
 
 
-    def validate(self, errors: List[str], task: ElbCommand):
+    def validate(self, errors: list[str], task: ElbCommand):
         """Config validation"""
         if task != ElbCommand.SUBMIT:
             return
@@ -536,10 +536,10 @@ class TimeoutsConfig(ConfigParserToDataclassMapper):
 class ResourceIds(DataClassJsonMixin):
     """Cloud resource ids"""
     # persistent disk ids
-    disks: List[str] = field(default_factory = list,
+    disks: list[str] = field(default_factory = list,
                              metadata = config(letter_case=LetterCase.KEBAB))
     # volume snapshot ids
-    snapshots: List[str] = field(default_factory = list,
+    snapshots: list[str] = field(default_factory = list,
                                  metadata = config(letter_case=LetterCase.KEBAB))
 
 
@@ -552,7 +552,7 @@ class AppState:
     resources: ResourceIds = field(default_factory = lambda: ResourceIds())
 
     # The kubernetes context
-    k8s_ctx: Optional[str] = None
+    k8s_ctx: str | None = None
 
 
 @dataclass
@@ -837,16 +837,16 @@ class ElasticBlastConfig:
     def _init_from_parameters(self,
                               task: ElbCommand,
                               results: str,
-                              aws_region: Optional[str] = None,
-                              gcp_project: Optional[str] = None,
-                              gcp_region: Optional[str] = None,
-                              gcp_zone: Optional[str] = None,
-                              program: Optional[str] = None,
-                              db: Optional[str] = None,
-                              queries: Optional[str] = None,
+                              aws_region: str | None = None,
+                              gcp_project: str | None = None,
+                              gcp_region: str | None = None,
+                              gcp_zone: str | None = None,
+                              program: str | None = None,
+                              db: str | None = None,
+                              queries: str | None = None,
                               options: str = '',
-                              dry_run: Optional[bool] = None,
-                              cluster_name: Optional[str] = None,
+                              dry_run: bool | None = None,
+                              cluster_name: str | None = None,
                               machine_type: str = ''):
         """Initialize config object from required parameters"""
         if aws_region and (gcp_project or gcp_region or gcp_zone):
@@ -918,7 +918,7 @@ class ElasticBlastConfig:
 
     def validate(self, task: ElbCommand = ElbCommand.SUBMIT, dry_run=False):
         """Validate config"""
-        errors: List[str] = []
+        errors: list[str] = []
 
         if self.cloud_provider.cloud == CSP.GCP:
             self.gcp.validate(errors, task)
@@ -969,7 +969,7 @@ class ElasticBlastConfig:
             raise UserReportError(returncode=INPUT_ERROR,
                                   message='\n'.join(errors))
 
-    def _validate_num_cpus(self, instance_props: InstanceProperties, errors: List[str]):
+    def _validate_num_cpus(self, instance_props: InstanceProperties, errors: list[str]):
         """ Validate that the num_cpus configured will work well with ElasticBLAST """
         if instance_props.ncpus < self.cluster.num_cpus:
             errors.append(f'Requested number of CPUs for a single search job ({self.cluster.num_cpus}) exceeds the number of CPUs ({instance_props.ncpus}) on the selected instance type ({self.cluster.machine_type}). Please, reduce the number of CPUs or select an instance type with more available CPUs.')
@@ -988,10 +988,10 @@ class ElasticBlastConfig:
 
 
     @staticmethod
-    def _clean_dict(indict: Dict[str, Any]):
+    def _clean_dict(indict: dict[str, Any]):
         """Remove unimportant config parameters (mapping and equal to None) from
         the object converted to a dictionary."""
-        remove: List[Any] = []
+        remove: list[Any] = []
         if 'mapping' in indict:
             remove.append('mapping')
         for key in indict:
@@ -1013,7 +1013,7 @@ class ElasticBlastConfig:
             del indict[key_1][key_2]
 
 
-    def asdict(self) -> Dict[str, Any]:
+    def asdict(self) -> dict[str, Any]:
         """Convert ElasticBlastConfig object to a dictionary, removing mapping
         attributes, parameters set to None and cloud_provider, because it is
         the same as aws or gcp"""
@@ -1107,9 +1107,9 @@ def generate_cluster_name(results: CloudURI) -> str:
 
 def create_labels(cloud_provider: CSP,
                   results: str,
-                  blast_conf: Optional[BlastConfig],
+                  blast_conf: BlastConfig | None,
                   cluster_name: str,
-                  user_provided_labels: Optional[str] = None) -> str:
+                  user_provided_labels: str | None = None) -> str:
     """Generate labels for cloud resources"""
     if cloud_provider == CSP.AWS:
         sanitize = sanitize_aws_tag
@@ -1123,7 +1123,7 @@ def create_labels(cloud_provider: CSP,
     cluster_name = sanitize(cluster_name)
     blast_program = sanitize(blast_conf.program) if blast_conf else '-'
     db = sanitize(blast_conf.db) if blast_conf else '-'
-    create_date = sanitize(datetime.datetime.now(datetime.timezone.utc).strftime('%Y-%m-%d-%H-%M-%S'))
+    create_date = sanitize(datetime.datetime.now(datetime.UTC).strftime('%Y-%m-%d-%H-%M-%S'))
     hostname = sanitize(socket.gethostname())
 
     results = sanitize(results)

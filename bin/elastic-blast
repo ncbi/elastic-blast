@@ -113,7 +113,7 @@ def reject_string_with_unicode(content: str) -> None:
                                   message=f"Command line has Unicode letters in argument '{content}', can't be processed")
 
 
-def reject_cli_args_with_unicode(args: List[str]) -> None:
+def reject_cli_args_with_unicode(args: list[str]) -> None:
     for arg in args:
         reject_string_with_unicode(arg)
 

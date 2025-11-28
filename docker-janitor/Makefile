@@ -29,7 +29,7 @@ SHELL=/bin/bash
 IMG?=ncbi/elasticblast-janitor
 VERSION?=0.4.0
 ELB_VERSION?=$(shell git describe --tags --abbrev=0)
-GCP_PROJECT?=$(shell gcloud config get-value project 2>/dev/null)
+GCP_PROJECT?=ncbi-blast-infra
 GCP_TEST_BUCKET?=gs://elasticblast-test/query-split-run-test
 
 # For gcp-test
@@ -58,7 +58,7 @@ check:
 	-docker run --rm ${IMG}:${VERSION}
 
 gcp-build:
-	gcloud builds submit --config cloudbuild.yaml --substitutions _VERSION=${VERSION},_IMG=${IMG}
+	gcloud builds submit --config cloudbuild.yaml --substitutions _VERSION=${VERSION},_IMG=${IMG} --project ${GCP_PROJECT}
 
 # Use this target to build an image from your local sources as opposed to those on PyPI.org
 .PHONY: gcp-build-from-local-sources
@@ -66,23 +66,23 @@ gcp-build-from-local-sources:
 	rsync -a ../setup.py ../setup.cfg_cloud ../src ../bin ../requirements ${PWD}/
 	sed -i~ -e '/^value = $${VERSION}/d;' setup.cfg_cloud
 	echo "value = ${ELB_VERSION}" >> setup.cfg_cloud
-	-gcloud builds submit --config cloudbuild.yaml --substitutions _VERSION=${VERSION},_IMG=${IMG},_DOCKERFILE='Dockerfile-build-from-local-sources.gcp'
+	-gcloud builds submit --config cloudbuild.yaml --substitutions _VERSION=${VERSION},_IMG=${IMG},_DOCKERFILE='Dockerfile-build-from-local-sources.gcp' --project ${GCP_PROJECT}
 	rm -fr src bin requirements setup.cfg_cloud setup.py
 
 .PHONY: gcp-test
 gcp-test:
-	gcloud builds submit --config cloudrun.yaml --substitutions _IMG="gcr.io/${GCP_PROJECT}/${IMG}:${VERSION}",_ELB_GCP_PROJECT="${ELB_GCP_PROJECT}",_ELB_GCP_REGION="${ELB_GCP_REGION}",_ELB_GCP_ZONE="${ELB_GCP_ZONE}",_ELB_RESULTS="${ELB_RESULTS}",_ELB_CLUSTER_NAME="${ELB_CLUSTER_NAME}"
+	gcloud builds submit --config cloudrun.yaml --substitutions _IMG="us-docker.pkg.dev/${GCP_PROJECT}/${IMG}:${VERSION}",_ELB_GCP_PROJECT="${ELB_GCP_PROJECT}",_ELB_GCP_REGION="${ELB_GCP_REGION}",_ELB_GCP_ZONE="${ELB_GCP_ZONE}",_ELB_RESULTS="${ELB_RESULTS}",_ELB_CLUSTER_NAME="${ELB_CLUSTER_NAME}"
 
 gcp-clean:
-	-gcloud container images delete gcr.io/${GCP_PROJECT}/${IMG}:${VERSION}
+	-gcloud container images delete us-docker.pkg.dev/${GCP_PROJECT}/${IMG}:${VERSION}
 
 gcp-check:
-	-gcloud container images list --repository=gcr.io/${GCP_PROJECT}/${IMG}
-	-gcloud container images list-tags gcr.io/${GCP_PROJECT}/${IMG}
-	-gcloud container images describe gcr.io/${GCP_PROJECT}/${IMG}:latest
-	-gcloud container images describe gcr.io/${GCP_PROJECT}/${IMG}:${VERSION}
+	-gcloud container images list --repository=us-docker.pkg.dev/${GCP_PROJECT}/${IMG}
+	-gcloud container images list-tags us-docker.pkg.dev/${GCP_PROJECT}/${IMG}
+	-gcloud container images describe us-docker.pkg.dev/${GCP_PROJECT}/${IMG}:latest
+	-gcloud container images describe us-docker.pkg.dev/${GCP_PROJECT}/${IMG}:${VERSION}
 	#gcloud builds submit --config test-cloudbuild.yaml --substitutions _TAG=$(VERSION),_IMG=${IMG}
 
 gcp-list-tagless-images:
-	gcloud container images list-tags gcr.io/${GCP_PROJECT}/${IMG} \
+	gcloud container images list-tags us-docker.pkg.dev/${GCP_PROJECT}/${IMG} \
 		--filter='-tags:*' --format="get(digest)"

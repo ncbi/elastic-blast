@@ -26,12 +26,13 @@
 
 SHELL=/bin/bash
 IMG?=ncbi/elb
-GCP_PROJECT?=$(shell gcloud config get-value project 2>/dev/null)
-GCP_IMG?=gcr.io/${GCP_PROJECT}/${IMG}
+GCP_PROJECT?=ncbi-blast-infra
+GCP_REPOSITORY=ncbi
+GCP_IMG?=us-docker.pkg.dev/${GCP_PROJECT}/${GCP_REPOSITORY}/elb
 AWS_SERVER?=public.ecr.aws/i6v3i0i9
 AWS_IMG?=${AWS_SERVER}/elasticblast-elb
 AWS_REGION?=us-east-1
-VERSION?=1.3.2
+VERSION?=1.4.0
 
 ifeq (, $(shell which vmtouch 2>/dev/null))
 NOVMTOUCH?=--no-vmtouch
@@ -68,7 +69,7 @@ clean-local-sources:
 
 .PHONY: gcp-build
 gcp-build:
-	gcloud builds submit --config=cloudbuild.yaml --substitutions=TAG_NAME="${VERSION}",_IMG="${GCP_IMG}" .
+	gcloud builds submit --config=cloudbuild.yaml --substitutions=TAG_NAME="${VERSION}",_IMG="${GCP_IMG}" --project ${GCP_PROJECT} .
 
 .PHONY: aws-build
 aws-build:
@@ -78,7 +79,7 @@ aws-build:
 # Use the targets below to build imges using local elastic-blast sources
 .PHONY: gcp-build-from-local-sources
 gcp-build-from-local-sources: setup.cfg_cloud
-	gcloud builds submit --config=cloudbuild.yaml --substitutions=TAG_NAME="${VERSION}",_IMG="${GCP_IMG}",_DOCKERFILE='Dockerfile-build-from-local-sources' .
+	gcloud builds submit --config=cloudbuild.yaml --substitutions=TAG_NAME="${VERSION}",_IMG="${GCP_IMG}",_DOCKERFILE='Dockerfile-build-from-local-sources' --project ${GCP_PROJECT} .
 	$(MAKE) clean-local-sources
 
 .PHONY: aws-build-from-local-sources
@@ -88,7 +89,7 @@ aws-build-from-local-sources: setup.cfg_cloud
 
 .PHONY: gcp-check
 gcp-check:
-	gcloud builds submit --config test-docker-image-gcp.yaml --substitutions _TAG=$(VERSION),_IMG=${IMG}
+	gcloud builds submit --config test-docker-image-gcp.yaml --substitutions _TAG=$(VERSION),_IMG=${IMG},_GCP_PROJECT=${GCP_PROJECT}
 
 .PHONY: aws-check
 aws-check:

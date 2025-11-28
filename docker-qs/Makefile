@@ -30,7 +30,7 @@ SHELL=/bin/bash
 IMG?=ncbi/elasticblast-query-split
 VERSION?=0.1.4
 ELB_VERSION=?=$(shell git describe --tags --abbrev=0)
-GCP_PROJECT?=$(shell gcloud config get-value project 2>/dev/null)
+GCP_PROJECT?=ncbi-blast-infra
 GCP_TEST_BUCKET?=gs://elasticblast-test/query-split-run-test
 AWS_REGION?=us-east-1
 AWS_SERVER?=public.ecr.aws/ncbi-elasticblast
@@ -55,25 +55,25 @@ check:
 	-docker run --rm ${IMG}:${VERSION} elastic-blast.py --version
 
 gcp-build:
-	gcloud builds submit --config cloudbuild.yaml --substitutions _VERSION=${VERSION},_IMG=${IMG}
+	gcloud builds submit --config cloudbuild.yaml --substitutions _VERSION=${VERSION},_IMG=${IMG} --project ${GCP_PROJECT}
 
 .PHONY: gcp-test
 gcp-test:
-	gcloud builds submit --config cloudrun.yaml --substitutions _IMG="gcr.io/${GCP_PROJECT}/${IMG}:${VERSION}",_CMD="run.sh -i gs://elastic-blast-samples/queries/nopal/nopal-transcriptome.tgz -b 5000000 -o ${GCP_TEST_BUCKET} -q ooo"
+	gcloud builds submit --config cloudrun.yaml --substitutions _IMG="us-docker.pkg.dev/${GCP_PROJECT}/${IMG}:${VERSION}",_CMD="run.sh -i gs://elastic-blast-samples/queries/nopal/nopal-transcriptome.tgz -b 5000000 -o ${GCP_TEST_BUCKET} -q ooo"
 	[ `gsutil cat ${GCP_TEST_BUCKET}/metadata/batch_list.txt | wc -l` -eq 44 ]
 
 gcp-clean:
-	-gcloud container images delete gcr.io/${GCP_PROJECT}/${IMG}:${VERSION}
+	-gcloud container images delete us-docker.pkg.dev/${GCP_PROJECT}/${IMG}:${VERSION}
 
 gcp-check:
-	-gcloud container images list --repository=gcr.io/${GCP_PROJECT}/${IMG}
-	-gcloud container images list-tags gcr.io/${GCP_PROJECT}/${IMG}
-	-gcloud container images describe gcr.io/${GCP_PROJECT}/${IMG}:latest
-	-gcloud container images describe gcr.io/${GCP_PROJECT}/${IMG}:${VERSION}
+	-gcloud container images list --repository=us-docker.pkg.dev/${GCP_PROJECT}/${IMG}
+	-gcloud container images list-tags us-docker.pkg.dev/${GCP_PROJECT}/${IMG}
+	-gcloud container images describe us-docker.pkg.dev/${GCP_PROJECT}/${IMG}:latest
+	-gcloud container images describe us-docker.pkg.dev/${GCP_PROJECT}/${IMG}:${VERSION}
 	gcloud builds submit --config test-cloudbuild.yaml --substitutions _TAG=$(VERSION),_IMG=${IMG}
 
 gcp-list-tagless-images:
-	gcloud container images list-tags gcr.io/${GCP_PROJECT}/${IMG} \
+	gcloud container images list-tags us-docker.pkg.dev/${GCP_PROJECT}/${IMG} \
 		--filter='-tags:*' --format="get(digest)"
 
 .PHONY: aws-build

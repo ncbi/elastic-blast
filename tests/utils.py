@@ -117,8 +117,8 @@ class MockedCompletedProcess:
                  stderr: str = '',
                  returncode: int = 0,
                  subprocess_run_called: bool = True,
-                 storage: Optional[Dict[str, str]] = None,
-                 key: Optional[str] = None):
+                 storage: dict[str, str] | None = None,
+                 key: str | None = None):
         """Class constructor
         Arguments:
             stdout: Called process stdout
@@ -129,8 +129,8 @@ class MockedCompletedProcess:
             storage: Object simulating cloud storage (not needed in most cases)
             key: Cloud storage object key (not needed in most cases)"""
         if subprocess_run_called:
-            self.stdout: Optional[bytes] = str.encode(stdout)
-            self.stderr: Optional[bytes] = str.encode(stderr)
+            self.stdout: bytes | None = str.encode(stdout)
+            self.stderr: bytes | None = str.encode(stderr)
         else:
             # when CompletedProcess is created by subprocess.Popen,
             # CompletedProcess.stdout and CompletedProcess.stderr are streams
@@ -243,13 +243,13 @@ class CloudResources:
     """Class to simulate created cloud resources"""
     # dictionary of cloud storage objects, where key is object key and value is
     # object content, any object is readable and writable
-    storage: Dict[str, str] = field(default_factory=dict)
+    storage: dict[str, str] = field(default_factory=dict)
 
     # gcloud config
-    conf: Dict[str, str] = field(default_factory=dict)
+    conf: dict[str, str] = field(default_factory=dict)
 
 
-def mocked_safe_exec(cmd: Union[List[str], str], env: Optional[Dict[str, str]] = None, cloud_state: CloudResources = None) -> MockedCompletedProcess:
+def mocked_safe_exec(cmd: list[str] | str, env: dict[str, str] | None = None, cloud_state: CloudResources = None) -> MockedCompletedProcess:
     """Substitute for util.safe_exec function that calls command line gcloud
     or kubectl. It emulates gcloud or kubectl stdout for recognized parameters.
 
@@ -478,7 +478,7 @@ class GKEMock:
         self.disk_delete_called = False
         self.cloud = CloudResources()
 
-    def set_options(self, options: List[str]) -> None:
+    def set_options(self, options: list[str]) -> None:
         """Set optional mocked GKE behavior.
 
         Arguments:

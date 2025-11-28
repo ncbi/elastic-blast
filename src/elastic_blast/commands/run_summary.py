@@ -71,9 +71,9 @@ class Run:
     njobs: int = 0
     start_time: int = 0
     end_time:  int = 0
-    exit_codes: List[int] = field(default_factory=list)
-    phase_names: List[str] = field(default_factory=list)
-    phases: DefaultDict[str,List[Tuple[int, int]]] = field(default_factory=lambda:defaultdict(list))
+    exit_codes: list[int] = field(default_factory=list)
+    phase_names: list[str] = field(default_factory=list)
+    phases: DefaultDict[str,list[tuple[int, int]]] = field(default_factory=lambda:defaultdict(list))
     def read_log_parser(self, log_parser):
         # Copy all run phases
         for _, _, phase in run_phases:

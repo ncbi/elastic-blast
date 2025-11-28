@@ -107,7 +107,7 @@ class TestSplitResultMatchesOriginal(unittest.TestCase):
         total_len = 0
         test_batch_length = int(TEST_BATCH_LENGTH)
         for fn in os.listdir(self.batch_dir):
-            with open(os.path.join(self.batch_dir, fn), 'rt') as f:
+            with open(os.path.join(self.batch_dir, fn)) as f:
                 seq_len = []
                 read_fasta(f.read(), res_split, seq_len)
                 # Check that if more than one sequence in batch its length is
@@ -120,7 +120,7 @@ class TestSplitResultMatchesOriginal(unittest.TestCase):
         self.assertEqual(sum(seq_len_orig), total_len)
         # Test that job files variables expanded properly
         for fn in os.listdir(self.job_dir):
-            with open(os.path.join(self.job_dir, fn), 'rt') as f:
+            with open(os.path.join(self.job_dir, fn)) as f:
                 mo = re_yaml_name.match(fn)
                 query_num = mo.group(1)
                 text_actual = f.read()

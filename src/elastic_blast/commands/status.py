@@ -48,7 +48,7 @@ def create_arg_parser(subparser, common_opts_parser):
 FAILURE_MESSAGE = 'Your ElasticBLAST search failed, please help us improve ElasticBLAST by reporting this failure as described in https://blast.ncbi.nlm.nih.gov/doc/elastic-blast/support.html'
 
 #TODO: use cfg only when args.wait, args.sync, and args.run_label are replicated in cfg
-def _status(args, cfg: ElasticBlastConfig, clean_up_stack: List[Any]) -> int:
+def _status(args, cfg: ElasticBlastConfig, clean_up_stack: list[Any]) -> int:
     """ Entry point to handle checking status for an ElasticBLAST search """
     cfg.validate(ElbCommand.STATUS)
     returncode = 0

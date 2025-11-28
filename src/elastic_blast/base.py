@@ -29,7 +29,8 @@ import configparser
 import re
 from dataclasses import dataclass, field, Field, fields, _MISSING_TYPE
 from enum import Enum, auto
-from typing import Dict, List, Union, Optional, NamedTuple, get_origin, get_args
+from typing import Dict, List, NamedTuple, get_origin, get_args
+from types import UnionType
 
 @dataclass(frozen=True)
 class InstanceProperties:
@@ -47,7 +48,7 @@ class InstanceProperties:
 class QuerySplittingResults:
     """ Results from query splitting operation """
     query_length : int
-    query_batches : List[str]
+    query_batches : list[str]
 
     def num_batches(self) -> int:
         return len(self.query_batches)
@@ -182,7 +183,7 @@ class ConfigParserToDataclassMapper:
         parameter or None)
     """
     
-    mapping: Dict[str, Optional[ParamInfo]] = field(init=False)
+    mapping: dict[str, ParamInfo | None] = field(init=False)
 
     def __init__(self):
         """Contructor needed so that dataclass does not auto generate one"""
@@ -260,7 +261,7 @@ class ConfigParserToDataclassMapper:
 
 
     def _init_optional_from_cfg(self, parser: configparser.ConfigParser,
-                                errors: List[str]):
+                                errors: list[str]):
         """Initialize from ConfigParser only class attributes that are not
         parameters of class constructor.
 
@@ -284,7 +285,7 @@ class ConfigParserToDataclassMapper:
 
     @classmethod
     def _test_optional_cfg_params(cls, parser: configparser.ConfigParser,
-                                  errors: List[str]):
+                                  errors: list[str]):
         """Try initializing from ConfigParser only class attributes that are
         not parameters of class constructor to report any inavlid values
 
@@ -317,7 +318,7 @@ class ConfigParserToDataclassMapper:
             If fieds.type is a Union, then the first type that is not None,
             otherwise field.type"""
         ftype = field.type
-        if get_origin(ftype) is not None and get_origin(ftype) == Union:
+        if get_origin(ftype) is not None and get_origin(ftype) == UnionType:
             ftype = [t for t in get_args(ftype) if t != type(None)][0]
         return ftype
 

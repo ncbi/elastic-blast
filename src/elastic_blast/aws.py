@@ -123,7 +123,7 @@ class JobIds:
     submission and BLAST searches"""
     query_splitting: str = ''
     job_submission: str = ''
-    search: List[str] = field(default_factory=list)
+    search: list[str] = field(default_factory=list)
 
     def __bool__(self):
         """Boolean value of the object: True if at least one job id is set"""
@@ -137,7 +137,7 @@ class JobIds:
             self.job_submission = obj.job_submission
         self.search = list(set(self.search + obj.search))
 
-    def to_list(self) -> List[str]:
+    def to_list(self) -> list[str]:
         """Return all jobs ids as a list"""
         id_list = [job for job in self.search]
         if self.query_splitting:
@@ -165,7 +165,7 @@ class ElasticBlastAws(ElasticBlast):
     (janitor module)
     """
 
-    def __init__(self, cfg: ElasticBlastConfig, create=False, cleanup_stack: Optional[List[Any]]=None):
+    def __init__(self, cfg: ElasticBlastConfig, create=False, cleanup_stack: list[Any] | None=None):
         """ Class constructor: it's meant to be a starting point and to implement
         a base class with the core ElasticBLAST interface
         Parameters:
@@ -633,7 +633,7 @@ class ElasticBlastAws(ElasticBlast):
         else:
             logging.debug(f'dry-run: would have deleted {self.stack_name}')
 
-    def _get_blastdb_info(self) -> Tuple[str, str, str]:
+    def _get_blastdb_info(self) -> tuple[str, str, str]:
         """Returns a tuple of BLAST database basename, path (if applicable), and label
         suitable for job name. Gets user provided database from configuration.
         For custom database finds basename from full path, and provides
@@ -667,7 +667,7 @@ class ElasticBlastAws(ElasticBlast):
 
 
     @handle_aws_error
-    def cloud_query_split(self, query_files: List[str]) -> None:
+    def cloud_query_split(self, query_files: list[str]) -> None:
         """ Submit the query sequences for splitting to the cloud.
             Parameters:
                 query_files     - list files containing query sequence data to split
@@ -691,7 +691,7 @@ class ElasticBlastAws(ElasticBlast):
           (and in the future k8s jobs also) and saves the job IDs to the results bucket
 
         """
-        overrides: Dict[str, Any] = {
+        overrides: dict[str, Any] = {
             'vcpus': self.cfg.cluster.num_cpus,
             'memory': int(self.cfg.cluster.mem_limit.asMiB())
         }
@@ -752,7 +752,7 @@ class ElasticBlastAws(ElasticBlast):
 
 
     @handle_aws_error
-    def submit(self, query_batches: List[str], query_length, one_stage_cloud_query_split: bool) -> None:
+    def submit(self, query_batches: list[str], query_length, one_stage_cloud_query_split: bool) -> None:
         """ Submit query batches to cluster, converts AWS exceptions to UserReportError
             Parameters:
                 query_batches               - list of bucket names of queries to submit
@@ -814,7 +814,7 @@ class ElasticBlastAws(ElasticBlast):
 
 
     @handle_aws_error
-    def client_submit(self, query_batches: List[str], one_stage_cloud_query_split: bool) -> None:
+    def client_submit(self, query_batches: list[str], one_stage_cloud_query_split: bool) -> None:
         """ Submit query batches to cluster, converts AWS exceptions to UserReportError
             Parameters:
                 query_batches               - list of bucket names of queries to submit
@@ -825,7 +825,7 @@ class ElasticBlastAws(ElasticBlast):
         if self.cfg.cluster.db_source != DBSource.AWS:
             logging.warning(f'BLAST databases for AWS based ElasticBLAST obtained from {self.cfg.cluster.db_source.name}')
 
-        overrides: Dict[str, Any] = {
+        overrides: dict[str, Any] = {
             'vcpus': self.cfg.cluster.num_cpus,
             'memory': int(self.cfg.cluster.mem_limit.asMiB())
         }
@@ -917,7 +917,7 @@ class ElasticBlastAws(ElasticBlast):
             self.upload_job_ids()
 
 
-    def get_job_ids(self) -> List[str]:
+    def get_job_ids(self) -> list[str]:
         """Get a list of batch job ids"""
         # we can only query for job ids by jobs states which can change
         # between calls, so order in which job states are processed matters
@@ -963,7 +963,7 @@ class ElasticBlastAws(ElasticBlast):
             logging.debug('dry-run: would have uploaded query length')
 
 
-    def check_status(self, extended=False) -> Tuple[ElbStatus, Dict[str, int], Dict[str, str]]:
+    def check_status(self, extended=False) -> tuple[ElbStatus, dict[str, int], dict[str, str]]:
         """ Check execution status of ElasticBLAST search
         Parameters:
             extended - do we need verbose information about jobs
@@ -1025,9 +1025,9 @@ class ElasticBlastAws(ElasticBlast):
                     raise
 
     @handle_aws_error
-    def _check_status(self, extended) -> Tuple[Dict[str, int], Dict[str, str]]:
+    def _check_status(self, extended) -> tuple[dict[str, int], dict[str, str]]:
         """ Internal check_status, converts AWS exceptions to UserReportError  """
-        counts : Dict[str, int] = defaultdict(int)
+        counts : dict[str, int] = defaultdict(int)
         if self.dry_run:
             logging.info('dry-run: would have checked status')
             return counts, {}
@@ -1056,7 +1056,7 @@ class ElasticBlastAws(ElasticBlast):
         }
         return status, {}
 
-    def _check_status_extended(self) -> Tuple[Dict[str, int], Dict[str, str]]:
+    def _check_status_extended(self) -> tuple[dict[str, int], dict[str, str]]:
         """ Internal check_status_extended, not protected against exceptions in AWS """
         logging.debug(f'Retrieving jobs for queue {self.job_queue_name}')
         jobs = {}
@@ -1075,9 +1075,9 @@ class ElasticBlastAws(ElasticBlast):
                                                     nextToken=batch_of_jobs['nextToken'])
                 for j in batch_of_jobs['jobSummaryList']:
                     jobs[j['jobId']] = j
-        counts : Dict[str, int] = defaultdict(int)
-        detailed_info: Dict[str, List[str]] = defaultdict(list)
-        pending_set = set(['SUBMITTED', 'PENDING', 'RUNNABLE', 'STARTING'])
+        counts : dict[str, int] = defaultdict(int)
+        detailed_info: dict[str, list[str]] = defaultdict(list)
+        pending_set = {'SUBMITTED', 'PENDING', 'RUNNABLE', 'STARTING'}
         for job_id, job in jobs.items():
             if job['status'] in pending_set:
                 status = 'pending'
@@ -1116,7 +1116,7 @@ class ElasticBlastAws(ElasticBlast):
         else:
             logging.debug(f'dry-run: would have removed {bname}/{pname}/{bucket_prefix}')
 
-    def _get_cloudformation_errors(self) -> List[str]:
+    def _get_cloudformation_errors(self) -> list[str]:
         """Iterate over cloudformation stack events and extract error messages
         for failed resource creation or deletion. Cloudformation stack object
         must already be initialized.

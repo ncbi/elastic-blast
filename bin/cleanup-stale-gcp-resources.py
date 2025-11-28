@@ -42,7 +42,7 @@ DFLT_PROJECT = 'ncbi-sandbox-blast'
 DESC = r"""Script to clean up GCP resources that are older than the specified date"""
 
 
-def safe_exec(cmd: Union[List[str], str]) -> subprocess.CompletedProcess:
+def safe_exec(cmd: list[str] | str) -> subprocess.CompletedProcess:
     """Wrapper around subprocess.run that raises SafeExecError on errors from
     command line with error messages assembled from all available information"""
     if isinstance(cmd, str):
@@ -52,8 +52,7 @@ def safe_exec(cmd: Union[List[str], str]) -> subprocess.CompletedProcess:
 
     try:
         logging.debug(' '.join(cmd))
-        p = subprocess.run(cmd, check=True, stdout=subprocess.PIPE,
-                           stderr=subprocess.PIPE)
+        p = subprocess.run(cmd, check=True, capture_output=True)
     except subprocess.CalledProcessError as e:
         msg = f'The command "{" ".join(e.cmd)}" returned with exit code {e.returncode}\n{e.stderr.decode()}\n{e.stdout.decode()}'
         if e.output is not None:

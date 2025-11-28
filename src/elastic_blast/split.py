@@ -31,7 +31,8 @@ import io
 import logging
 from timeit import default_timer as timer
 from .filehelper import open_for_write, get_error
-from typing import Union, List, Iterable, TextIO, Tuple
+from typing import Union, List, TextIO, Tuple
+from collections.abc import Iterable
 from .constants import ELB_QUERY_BATCH_FILE_PREFIX
 
 def make_full_name(out_path, nchunk, suffix):
@@ -53,7 +54,7 @@ class FASTAReader():
     Sequences longer than threshold are written in their own chunks without
     breaks mid-sequence.
     """
-    def __init__(self, f: Union[Iterable[TextIO], TextIO], batch_len: int,
+    def __init__(self, f: Iterable[TextIO] | TextIO, batch_len: int,
                  out_path: str):
         """Initialize an object
         Arguments:
@@ -62,18 +63,18 @@ class FASTAReader():
             batch_len: Batch length in bases/residues
             out_path: Output directory to save query batches
         """
-        self.file: Union[Iterable[TextIO], TextIO]
+        self.file: Iterable[TextIO] | TextIO
         if isinstance(f, io.TextIOBase):
             self.file = [f]
         else:
             self.file = f
         self.batch_len = batch_len
         self.out_path = out_path
-        self.queries: List[str] = []
+        self.queries: list[str] = []
 
         self.nchunk = 0
-        self.buffer: List[str] = []
-        self.seq_buffer: List[str] = []
+        self.buffer: list[str] = []
+        self.seq_buffer: list[str] = []
         self.total_count = 0 # count of base/residue in all processed files
         self.chunk_count = 0 # running base/residue count for chunk
         self.seq_count   = 0 # base/residue counter in current sequence
@@ -98,7 +99,7 @@ class FASTAReader():
         self.seq_buffer = []
         self.seq_count  = 0
 
-    def read_and_cut(self) -> Tuple[int, List[str]]:
+    def read_and_cut(self) -> tuple[int, list[str]]:
         """ Raed a stream, parse it as FASTA, and write sequences into
         batches approximately of batch_len size.
         Return the total number

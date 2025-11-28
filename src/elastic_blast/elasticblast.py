@@ -39,7 +39,7 @@ from .constants import ElbStatus, ELB_STATUS_SUCCESS, ELB_STATUS_FAILURE
 
 class ElasticBlast(metaclass=ABCMeta):
     """ Base class for core ElasticBLAST functionality. """
-    def __init__(self, cfg: ElasticBlastConfig, create=False, cleanup_stack: Optional[List[Any]]=None):
+    def __init__(self, cfg: ElasticBlastConfig, create=False, cleanup_stack: list[Any] | None=None):
         self.cfg = cfg
         self.cleanup_stack = cleanup_stack if cleanup_stack else []
         self.dry_run = self.cfg.cluster.dry_run
@@ -52,7 +52,7 @@ class ElasticBlast(metaclass=ABCMeta):
             'ELB_NO_SEARCH' not in os.environ
 
     @abstractmethod
-    def cloud_query_split(self, query_files: List[str]) -> None:
+    def cloud_query_split(self, query_files: list[str]) -> None:
         """ Submit the query sequences for splitting to the cloud.
             Parameters:
                 query_files - list of files containing query sequence data to split
@@ -67,7 +67,7 @@ class ElasticBlast(metaclass=ABCMeta):
         """ Save query length in a metadata file in cloud storage """
 
     @abstractmethod
-    def submit(self, query_batches: List[str], query_length, one_stage_cloud_query_split: bool) -> None:
+    def submit(self, query_batches: list[str], query_length, one_stage_cloud_query_split: bool) -> None:
         """ Submit query batches to cluster
             Parameters:
                 query_batches               - list of bucket names of queries to submit
@@ -76,7 +76,7 @@ class ElasticBlast(metaclass=ABCMeta):
                                               of executing a regular job """
 
     @abstractmethod
-    def check_status(self, extended=False) -> Tuple[ElbStatus, Dict[str, int], Dict[str, str]]:
+    def check_status(self, extended=False) -> tuple[ElbStatus, dict[str, int], dict[str, str]]:
         """ Check execution status of ElasticBLAST search
         Parameters:
             extended - do we need verbose information about jobs

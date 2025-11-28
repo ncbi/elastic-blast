@@ -31,7 +31,7 @@ from elastic_blast.constants import ElbCommand
 from elastic_blast.elb_config import ElasticBlastConfig
 
 # TODO: use cfg only when args.wait, args.sync, and args.run_label are replicated in cfg
-def delete(args, cfg: ElasticBlastConfig, clean_up_stack: List[Any]) -> int:
+def delete(args, cfg: ElasticBlastConfig, clean_up_stack: list[Any]) -> int:
     """ Entry point to delete resources associated with an ElasticBLAST search """
     cfg.validate(ElbCommand.DELETE)
     elastic_blast = ElasticBlastFactory(cfg, False, clean_up_stack)

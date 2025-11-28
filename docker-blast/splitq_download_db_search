@@ -118,7 +118,7 @@ class FakeProcess:
     stderr = b''
 
 
-def safe_exec(cmd: Union[List[str], str], shell=False) -> subprocess.CompletedProcess:
+def safe_exec(cmd: list[str] | str, shell=False) -> subprocess.CompletedProcess:
     """Wrapper around subprocess.run that raises SafeExecError on errors from
     command line with error messages assembled from all available information"""
     if isinstance(cmd, str):
@@ -131,8 +131,7 @@ def safe_exec(cmd: Union[List[str], str], shell=False) -> subprocess.CompletedPr
         if dry_run:
             p = FakeProcess()
         else:
-            p = subprocess.run(cmd, check=True, shell=shell, stdout=subprocess.PIPE,
-                               stderr=subprocess.PIPE)
+            p = subprocess.run(cmd, check=True, shell=shell, capture_output=True)
     except subprocess.CalledProcessError as e:
         msg = f'The command "{" ".join(e.cmd)}" returned with exit code {e.returncode}\n{e.stderr.decode()}\n{e.stdout.decode()}'
         if e.output is not None:
@@ -416,7 +415,7 @@ def run_search(args, query):
 
     # Print first few lines of the results (testing purposes)
     if not dry_run:
-        with open(fn_out, 'rt') as f:
+        with open(fn_out) as f:
             nline = 0
             for line in f:
                 print(line, end='')

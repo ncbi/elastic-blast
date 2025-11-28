@@ -7,7 +7,11 @@ Author: Christiam Camacho (camacho@ncbi.nlm.nih.gov)
 Created: Mon 14 Sep 2020 10:37:01 AM EDT
 """
 import logging
-from awslimitchecker.checker import AwsLimitChecker # type: ignore
+import warnings
+# supress a warning on importing awslimitchecker
+with warnings.catch_warnings():
+    warnings.simplefilter("ignore", category=UserWarning)
+    from awslimitchecker.checker import AwsLimitChecker # type: ignore
 from elastic_blast.util import UserReportError
 from elastic_blast.constants import DEPENDENCY_ERROR
 from elastic_blast.elb_config import ElasticBlastConfig

@@ -69,14 +69,14 @@ from . import VERSION
 
 class ElasticBlastGcp(ElasticBlast):
     """ Implementation of core ElasticBLAST functionality in GCP. """
-    def __init__(self, cfg: ElasticBlastConfig, create=False, cleanup_stack: Optional[List[Any]]=None):
+    def __init__(self, cfg: ElasticBlastConfig, create=False, cleanup_stack: list[Any] | None=None):
         super().__init__(cfg, create, cleanup_stack)
-        self.query_files: List[str] = []
+        self.query_files: list[str] = []
         self.cluster_initialized = False
         self.apis_enabled = False
         self.auto_shutdown = not 'ELB_DISABLE_AUTO_SHUTDOWN' in os.environ
 
-    def cloud_query_split(self, query_files: List[str]) -> None:
+    def cloud_query_split(self, query_files: list[str]) -> None:
         """ Submit the query sequences for splitting to the cloud.
             Initialize cluster with cloud split job
             Parameters:
@@ -136,7 +136,7 @@ class ElasticBlastGcp(ElasticBlast):
         # Note: if cloud split is used this file is uploaded
         # by the run script in the 1st stage
 
-    def _check_job_number_limit(self, queries: Optional[List[str]], query_length) -> None:
+    def _check_job_number_limit(self, queries: list[str] | None, query_length) -> None:
         """ Check that resulting number of jobs does not exceed Kubernetes limit """
         if not queries:
             # Nothing to check, the job number is still unknown
@@ -150,7 +150,7 @@ class ElasticBlastGcp(ElasticBlast):
                   f' Please increase the batch-len parameter to at least {suggested_batch_len} and repeat the search.'
             raise UserReportError(INPUT_ERROR, msg)
 
-    def submit(self, query_batches: List[str], query_length, one_stage_cloud_query_split: bool) -> None:
+    def submit(self, query_batches: list[str], query_length, one_stage_cloud_query_split: bool) -> None:
         """ Submit query batches to cluster
             Parameters:
                 query_batches               - list of bucket names of queries to submit
@@ -197,7 +197,7 @@ class ElasticBlastGcp(ElasticBlast):
         self.cleanup_stack.clear()
         self.cleanup_stack.append(lambda: kubernetes.collect_k8s_logs(self.cfg))
 
-    def check_status(self, extended=False) -> Tuple[ElbStatus, Dict[str, int], Dict[str, str]]:
+    def check_status(self, extended=False) -> tuple[ElbStatus, dict[str, int], dict[str, str]]:
         """ Check execution status of ElasticBLAST search
         Parameters:
             extended - do we need verbose information about jobs
@@ -215,7 +215,7 @@ class ElasticBlastGcp(ElasticBlast):
             logging.info(msg)
             return ElbStatus.UNKNOWN, defaultdict(int), {STATUS_MESSAGE_ERROR: msg} if msg else {}
 
-    def _check_status(self, extended=False) -> Tuple[ElbStatus, Dict[str, int], Dict[str, str]]:
+    def _check_status(self, extended=False) -> tuple[ElbStatus, dict[str, int], dict[str, str]]:
         # We cache only status from gone cluster - it can't change anymore
         if self.cached_status:
             return self.cached_status, self.cached_counts, {STATUS_MESSAGE_ERROR: self.cached_failure_message} if self.cached_failure_message else {}
@@ -398,7 +398,7 @@ class ElasticBlastGcp(ElasticBlast):
                 else:
                     safe_exec(cmd)
 
-    def job_substitutions(self) -> Dict[str, str]:
+    def job_substitutions(self) -> dict[str, str]:
         """ Prepare substitution dictionary for job generation """
         cfg = self.cfg
         usage_reporting = get_usage_reporting()
@@ -436,7 +436,7 @@ class ElasticBlastGcp(ElasticBlast):
         return subs
 
 
-    def _generate_and_submit_jobs(self, queries: List[str]):
+    def _generate_and_submit_jobs(self, queries: list[str]):
         cfg, clean_up_stack = self.cfg, self.cleanup_stack
         subs = self.job_substitutions()
         job_template_text = read_job_template(cfg=cfg)
@@ -470,7 +470,7 @@ class ElasticBlastGcp(ElasticBlast):
                 f.write(str(len(job_names)))
 
 
-    def get_disk_quota(self) -> Tuple[float, float]:
+    def get_disk_quota(self) -> tuple[float, float]:
         """ Get the Persistent Disk SSD quota (SSD_TOTAL_GB)
             Returns tuple of limit and usage in GB """
         cmd = f'gcloud compute regions describe {self.cfg.gcp.region} --project {self.cfg.gcp.project} --format json'
@@ -512,7 +512,7 @@ def set_gcp_project(project: str) -> None:
     safe_exec(cmd)
 
 
-def get_disks(cfg: ElasticBlastConfig, dry_run: bool = False) -> List[str]:
+def get_disks(cfg: ElasticBlastConfig, dry_run: bool = False) -> list[str]:
     """Return a list of disk names in the current GCP project.
     Raises:
         util.SafeExecError on problems with command line gcloud,
@@ -532,7 +532,7 @@ def get_disks(cfg: ElasticBlastConfig, dry_run: bool = False) -> List[str]:
     return [i['name'] for i in disks]
 
 
-def get_snapshots(cfg: ElasticBlastConfig, dry_run: bool = False) -> List[str]:
+def get_snapshots(cfg: ElasticBlastConfig, dry_run: bool = False) -> list[str]:
     """Return a list of volume snapshot names in the current GCP project.
     Raises:
         util.SafeExecError on problems with command line gcloud,
@@ -801,7 +801,7 @@ def delete_cluster_with_cleanup(cfg: ElasticBlastConfig) -> None:
     delete_cluster(cfg)
 
 
-def get_gke_clusters(cfg: ElasticBlastConfig) -> List[str]:
+def get_gke_clusters(cfg: ElasticBlastConfig) -> list[str]:
     """Return a list of GKE cluster names.
 
     Arguments:
@@ -830,7 +830,7 @@ def get_gke_credentials(cfg: ElasticBlastConfig) -> str:
 
     Raises:
         util.SafeExecError on problems with command line gcloud"""
-    cmd: List[str] = 'gcloud container clusters get-credentials'.split()
+    cmd: list[str] = 'gcloud container clusters get-credentials'.split()
     cmd.append(cfg.cluster.name)
     cmd.append('--project')
     cmd.append(f'{cfg.gcp.project}')

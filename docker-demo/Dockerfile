@@ -34,7 +34,8 @@ USER root
 COPY requirements.txt .
 
 RUN apt-get -y -m update && \
-    apt-get install -y python3 kubectl && \
+    apt-get install -y python3 kubectl python3-venv && \
+    python3 -m venv /.venv && . /.venv/bin/activate && \
     pip3 install --no-cache-dir --upgrade pip && \
     pip3 install --no-cache-dir -r requirements.txt && \
     rm -rf /var/lib/apt/lists/* requirements.txt
@@ -46,6 +47,7 @@ RUN groupadd -r ${grpname} && \
 
 USER ${username}
 WORKDIR /home/${username}
+ENV PATH="/.venv/bin:${PATH}"
 
 COPY --chown=${username}:${grpname} Makefile-demo.mk Makefile
 COPY --chown=${username}:${grpname} README.md *.ini /home/${username}/

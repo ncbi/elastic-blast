@@ -80,7 +80,7 @@ class BlastDbMetadata:
     description: str = ''
     number_of_letters: int = 0
     number_of_sequences: int = 0
-    files: List[str] = field(default_factory=list)
+    files: list[str] = field(default_factory=list)
     last_updated: str = ''
     bytes_total: int = 0
     bytes_to_cache: int = 0
@@ -126,7 +126,7 @@ class BlastDbMetadataEncoder(json.JSONEncoder):
 
 
 def get_database_info(oneDBJson: BlastDbMetadata, db: Path, dbtype: DbType,
-                      file_prefix: Optional[str] = None) -> None:
+                      file_prefix: str | None = None) -> None:
     """
     Initialize database metadata
 
@@ -142,8 +142,7 @@ def get_database_info(oneDBJson: BlastDbMetadata, db: Path, dbtype: DbType,
     cmd = f'blastdbcmd -db {db} -dbtype {dbtype} -info'.split()
     logging.debug(f'Getting number of volumes for {db} CMD: {cmd}')
     try:
-        p = subprocess.run(cmd, check=True, stdout = subprocess.PIPE,
-                           stderr = subprocess.PIPE)
+        p = subprocess.run(cmd, check=True, capture_output=True)
 
         lines = p.stdout.decode().split('\n')
         for num, line in enumerate(lines):
@@ -173,8 +172,7 @@ def get_database_info(oneDBJson: BlastDbMetadata, db: Path, dbtype: DbType,
         cmd = f'blastdbcmd -list {tmp} -dbtype {dbtype} -remove_redundant_dbs -list_outfmt'.split() +  ['%f\t%p\t%t\t%l\t%n\t%d\t%U']
         logging.debug("Getting uncompressed database " + str(db) + " information. CMD: " + ' '.join(cmd))
         try:
-            p = subprocess.run(cmd, check=True, stdout=subprocess.PIPE,
-                               stderr=subprocess.PIPE)
+            p = subprocess.run(cmd, check=True, capture_output=True)
 
             for line in p.stdout.decode().split('\n'):
                 fields = line.rstrip().split('\t')
@@ -217,7 +215,7 @@ def get_database_info(oneDBJson: BlastDbMetadata, db: Path, dbtype: DbType,
     
 def populate_db_info(oneDBJson: BlastDbMetadata, db: Path,
                      data2collect: DataCollection,
-                     file_prefix: Optional[str]) -> None:
+                     file_prefix: str | None) -> None:
     """
     Get and populate database information from the filesystem.
 
@@ -286,7 +284,7 @@ def convert_date_to_iso8601(date: str) -> str:
               'Nov': '11',
               'Dec': '12'}
 
-    m = re.findall('([A-Z][a-z]{2})\s(\d{1,2}),\s(\d{4})', date)
+    m = re.findall(r'([A-Z][a-z]{2})\s(\d{1,2}),\s(\d{4})', date)
     if not m or len(m[0]) < 3:
         raise ValueError(f'The date string "{date}" could not be parsed')
 
@@ -305,8 +303,7 @@ def get_blast_version() -> str:
 
     cmd = 'blastdbcmd -version'.split()
     try:
-        p = subprocess.run(cmd, check=True, stdout=subprocess.PIPE,
-                           stderr=subprocess.PIPE)
+        p = subprocess.run(cmd, check=True, capture_output=True)
 
     except subprocess.CalledProcessError as err:
         raise UserReportError(returncode=ERROR_DEPENDENCY,
@@ -332,7 +329,7 @@ def main():
     output_file_name = f'{db.name}-{dbtype}-metadata.json'
     if args.out:
         output_file_name = args.out
-    with open(output_file_name, 'wt') as output_file:
+    with open(output_file_name, 'w') as output_file:
         print(oneDBJson.to_json(args.pretty), file=output_file)
     logging.debug(f'Metadata printed to {output_file_name}')
 
@@ -461,7 +458,7 @@ class TestCreateDbMetadata(unittest.TestCase):
         with NamedTemporaryFile() as output_file:
             with patch.object(argparse.ArgumentParser, 'parse_args', return_value=argparse.Namespace(db=db, dbtype='prot', out=output_file.name, logfile='stderr', loglevel='ERROR', pretty=None, output_prefix=None)):
                 main()
-            with open(output_file.name, 'rt') as metadata:
+            with open(output_file.name) as metadata:
                 output = metadata.read()
             result = json.loads(output)
             self.assertEqual(result['version'], BLASTDB_METADATA_VERSION)
@@ -487,7 +484,7 @@ class TestCreateDbMetadata(unittest.TestCase):
         with NamedTemporaryFile() as output_file:
             with patch.object(argparse.ArgumentParser, 'parse_args', return_value=argparse.Namespace(db=db, dbtype='prot', out=output_file.name, logfile='stderr', loglevel='ERROR', pretty=None, output_prefix=PREFIX)):
                 main()
-            with open(output_file.name, 'rt') as metadata:
+            with open(output_file.name) as metadata:
                 output = metadata.read()
             result = json.loads(output)
             self.assertEqual(len([s for s in result['files'] if s.startswith(PREFIX)]), len(result['files']))

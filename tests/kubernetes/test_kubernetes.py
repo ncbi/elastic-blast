@@ -275,7 +275,7 @@ def delete_cluster(name):
     kubernetes.safe_exec(cmd)
 
 
-def cluster_cleanup(cluster: str, disks: List[str] = None) -> List[str]:
+def cluster_cleanup(cluster: str, disks: list[str] = None) -> list[str]:
     """Utility function to delete an existing GKE cluster along with its
     persistent disk.
 

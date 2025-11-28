@@ -36,7 +36,8 @@ import inspect
 from itertools import zip_longest
 from functools import reduce
 from importlib_resources import files
-from typing import List, Union, Callable, Optional, Dict
+from typing import List, Union, Optional, Dict
+from collections.abc import Callable
 from .constants import MolType, GCS_DFLT_BUCKET
 from .constants import DEPENDENCY_ERROR, AWS_MAX_TAG_LENGTH, GCP_MAX_LABEL_LENGTH
 from .constants import AWS_MAX_JOBNAME_LENGTH, CSP, ELB_GCS_PREFIX
@@ -140,7 +141,7 @@ class ElbSupportedPrograms:
         return retval
 
 
-    def get_task(self, program: str, options: str) -> Optional[str]:
+    def get_task(self, program: str, options: str) -> str | None:
         """Parse blast command line options and return task or None if the
         task was not specified in the command line. Raise UserReportError for
         inapropriate tasks."""
@@ -216,7 +217,7 @@ class SafeExecError(ElasticBlastBaseException):
     pass
 
 
-def safe_exec(cmd: Union[List[str], str], env: Optional[Dict[str, str]] = None) -> subprocess.CompletedProcess:
+def safe_exec(cmd: list[str] | str, env: dict[str, str] | None = None) -> subprocess.CompletedProcess:
     """Wrapper around subprocess.run that raises SafeExecError on errors from
     command line with error messages assembled from all available information
 
@@ -238,8 +239,7 @@ def safe_exec(cmd: Union[List[str], str], env: Optional[Dict[str, str]] = None) 
         logging.debug(' '.join(cmd))
         if env:
             logging.debug(env)
-        p = subprocess.run(cmd, check=True, stdout=subprocess.PIPE,
-                           stderr=subprocess.PIPE, env=run_env)
+        p = subprocess.run(cmd, check=True, capture_output=True, env=run_env)
     except subprocess.CalledProcessError as e:
         msg = f'The command "{" ".join(e.cmd)}" returned with exit code {e.returncode}\n{e.stderr.decode()}\n{e.stdout.decode()}'
         if e.output is not None:
@@ -255,7 +255,7 @@ def safe_exec(cmd: Union[List[str], str], env: Optional[Dict[str, str]] = None) 
     return p
 
 
-def get_blastdb_info(blastdb: str, gcp_prj: Optional[str] = None):
+def get_blastdb_info(blastdb: str, gcp_prj: str | None = None):
     """Get BLAST database short name, path (if applicable), and label
     for Kubernetes. Gets user provided database from configuration.
     For custom database finds short name from full path, and provides
@@ -278,7 +278,7 @@ def get_blastdb_info(blastdb: str, gcp_prj: Optional[str] = None):
         output = proc.stdout.decode()
         if not output:
             raise ValueError(f'There are no files at the bucket {db}.*')
-        fnames: List[str] = output.split('\n')
+        fnames: list[str] = output.split('\n')
         res = reduce(lambda x, y: x or y.endswith('tar.gz'), fnames, False)
         if res:
             db_path = db + '.tar.gz'
@@ -288,7 +288,7 @@ def get_blastdb_info(blastdb: str, gcp_prj: Optional[str] = None):
     return db, db_path, sanitize_for_k8s(db)
 
 
-def check_user_provided_blastdb_exists(db: str, mol_type: MolType, db_source: DBSource, gcp_prj: Optional[str] = None) -> None:
+def check_user_provided_blastdb_exists(db: str, mol_type: MolType, db_source: DBSource, gcp_prj: str | None = None) -> None:
     """Request blast database size from cloud service provider object storage
     If applied to custom db, just check the presence
     Returns the size in GB, if not found raises ValueError exception
@@ -307,7 +307,7 @@ def check_user_provided_blastdb_exists(db: str, mol_type: MolType, db_source: DB
         raise ValueError(f'BLAST database {db} was not found')
 
 
-def gcp_get_blastdb_latest_path(gcp_prj: Optional[str]) -> str:
+def gcp_get_blastdb_latest_path(gcp_prj: str | None) -> str:
     """Get latest path of GCP-based blastdb repository"""
     prj = f'-u {gcp_prj}' if gcp_prj else ''
     cmd = f'gsutil {prj} cat {GCS_DFLT_BUCKET}/latest-dir'
@@ -493,7 +493,7 @@ def check_aws_region_for_invalid_characters(val: str) -> None:
         raise ValueError(f'{val} is not a legal AWS region name. The string can only contain letters, numbers, and dashes.')
 
 
-def clean_up(clean_up_stack: List[Callable]) -> List[str]:
+def clean_up(clean_up_stack: list[Callable]) -> list[str]:
     """Execute a list of cleanup procedures provided as a stack of Callable objects"""
     logging.debug('Clean up with stack %s',
                   ', '.join(map(repr, clean_up_stack)))
@@ -529,7 +529,7 @@ def get_usage_reporting() -> bool:
     return True
 
 
-def gcp_get_regions() -> List[str]:
+def gcp_get_regions() -> list[str]:
     """ Retrieves a list of available GCP region names """
     cmd = "gcloud compute regions list --format json"
     retval = []
@@ -560,7 +560,7 @@ def get_resubmission_error_msg(results: str, cloud: CSP) -> str:
     return retval
 
 
-def get_gcp_project() -> Optional[str]:
+def get_gcp_project() -> str | None:
     """Return current GCP project as configured in gcloud.
 
     Raises:
@@ -568,7 +568,7 @@ def get_gcp_project() -> Optional[str]:
         ValueError if gcloud run is successful, but the project is not set"""
     cmd: str = 'gcloud config get-value project'
     p = safe_exec(cmd)
-    result: Optional[str]
+    result: str | None
 
     # the result should not be empty, for unset properties gcloud returns the
     # string: '(unset)' to stderr

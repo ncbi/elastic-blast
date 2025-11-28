@@ -30,7 +30,7 @@ SHELL=/bin/bash
 IMG?=ncbi/elasticblast-job-submit
 VERSION?=4.1.0
 ELB_VERSION?=$(shell git describe --tags --abbrev=0)
-GCP_PROJECT?=$(shell gcloud config get-value project 2>/dev/null)
+GCP_PROJECT?=ncbi-blast-infra
 GCP_TEST_BUCKET?=gs://elasticblast-test/cloud-job-submission
 AWS_REGION?=us-east-1
 AWS_SERVER?=public.ecr.aws/ncbi-elasticblast
@@ -63,7 +63,7 @@ check:
 .PHONY: gcp-build
 gcp-build:
 	rsync -a ../src/elastic_blast/templates ${PWD}/
-	gcloud builds submit --config cloudbuild.yaml --substitutions _VERSION=${VERSION},_IMG=${IMG}
+	gcloud builds submit --config cloudbuild.yaml --substitutions _VERSION=${VERSION},_IMG=${IMG} --project ${GCP_PROJECT} .
 	rm -fr templates
 
 .PHONY: aws-build
@@ -84,16 +84,16 @@ aws-check:
 	gcloud builds submit --config awscloudrun.yaml --substitutions _IMG="${AWS_IMG}:${VERSION}",_ELB_RESULTS="${ELB_RESULTS}",_ELB_CLUSTER_NAME="${ELB_CLUSTER_NAME}"
 
 gcp-clean:
-	-gcloud container images delete gcr.io/${GCP_PROJECT}/${IMG}:${VERSION}
+	-gcloud container images delete us-docker.pkg.dev/${GCP_PROJECT}/${IMG}:${VERSION}
 
 .PHONY: gcp-check
 gcp-check:
-	-gcloud container images list --repository=gcr.io/${GCP_PROJECT}/${IMG}
-	-gcloud container images list-tags gcr.io/${GCP_PROJECT}/${IMG}
-	-gcloud container images describe gcr.io/${GCP_PROJECT}/${IMG}:latest
-	-gcloud container images describe gcr.io/${GCP_PROJECT}/${IMG}:${VERSION}
-	gcloud builds submit --timeout=120 --config cloudrun.yaml --substitutions _IMG="gcr.io/${GCP_PROJECT}/${IMG}:${VERSION}",_ELB_GCP_PROJECT="${ELB_GCP_PROJECT}",_ELB_GCP_ZONE="${ELB_GCP_ZONE}",_ELB_RESULTS="${ELB_RESULTS}",_ELB_CLUSTER_NAME="${ELB_CLUSTER_NAME}"
+	-gcloud container images list --repository=us-docker.pkg.dev/${GCP_PROJECT}/${IMG}
+	-gcloud container images list-tags us-docker.pkg.dev/${GCP_PROJECT}/${IMG}
+	-gcloud container images describe us-docker.pkg.dev/${GCP_PROJECT}/${IMG}:latest
+	-gcloud container images describe us-docker.pkg.dev/${GCP_PROJECT}/${IMG}:${VERSION}
+	gcloud builds submit --timeout=120 --config cloudrun.yaml --substitutions _IMG="us-docker.pkg.dev/${GCP_PROJECT}/${IMG}:${VERSION}",_ELB_GCP_PROJECT="${ELB_GCP_PROJECT}",_ELB_GCP_ZONE="${ELB_GCP_ZONE}",_ELB_RESULTS="${ELB_RESULTS}",_ELB_CLUSTER_NAME="${ELB_CLUSTER_NAME}"
 
 gcp-list-tagless-images:
-	gcloud container images list-tags gcr.io/${GCP_PROJECT}/${IMG} \
+	gcloud container images list-tags us-docker.pkg.dev/${GCP_PROJECT}/${IMG} \
 		--filter='-tags:*' --format="get(digest)"

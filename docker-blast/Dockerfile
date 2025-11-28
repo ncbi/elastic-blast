@@ -18,7 +18,7 @@
 #   
 # Please cite NCBI in any work or product based on this material.
 
-FROM ncbi/blast:2.16.0 as blast
+FROM ncbi/blast:2.17.0 as blast
 ARG version
 LABEL Description="NCBI BLAST" Vendor="NCBI/NLM/NIH" Version=${version} Maintainer=camacho@ncbi.nlm.nih.gov
 

@@ -116,8 +116,8 @@ MAX_NUM_THREADS_AWS = 16
 MAX_NUM_THREADS_GCP = 15
 
 
-def get_mt_mode(program: str, options: str = '', db_metadata: Optional[DbMetadata] = None,
-                query: Optional[SeqData] = None) -> MTMode:
+def get_mt_mode(program: str, options: str = '', db_metadata: DbMetadata | None = None,
+                query: SeqData | None = None) -> MTMode:
     """
     Compute BLAST search MT mode
 
@@ -155,7 +155,7 @@ def get_mt_mode(program: str, options: str = '', db_metadata: Optional[DbMetadat
 
 
 def get_num_cpus(cloud_provider: CSP, program: str, mt_mode: MTMode,
-                 query: Optional[SeqData] = None) -> int:
+                 query: SeqData | None = None) -> int:
     """Get number of CPUs to use to optimally run BLAST
 
     Arguments:
@@ -176,9 +176,9 @@ def get_num_cpus(cloud_provider: CSP, program: str, mt_mode: MTMode,
 
 
 
-def get_batch_length(cloud_provider: CSP, program: str, task: Optional[str],
+def get_batch_length(cloud_provider: CSP, program: str, task: str | None,
                      mt_mode: MTMode, num_cpus: int,
-                     db_metadata: Optional[DbMetadata] = None) -> int:
+                     db_metadata: DbMetadata | None = None) -> int:
     """
     Get ElasticBLAST batch length for BLAST batch search
 
@@ -238,7 +238,7 @@ def get_batch_length(cloud_provider: CSP, program: str, task: Optional[str],
 
 def aws_get_mem_limit(num_cpus: PositiveInteger, 
         machine_type: str,
-        db: Optional[DbData] = None, 
+        db: DbData | None = None, 
         db_factor: float = 0.0, 
         region: str = ELB_DFLT_AWS_REGION) -> float:
     """Get memory limit for searching a single query batch for AWS
@@ -290,7 +290,7 @@ def gcp_get_mem_limit(machine_type: str) -> float:
 
 
 def get_mem_limit(cloud_provider: CSP, machine_type: str, num_cpus: PositiveInteger,
-        db: Optional[DbData] = None, db_factor: float = 0.0, cloud_region: str = ELB_DFLT_AWS_REGION) -> MemoryStr:
+        db: DbData | None = None, db_factor: float = 0.0, cloud_region: str = ELB_DFLT_AWS_REGION) -> MemoryStr:
     """Get memory limit for searching a single query batch, wrapper over
     functions specialized for each cloud provider. See aws_get_mem_limit and
     gcp_get_mem_limit for details on how memory limit is computed on each

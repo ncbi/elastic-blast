@@ -69,7 +69,7 @@ INI_VALID = os.path.join(TEST_DATA_DIR, 'good_conf.ini')
 ELB_EXENAME = 'elastic-blast'
 
 
-def run_elastic_blast(cmd: List[str], env=None) -> subprocess.CompletedProcess:
+def run_elastic_blast(cmd: list[str], env=None) -> subprocess.CompletedProcess:
     """Run Elastic-BLAST application with given command line parameters.
 
     Arguments:
@@ -82,7 +82,7 @@ def run_elastic_blast(cmd: List[str], env=None) -> subprocess.CompletedProcess:
         for key, value in env.items():
             effective_env[key] = str(value)
     p = subprocess.run([ELB_EXENAME] + cmd, check=False,
-                       stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+                       capture_output=True,
                        env=effective_env)
     return p
 
@@ -677,10 +677,10 @@ fi"""
     with TemporaryDirectory() as d:
         env['PATH'] = d + ':' + env['PATH']
         gcloud_fname = os.path.join(d, 'gcloud')
-        with open(gcloud_fname, 'wt') as f:
+        with open(gcloud_fname, 'w') as f:
             f.write(gcloud)
         gsutil_fname = os.path.join(d, 'gsutil')
-        with open(gsutil_fname, 'wt') as f:
+        with open(gsutil_fname, 'w') as f:
             f.write(gsutil)
         import stat
         os.chmod(gcloud_fname, stat.S_IRWXU)

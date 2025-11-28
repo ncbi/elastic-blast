@@ -49,14 +49,14 @@ class DbMetadata:
     description: str
     number_of_letters: int
     number_of_sequences: int
-    files: List[str]
+    files: list[str]
     last_updated: str
     bytes_total: int
     bytes_to_cache: int
     number_of_volumes: int
 
 
-def get_db_metadata(db: str, dbtype: MolType, source: DBSource, dry_run: bool = False, gcp_prj: Optional[str] = None) -> DbMetadata:
+def get_db_metadata(db: str, dbtype: MolType, source: DBSource, dry_run: bool = False, gcp_prj: str | None = None) -> DbMetadata:
     """
     Read database metadata.
 

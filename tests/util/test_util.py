@@ -233,7 +233,7 @@ def test_safe_exec_run(mocker):
     mocker.patch('subprocess.run')
     safe_exec(cmd)
     # test subprocess.run is called with check=True
-    subprocess.run.assert_called_with(cmd, check=True, stdout=-1, stderr=-1,
+    subprocess.run.assert_called_with(cmd, check=True, capture_output=True,
                                       env=None)
 
 
