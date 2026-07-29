@@ -221,6 +221,16 @@ def test_gcp_get_mem_limit():
     assert gcp_get_mem_limit(MACHINE_TYPE) == props.memory - SYSTEM_MEMORY_RESERVE
 
 
+def test_gcp_get_mem_limit_unsupported_machine_type():
+    """A well formed GCP machine type from a series we do not list must be
+    reported as a user error, not raise KeyError"""
+    for machine_type in ['c2d-standard-4', 't2d-standard-8', 'n4-standard-16']:
+        with pytest.raises(UserReportError) as err:
+            gcp_get_mem_limit(machine_type)
+        assert err.value.returncode == INPUT_ERROR
+        assert 'Invalid machine type' in err.value.message
+
+
 @patch(target='elastic_blast.tuner.aws_get_machine_properties', new=MagicMock(return_value=InstanceProperties(32, 128)))
 @patch(target=__name__ + '.aws_get_machine_properties', new=MagicMock(return_value=InstanceProperties(32, 128)))
 def test_get_mem_limit():

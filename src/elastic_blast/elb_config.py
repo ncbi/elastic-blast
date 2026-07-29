@@ -1214,7 +1214,7 @@ def get_instance_props(cloud_provider: CSP, region: str, machine_type: str) -> I
             instance_props = gcp_get_machine_properties(machine_type)
         else:
             instance_props = aws_get_machine_properties(machine_type, create_aws_config(region))
-    except NotImplementedError as err:
+    except (NotImplementedError, KeyError) as err:
         raise UserReportError(returncode=INPUT_ERROR,
                               message=f'Invalid machine type. Machine type name "{machine_type}" is incorrect or not supported by ElasticBLAST: {str(err)}')
     return instance_props
