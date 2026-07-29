@@ -281,7 +281,7 @@ def gcp_get_mem_limit(machine_type: str) -> float:
         A search job memory limit int GB as float"""
     try:
         props = gcp_get_machine_properties(machine_type)
-    except NotImplementedError as err:
+    except (NotImplementedError, KeyError) as err:
         raise UserReportError(returncode=INPUT_ERROR,
                               message=f'Invalid machine type. Machine type name "{machine_type}" is incorrect or not supported by ElasticBLAST: {str(err)}')
 
